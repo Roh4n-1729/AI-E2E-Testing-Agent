@@ -1,0 +1,82 @@
+import { existsSync, mkdtempSync } from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { chromium } from 'playwright';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { createServer } from '../../src/server/app.js';
+import { hasChromium, startApp } from './harness.js';
+
+const uiDir = path.resolve('ui/dist');
+const built = existsSync(path.join(uiDir, 'index.html'));
+
+/** @type {{ server: import('node:http').Server, hits: string[], base: string }} */
+let target;
+/** @type {Awaited<ReturnType<typeof createServer>>['app']} */
+let app;
+/** @type {import('playwright').Browser} */
+let browser;
+let ui = '';
+
+beforeAll(async () => {
+  if (!hasChromium || !built) return;
+  target = /** @type {typeof target} */ (await startApp());
+  ({ app } = await createServer({
+    outDir: mkdtempSync(path.join(os.tmpdir(), 'aie2e-ui-')),
+    uiDir,
+  }));
+  await app.listen({ host: '127.0.0.1', port: 0 });
+  ui = `http://127.0.0.1:${/** @type {any} */ (app.server.address()).port}`;
+  browser = await chromium.launch({
+    executablePath: process.env.AIE2E_CHROME_PATH,
+    args: process.env.AIE2E_CHROME_ARGS?.split(' '),
+  });
+});
+afterAll(async () => {
+  await browser?.close();
+  await app?.close();
+  target?.server.close();
+});
+
+describe.skipIf(!hasChromium || !built)('web UI (real browser; needs `npm run ui:build`)', () => {
+  it('starts a run from the form, shows live progress, then the results with report links', async () => {
+    const page = await browser.newPage();
+    const errors = /** @type {string[]} */ ([]);
+    page.on('pageerror', (e) => errors.push(e.message));
+    await page.goto(`${ui}/#/new`);
+    await page.getByPlaceholder('https://your-app.example.com').fill(target.base);
+    await page.getByRole('radio', { name: /Smoke check/ }).click(); // no LLM needed
+    await page.getByRole('button', { name: /start run/i }).click();
+
+    await page.waitForURL(/#\/runs\//);
+    // finished: summary stat + the test card + the report links
+    // finished: the report links appear, with the test, its verdict and the evidence tabs
+    const html = page.getByRole('link', { name: /HTML report/ });
+    await html.waitFor({ timeout: 30_000 });
+    await page.getByRole('heading', { name: 'Smoke: page loads without errors' }).waitFor();
+    await page.getByText('tests passed').waitFor();
+    await page.getByRole('tab', { name: /Quality/ }).click();
+    await page.getByText('Core Web Vitals').waitFor();
+    // screenshots open in the viewer, not a new tab
+    await page.getByRole('button', { name: /Open screenshot: Final state/ }).click();
+    await page.locator('.yarl__root').waitFor();
+    await page.keyboard.press('Escape');
+    expect(await html.getAttribute('href')).toMatch(/^\/files\/runs\/.+\/report\.html$/);
+    expect((await page.request.get(ui + (await html.getAttribute('href')))).status()).toBe(200);
+
+    // history lists it
+    await page.getByRole('navigation').getByRole('link', { name: 'Runs', exact: true }).click();
+    await page
+      .getByRole('link', { name: target.base.replace('http://', '') })
+      .first()
+      .waitFor();
+    expect(errors).toEqual([]);
+    await page.close();
+  });
+
+  it('shows a helpful empty state for recordings', async () => {
+    const page = await browser.newPage();
+    await page.goto(`${ui}/#/recordings`);
+    await page.getByText('No recordings yet').waitFor();
+    await page.close();
+  });
+});

@@ -1,0 +1,51 @@
+flowchart TB
+  user([Developer / CI]) --> cli
+
+  subgraph app["ai-e2e-agent (Node CLI, JavaScript + JSDoc types)"]
+    cli["CLI (Node, plain JS)<br/>run · doctor"]
+    cfg["Config<br/>zod-validated env + flags"]
+
+    subgraph orch["Orchestrator: typed state graph"]
+      direction LR
+      crawl["crawl (BFS)"] --> plan["plan (LLM)"] --> run["run tests"] --> report["report"]
+      plan -. "no tests" .-> report
+    end
+
+    subgraph ports["Ports (interfaces in core/ports.js)"]
+      direction LR
+      pCrawler["Crawler"]
+      pPlanner["Planner"]
+      pExecutor["Executor"]
+      pJudge["Judge"]
+      pReporter["Reporter"]
+      pStore["RecordStore"]
+    end
+
+    subgraph runner["TestRunner (one isolated browser per test)"]
+      direction LR
+      session["BrowserSession<br/>Stagehand + Playwright<br/>one Chromium, two drivers"]
+      exec["Executor<br/>agent now; cache-then-heal Sat"]
+      judge["Judge<br/>evidence from the harness<br/>+ LLM visual check"]
+      session --- exec
+      exec --> judge
+    end
+
+    cli --> cfg --> orch
+    run --> runner
+    orch -.uses.-> ports
+    runner -.uses.-> ports
+  end
+
+  exec -- "AI actions (act / observe / agent)" --> sh["Stagehand 3.x"]
+  exec -- "deterministic replay (Sat)" --> pw["Playwright"]
+  judge -- "DOM · URL · console · network · screenshots" --> pw
+  sh <-- "same Chromium via CDP" --> pw
+  sh --> llm[("LLM provider<br/>via AIE2E_MODEL")]
+  plan -. "plan tests" .-> llm
+  judge -. "visual check" .-> llm
+  pw --> target[("App under test")]
+
+  reporter["report.json + report.html"]
+  report --> reporter
+  reporter --> out[(".aie2e/runs/&lt;runId&gt;/")]
+  pStore --> cache[(".aie2e/cache/&lt;host&gt;/&lt;test&gt;.json<br/>recorded steps, commit to git")]

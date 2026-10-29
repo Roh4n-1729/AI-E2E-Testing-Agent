@@ -1,0 +1,14 @@
+node_modules
+dist
+ui/dist
+*.log
+.DS_Store
+
+# secrets: only .env.example is committed
+.env
+.env.*
+!.env.example
+
+# local run state: reports, screenshots, downloads, plans, recordings, evaluations.
+# To keep tests in the repo, export them as a suite: `aie2e export <runId> -o tests.suite.json`
+.aie2e/

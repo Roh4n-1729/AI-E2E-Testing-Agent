@@ -1,0 +1,204 @@
+# Improvements log
+
+Every change that came from running the tool on a real app, newest first. Each entry says what we
+saw (with the evidence), what changed, and how it is verified. Add to it whenever a real run
+teaches us something: it is the honest history of how the judge got stricter.
+
+---
+
+## 2026-10-29 (late night): theme conformance of the production build
+
+**Goal (Rohan):** the themes an app's production build ships must actually be applied everywhere, in every
+theme, on every state the agent reaches. The source of truth is the build itself, not Figma or a reference site.
+
+### What was built
+
+- **Discovery from the CSSOM** (`src/theme/discover.js`): CSS custom properties defined on `:root`, `.dark`,
+  `[data-theme=…]` or under `prefers-color-scheme`. Tailwind v4, shadcn, Radix and MUI CSS variables all land
+  here. A class or attribute rule only counts as a theme if it re-defines variables the base defines.
+- **Switching** the way the app does it (class, attribute or emulated colour scheme), with transitions frozen,
+  and an exact restore afterwards.
+- **Audit** (`src/theme/audit.js`), per element and per theme: colours by CIEDE2000 within the just-noticeable
+  difference (culori), radii and font sizes against the theme's scale, font family. For every off-theme value,
+  Chrome itself is asked which CSS declaration produced it (CDP `CSS.getMatchedStylesForNode`):
+  - `var(--…)` = derived from the theme (e.g. `calc(var(--radius) - 2px)`), fine;
+  - an author rule without a variable = **hard-coded**, reported with `selector { value }` and file:line;
+  - no author rule = **browser default**.
+- **Leaks:** large surfaces whose background is identical in every theme while the page background changes
+  (the white card in dark mode). **Contrast** is checked per theme (axe `color-contrast`).
+- A `theme-conformance` check (auto-added under the quality gate): fails when a theme is under 90% on-theme,
+  any value is hard-coded or a browser default, or a surface leaks. A Theme tab in the UI and a section in the
+  HTML report show a screenshot per theme, scores per category, and findings with element crops.
+
+### Found while building it
+
+- The unit tests caught a discovery bug: any class defining a variable (`.card { --pad: 8px }`) became a
+  "theme". Fixed by requiring themes to override base variables.
+- A score threshold alone hid single hard-coded values (one hard-coded button = 98%, above the threshold), so
+  the check also fails on any hard-coded value. The score is a summary, not the gate.
+- My own theme toggle in the demo shop had `aria-label="Toggle dark mode"` with visible text "Theme": axe
+  flagged `label-content-name-mismatch`. Fixed in the shop.
+- The off-scale radius bug first went undetected because my edit to the shop's product-card markup never
+  applied (prettier had reflowed the line). The audit was right; the seeded bug simply was not there.
+
+### Verified
+
+- `tests/theme.test.js` (discovery rules, matching) and `tests/integration/theme.test.js`: the clean shop
+  scores 100% in light and dark with no findings and the page is restored; the buggy shop reports the
+  hard-coded colour with `.newsletter button` and its inline-style line, the off-scale radius ×3, and the dark
+  leak (only in dark). The judge fails the test with gate = fail.
+
+---
+
+## 2026-10-29 (night): LangGraph, seeded-bug evaluation, committed suites
+
+### 1. Orchestration is now real LangGraph (`@langchain/langgraph` 1.5.3, MIT)
+
+- `START → crawl → plan → (Send: one runTest branch per test) → writeReport → END`, with `Annotation` state.
+  The parallel branches append to `results` through a reducer, and the report re-sorts into plan order.
+  The node functions are unchanged, and the UI still listens to our own event bus, not graph internals.
+- `npm run graph` writes the graph as Mermaid (`docs/diagrams/05-langgraph.mmd`) from the code.
+
+### 2. Found a LangGraph bug: `maxConcurrency: 1` drops Send branches
+
+- **Seen:** the "AI planning end to end" integration test lost its report after the swap. A minimal repro:
+  three `Send` branches with `maxConcurrency: 1` → the branches' writes are dropped and the next node never
+  runs (`out: []`). With 2 or 3, or with no limit, it works.
+- **Change:** parallelism is capped with our own limiter inside the `runTest` branch; LangGraph's
+  `maxConcurrency` is not used.
+- **Verified:** `tests/pipeline.test.js` checks concurrency 1 (peak 1, all results in order) and concurrency 2
+  (peak 2, results in plan order although the first test finishes last).
+- Also fixed during the swap: the report node returned `results` again, which the append-reducer would
+  have duplicated.
+
+### 3. Seeded-bug app and evaluation
+
+- `examples/buggy-shop`: 7 known, switchable bugs (functional, error, accessibility, performance), clean mode,
+  optional hints. No dependencies.
+- `npm run eval`: the clean app N times (false positives, flakiness), then each bug alone (exact attribution).
+  It writes `docs/EVALUATION.md` and raw JSON. First result (committed suite, no LLM): **7/7 bugs
+  detected, 0 false positives over 3 × 7 clean tests, 0 flaky**.
+- **The judge caught a bug in the demo app itself:** the first clean run failed 3 tests with
+  `pageerror: cart is not defined`. The page scripts ran before the shared helpers were defined. Fixed in the
+  app, not in the tester.
+
+### 4. Committed test suites (`--suite`) and `--no-heal`
+
+- A suite is JSON: tests with relative start URLs and optional recorded steps. Tests with steps replay with no
+  LLM; tests without steps use the agent and get recorded once they pass. `aie2e export <runId>` turns any
+  run into a suite (tests plus recorded steps), ready to commit and run in CI.
+- `--no-heal`: a broken replay step is a plain failure, never handed to the agent. It is deterministic and
+  free, which suits CI and evaluation. The new verdict path is `outcome.failure` → "fail" (not "error").
+
+---
+
+## 2026-10-29 (evening): judging accuracy, app hints, UI rebuild
+
+**Source:** run `20261029131952-1872` on the AI Presentation Builder: 7/9 passed, 1.04M agent tokens.
+
+### 1. False pass: "change" questions judged from one screenshot
+
+- **Seen:** "Navigate between slides" PASSED, although the agent itself reported failure. The planner asked
+  "are navigation controls visible AND does the slide content change?". One final screenshot cannot
+  show a change, and the vision model said yes anyway.
+- **Change:** visual checks now get a timeline: the start screenshot, up to 3 frames from the run and a
+  fresh capture of the page now (consecutive duplicates dropped). The prompt says which image is which,
+  and that change questions must compare first and last. The planner is told to phrase changes that way and
+  never to stack conditions.
+- **Verified:** `tests/integration/judge.test.js` checks that the vision model receives at least 2 images and the
+  "first = before the test acted" framing.
+
+### 2. False fail: theme change not recognised
+
+- **Seen:** "Customize theme" FAILED, but the final screenshot shows the new (green) theme. The judge had no
+  before image, and one question asked for the theme panel to still be open after it had closed.
+- **Change:** the same timeline (above), plus the planner rule about change questions.
+
+### 3. The agent's own "I failed" is now evidence (asymmetric trust)
+
+- **Rule:** a claim of _success_ is still never trusted. A claim of _failure_ is: if the agent says it could
+  not finish and the only proof otherwise is an AI reading of screenshots, the verdict is FAIL with an
+  explicit reason. Deterministic evidence (URL, text, test id, API call, download, toast) still overrides
+  the agent, because agents can be wrong about failing too.
+- **Why:** a false pass hides a regression, which is worse than a false fail that someone reviews.
+- **Verified:** `judge.test.js`: soft-only evidence + "failed" claim → fail; hard evidence + "failed" claim → pass.
+
+### 4. Blank start screenshots corrupted the baseline
+
+- **Seen:** 6 of 9 start screenshots were blank white (5.5 KB) because they were captured on
+  `domcontentloaded`, before the SPA rendered. The vacuity check ("already true at the start?") then
+  compared against an empty page.
+- **Change:** `session.goto` waits for `load` and then for the page to settle. A page with no text never
+  counts as settled. `browser/settle.js` is shared by navigation, replay and judging. It also waits for
+  `aria-busy="true"` to clear and for in-flight fetch/XHR, capped.
+- **Verified:** `hints.test.js` covers a page that renders 700 ms after load: the baseline contains its text.
+
+### 5. Judge only after the app goes quiet
+
+- **Seen:** AI apps keep streaming ("Building slide 3…") after the agent stops.
+- **Change:** before the final evidence the harness settles: text stable for 1 s, no aria-busy, no API
+  call in flight, capped at 15 s.
+
+### 6. Heal outcome came from the agent's claim
+
+- **Seen (code audit):** `CachingExecutor` labelled a heal "healed" when the _agent said_ it succeeded.
+- **Change:** the TestRunner overwrites every heal outcome with the judge's verdict. `summary.healed` counts only
+  healed tests that passed.
+
+### 7. Optional app hints (never required)
+
+- `data-testid` (also `data-test`, `data-cy`, `data-qa`): when the agent clicks something, the harness looks up a
+  unique test id on the element (or a close ancestor for clicks) or a non-generated `id`. Recordings store it as
+  the selector with the XPath as fallback, and replay tries both. Apps that expose test ids also get two agent
+  tools: list them (including hidden ones) and act on one exactly.
+- `aria-busy`: a standard attribute the harness waits on.
+- `data-aie2e-hint` / `data-aie2e-reveal="hover"`: free text and markers for hover-only or conditional controls.
+  They reach the planner (via the crawl) and the agent (instruction plus tools).
+- The planner may only assert `selector-visible` on test ids the crawl actually saw.
+- **Verified:** `hints.test.js`: hints read including hidden ones; test id preferred and XPath fallback used
+  after the id disappears; tools reveal a hover-only control; tool calls become replayable steps.
+
+### 8. Cost visibility and stronger models where they matter
+
+- Planner and judge (visual checks) tokens are now metered and reported as `summary.overhead`.
+- `AIE2E_PLANNER_MODEL` / `AIE2E_JUDGE_MODEL` can point the two low-volume, high-leverage calls at a stronger model
+  while the browser agent stays on Haiku.
+- The planner and agent are told to take the shortest path (sample or template content) unless the test is about
+  creating it, because every test regenerating a full deck was the main cost.
+
+### 9. UI rebuilt
+
+- Dark mode (system / light / dark, no flash), Radix primitives for selects, switches, tabs, tooltips and the
+  delete confirmation; toasts (sonner).
+- Run page: summary with a segmented result bar → filterable test list → tabbed detail (Steps, Checks,
+  Network, Quality, Agent). Steps is a timeline with the screenshot taken after every step.
+- Screenshots open in an in-app viewer (yet-another-react-lightbox: zoom, thumbnails, captions, keyboard)
+  instead of a new tab. The standalone HTML report got the same treatment with a dependency-free viewer.
+- "Run again", an "App hints" guide page, and the options a run started with are kept next to its report.
+
+---
+
+## 2026-10-29 (afternoon): quality evidence, cursor, live view
+
+- **Seen:** all 3 failures in run 12:47 were test-spec errors. The planner guessed URL fragments (`/presentation`,
+  `slideshow`, `download`), and a download toast had vanished before the end-of-test screenshot.
+- **Change:** collectors for fetch/XHR, downloads, transient toasts, Core Web Vitals (`web-vitals`) and axe-core
+  accessibility; new expectations `api-call`, `download`, `text-appeared`, `web-vitals`, `no-a11y-violations`;
+  quality gate off/warn/fail; vacuity for API calls; planner drops ungrounded URLs and endpoints.
+- **Cursor:** eased glide instead of teleporting; position kept across navigations.
+- **Live view:** CDP screencast (more than 20 frames in 2 s in tests) instead of 4 fps screenshot polling.
+- **Hover-only controls:** `hoverAt` agent tool, recorded as a `mouse` step in viewport percentages.
+
+## 2026-10-29 (morning): first real runs
+
+- **Thinking-signature error** with `claude-haiku-5-5`: Stagehand 3.7.3 does not know the model and its loop
+  rewrites messages, which invalidates Anthropic thinking signatures. The default became `claude-haiku-4-5`
+  with thinking off.
+- **"Executable doesn't exist (chrome-headless-shell)"** on Windows: the Chrome resolver falls back to an
+  installed Chrome or Edge.
+- **Cursor init script threw** (`appendChild` on null before the document existed). Pages then logged an error
+  and 7 integration tests failed. The script now has host guards and a try/catch, because a debugging aid must
+  never change the page under test.
+- **Vacuous expectations:** "text `edit` visible" passed although it was on the page before the agent did
+  anything. The judge now takes a baseline before acting; checks that were already true are not counted, and
+  a goal test needs at least one real one.

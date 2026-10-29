@@ -1,0 +1,141 @@
+{
+  "description": "A small shop: browse products, add them to the cart, change quantities, subscribe to the newsletter, check out.",
+  "tests": [
+    {
+      "title": "Shop page loads cleanly",
+      "startUrl": "/"
+    },
+    {
+      "title": "Cart page loads cleanly",
+      "startUrl": "/cart"
+    },
+    {
+      "title": "Add every product to the cart",
+      "goal": "Add the Coffee Mug, the Cotton T-shirt and the Notebook to the cart, then open the cart.",
+      "startUrl": "/",
+      "expectations": [{ "kind": "text-visible", "text": "Cart (3)" }],
+      "steps": [
+        {
+          "kind": "act",
+          "description": "Add the Coffee Mug",
+          "selector": "xpath=(//button[normalize-space()='Add to cart'])[1]",
+          "method": "click"
+        },
+        {
+          "kind": "act",
+          "description": "Add the Cotton T-shirt",
+          "selector": "xpath=(//button[normalize-space()='Add to cart'])[2]",
+          "method": "click"
+        },
+        {
+          "kind": "act",
+          "description": "Add the Notebook",
+          "selector": "xpath=(//button[normalize-space()='Add to cart'])[3]",
+          "method": "click"
+        },
+        {
+          "kind": "act",
+          "description": "Open the cart",
+          "selector": "xpath=//header//a[@href='/cart']",
+          "method": "click"
+        }
+      ]
+    },
+    {
+      "title": "Cart total follows the quantity",
+      "goal": "Add one Coffee Mug, open the cart and increase its quantity to 2.",
+      "startUrl": "/",
+      "expectations": [{ "kind": "text-visible", "text": "₹598" }],
+      "steps": [
+        {
+          "kind": "act",
+          "description": "Add the Coffee Mug",
+          "selector": "xpath=(//button[normalize-space()='Add to cart'])[1]",
+          "method": "click"
+        },
+        {
+          "kind": "act",
+          "description": "Open the cart",
+          "selector": "xpath=//header//a[@href='/cart']",
+          "method": "click"
+        },
+        {
+          "kind": "act",
+          "description": "Increase the Coffee Mug quantity",
+          "selector": "xpath=//button[@aria-label='More Coffee Mug']",
+          "method": "click"
+        }
+      ]
+    },
+    {
+      "title": "Subscribe to the newsletter",
+      "goal": "Subscribe to the newsletter with test@example.com.",
+      "startUrl": "/",
+      "expectations": [{ "kind": "text-visible", "text": "Subscribed! Check your inbox." }],
+      "steps": [
+        {
+          "kind": "act",
+          "description": "Type the email",
+          "selector": "xpath=//input[@id='email']",
+          "method": "fill",
+          "arguments": ["test@example.com"]
+        },
+        {
+          "kind": "act",
+          "description": "Press Subscribe",
+          "selector": "xpath=//form//button[normalize-space()='Subscribe']",
+          "method": "click"
+        }
+      ]
+    },
+    {
+      "title": "Checkout refuses an empty email",
+      "goal": "On the checkout page fill in the name and address, leave the email empty and press Place order. The form must refuse.",
+      "startUrl": "/checkout",
+      "expectations": [{ "kind": "text-visible", "text": "Please enter a valid email address" }],
+      "steps": [
+        {
+          "kind": "act",
+          "description": "Type the name",
+          "selector": "xpath=//input[@id='name']",
+          "method": "fill",
+          "arguments": ["Asha Rao"]
+        },
+        {
+          "kind": "act",
+          "description": "Type the address",
+          "selector": "xpath=//input[@id='addr']",
+          "method": "fill",
+          "arguments": ["12 MG Road, Pune"]
+        },
+        {
+          "kind": "act",
+          "description": "Press Place order",
+          "selector": "xpath=//button[normalize-space()='Place order']",
+          "method": "click"
+        }
+      ]
+    },
+    {
+      "title": "Search finds a product",
+      "goal": "Search for mug.",
+      "startUrl": "/",
+      "expectations": [{ "kind": "text-visible", "text": "Found: Coffee Mug" }],
+      "steps": [
+        {
+          "kind": "act",
+          "description": "Type mug",
+          "selector": "xpath=//input[@id='q']",
+          "method": "fill",
+          "arguments": ["mug"]
+        },
+        {
+          "kind": "act",
+          "description": "Press Search",
+          "selector": "xpath=//button[normalize-space()='Search']",
+          "method": "click"
+        }
+      ]
+    }
+  ]
+}

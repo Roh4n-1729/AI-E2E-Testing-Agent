@@ -1,0 +1,34 @@
+sequenceDiagram
+  autonumber
+  actor Dev as Developer / CI
+  participant CLI
+  participant G as Orchestrator graph
+  participant P as Planner
+  participant R as TestRunner
+  participant S as BrowserSession
+  participant E as Executor
+  participant J as Judge
+  participant Rep as Reporter
+
+  Dev->>CLI: aie2e run URL --goal ...
+  CLI->>G: invoke(target)
+  G->>G: crawl (capped BFS, same-origin, skips logout/delete)
+  G->>P: plan(target, siteMap)
+  P-->>G: TestCase[] (goal + expectations)
+
+  loop each test (up to N in parallel)
+    G->>R: run(test)
+    R->>S: open() fresh Chromium + collectors
+    R->>E: execute(test, session)
+    E-->>R: ExecutionOutcome (mode, steps, heals, agentClaim)
+    Note over E,R: The agent's claim is recorded but never trusted
+    R->>J: judge(test, session, outcome)
+    J->>S: collect evidence (URL, aria tree, console, network, screenshot)
+    J-->>R: Verdict + Evidence
+    R->>S: close()
+    R-->>G: TestResult
+  end
+
+  G->>Rep: report(RunReport)
+  Rep-->>Dev: report.json + report.html + console summary
+  CLI-->>Dev: exit code 0 pass, 1 fail, 2 error

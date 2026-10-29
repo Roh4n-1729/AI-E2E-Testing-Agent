@@ -1,0 +1,841 @@
+<title>ai-e2e-agent Field Guide</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=Source+Sans+3:ital,wght@0,400;0,600;1,400&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+/* Layout: a field guide. Sticky chapter rail on the left, one reading column, each chapter = idea → why → live demo → code → interview line.
+   Colour carries meaning: violet = AI/LLM, blue = deterministic Playwright, green/red/amber = verdicts. */
+:root {
+  --bg: #f2f4f3;
+  --surface: #ffffff;
+  --sunk: #e7ecea;
+  --ink: #15201e;
+  --muted: #586866;
+  --line: #d3dbd8;
+  --accent: #2753c0;
+  --ai: #7646b8;
+  --pass: #1d7548;
+  --fail: #be3527;
+  --warn: #a8700f;
+  --pass-bg: #e2f2e9;
+  --fail-bg: #f9e4e1;
+  --warn-bg: #f7eedb;
+  --ai-bg: #efe8f8;
+  --det-bg: #e4ebfa;
+  /* the demo app's own theme (used in chapter 8) */
+  --d-bg: #f6f7f9;
+  --d-surface: #ffffff;
+  --d-text: #1b1f24;
+  --d-muted: #5d6673;
+  --d-primary: #0f766e;
+  --d-on-primary: #ffffff;
+  --d-radius-sm: 4px;
+  --d-radius: 10px;
+  --f-display: "Bricolage Grotesque", "Segoe UI", system-ui, sans-serif;
+  --f-body: "Source Sans 3", "Segoe UI", system-ui, sans-serif;
+  --f-mono: "JetBrains Mono", ui-monospace, "Cascadia Mono", Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0f1615; --surface: #172120; --sunk: #1e2a28; --ink: #e3ebe8; --muted: #94a5a1; --line: #2b3836;
+    --accent: #85a3f2; --ai: #b998ec; --pass: #5cc893; --fail: #f2836f; --warn: #e2b250;
+    --pass-bg: #163327; --fail-bg: #3a1d19; --warn-bg: #352a13; --ai-bg: #2a2140; --det-bg: #1b2744;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0f1615; --surface: #172120; --sunk: #1e2a28; --ink: #e3ebe8; --muted: #94a5a1; --line: #2b3836;
+  --accent: #85a3f2; --ai: #b998ec; --pass: #5cc893; --fail: #f2836f; --warn: #e2b250;
+  --pass-bg: #163327; --fail-bg: #3a1d19; --warn-bg: #352a13; --ai-bg: #2a2140; --det-bg: #1b2744;
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+@media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } *, *::before, *::after { transition: none !important; animation: none !important; } }
+body {
+  background: var(--bg); color: var(--ink); font-family: var(--f-body); font-size: 17px; line-height: 1.6;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+h1, h2, h3 { font-family: var(--f-display); line-height: 1.15; text-wrap: balance; margin: 0; }
+h1 { font-size: clamp(2rem, 5vw, 3.1rem); font-weight: 700; letter-spacing: -0.02em; }
+h2 { font-size: clamp(1.5rem, 3vw, 2rem); font-weight: 700; letter-spacing: -0.01em; }
+h3 { font-size: 1.05rem; font-weight: 700; }
+p { margin: 0; }
+code, pre, .mono { font-family: var(--f-mono); font-size: 0.86em; }
+:not(pre) > code { background: var(--sunk); padding: 0.08em 0.35em; border-radius: 4px; }
+a { color: var(--accent); }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.shell { display: grid; grid-template-columns: 230px minmax(0, 1fr); gap: 48px; max-width: 1120px; margin: 0 auto; padding-block: 40px 80px; }
+.rail { position: sticky; top: calc(env(safe-area-inset-top, 0px) + 24px); align-self: start; max-height: calc(100vh - 48px); overflow: auto; }
+.rail .brand { font-family: var(--f-display); font-weight: 700; font-size: 1.05rem; }
+.rail .sub { color: var(--muted); font-size: 0.85rem; margin-top: 2px; }
+.rail ol { list-style: none; margin: 20px 0 0; padding: 0; display: grid; gap: 2px; counter-reset: ch; }
+.rail li a { display: grid; grid-template-columns: 26px 1fr; gap: 6px; padding: 5px 8px; border-radius: 6px; color: var(--ink); text-decoration: none; font-size: 0.92rem; line-height: 1.35; }
+.rail li a span:first-child { color: var(--muted); font-family: var(--f-mono); font-size: 0.78rem; padding-top: 2px; font-variant-numeric: tabular-nums; }
+.rail li a:hover, .rail li a.on { background: var(--sunk); }
+.rail li a.on span:first-child { color: var(--accent); }
+main { min-width: 0; max-width: 780px; display: grid; gap: 72px; }
+
+.hero { display: grid; gap: 18px; }
+.eyebrow { font-family: var(--f-mono); font-size: 0.75rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+.lede { font-size: 1.2rem; color: var(--muted); max-width: 62ch; }
+.legend { display: flex; flex-wrap: wrap; gap: 10px 18px; font-size: 0.9rem; }
+.legend span { display: inline-flex; align-items: center; gap: 7px; }
+.sw { width: 12px; height: 12px; border-radius: 3px; display: inline-block; }
+.pitch { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 20px 22px; display: grid; gap: 10px; }
+.pitch strong { font-family: var(--f-display); }
+
+section.ch { display: grid; gap: 18px; scroll-margin-top: 24px; }
+.ch-head { display: grid; gap: 8px; }
+.ch p, .ch li { max-width: 68ch; }
+.ch ul, .ch ol { margin: 0; padding-left: 1.2em; display: grid; gap: 6px; }
+.why { border-left: 3px solid var(--line); padding-left: 14px; color: var(--muted); }
+.why b { color: var(--ink); }
+
+.demo { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 18px; display: grid; gap: 14px; min-width: 0; }
+.demo-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; justify-content: space-between; }
+.demo-bar .label { font-family: var(--f-mono); font-size: 0.75rem; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
+.btns { display: flex; flex-wrap: wrap; gap: 8px; }
+button.b { font: 600 0.9rem var(--f-body); border: 1px solid var(--line); background: var(--sunk); color: var(--ink); border-radius: 7px; padding: 6px 12px; cursor: pointer; }
+button.b:hover { border-color: var(--accent); }
+button.b.primary { background: var(--accent); color: var(--surface); border-color: var(--accent); }
+.caption { min-height: 3.2em; font-size: 0.97rem; background: var(--sunk); border-radius: 8px; padding: 10px 12px; }
+.scroll-x { overflow-x: auto; }
+
+.code { background: var(--sunk); border-radius: 8px; padding: 14px 16px; overflow-x: auto; margin: 0; line-height: 1.5; font-size: 0.82rem; }
+.code .k { color: var(--accent); } .code .s { color: var(--pass); } .code .c { color: var(--muted); } .code .a { color: var(--ai); }
+.files { display: flex; flex-wrap: wrap; gap: 6px; }
+.files code { font-size: 0.78rem; background: var(--surface); border: 1px solid var(--line); }
+.interview { background: var(--det-bg); border-radius: 10px; padding: 14px 16px; display: grid; gap: 4px; }
+.interview .eyebrow { color: var(--accent); }
+
+/* chapter 1: pipeline */
+.pipe svg { width: 100%; min-width: 640px; height: auto; display: block; }
+.pipe .node rect { fill: var(--sunk); stroke: var(--line); stroke-width: 1.5; transition: fill .35s, stroke .35s; }
+.pipe .node text { fill: var(--ink); font: 600 13px var(--f-body); text-anchor: middle; dominant-baseline: middle; }
+.pipe .node .sm { font: 400 10.5px var(--f-mono); fill: var(--muted); }
+.pipe .node.active rect { fill: var(--det-bg); stroke: var(--accent); stroke-width: 2.5; }
+.pipe .node.ai.active rect { fill: var(--ai-bg); stroke: var(--ai); }
+.pipe .node.done rect { fill: var(--pass-bg); stroke: var(--pass); }
+.pipe .node.queued rect { stroke-dasharray: 5 4; stroke: var(--warn); }
+.pipe .edge { stroke: var(--line); stroke-width: 2; fill: none; transition: stroke .35s; }
+.pipe .edge.on { stroke: var(--accent); }
+.pipe .lim { fill: none; stroke: var(--warn); stroke-dasharray: 3 4; stroke-width: 1.5; }
+.pipe .limtext { fill: var(--warn); font: 600 11px var(--f-mono); }
+
+/* chapter 2: crawl */
+.crawl { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.crawl .col { display: grid; gap: 6px; align-content: start; }
+.crawl .col h3 { font-family: var(--f-mono); font-size: 0.72rem; text-transform: uppercase; letter-spacing: .07em; color: var(--muted); }
+.pg { font-family: var(--f-mono); font-size: 0.78rem; border: 1px solid var(--line); border-radius: 6px; padding: 5px 8px; background: var(--sunk); opacity: .35; transition: opacity .3s, background .3s, border-color .3s; overflow-wrap: anywhere; }
+.pg.seen { opacity: 1; background: var(--det-bg); border-color: var(--accent); }
+.pg.skip { opacity: 1; background: var(--warn-bg); border-color: var(--warn); text-decoration: line-through; }
+.pg .why-skip { display: block; text-decoration: none; font-family: var(--f-body); font-size: 0.75rem; color: var(--warn); }
+.pg.cap { opacity: 1; border-style: dashed; }
+
+/* chapter 3 */
+.kinds { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.kind { border-radius: 8px; padding: 12px; display: grid; gap: 6px; align-content: start; font-size: 0.92rem; }
+.kind h3 { font-size: 0.95rem; }
+.kind.hard { background: var(--det-bg); } .kind.soft { background: var(--ai-bg); } .kind.guard { background: var(--warn-bg); }
+.kind ul { padding-left: 1em; gap: 3px; }
+
+/* chapter 4: run path */
+.toggles { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px; }
+.tog { display: grid; gap: 5px; font-size: 0.88rem; }
+.tog > span { color: var(--muted); }
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 7px; overflow: hidden; width: fit-content; }
+.seg label { cursor: pointer; }
+.seg input { position: absolute; opacity: 0; pointer-events: none; }
+.seg span { display: block; padding: 5px 11px; font-size: 0.85rem; font-weight: 600; background: var(--sunk); color: var(--muted); }
+.seg input:checked + span { background: var(--accent); color: var(--surface); }
+.seg input:focus-visible + span { outline: 2px solid var(--accent); outline-offset: -2px; }
+.trail { display: grid; gap: 8px; list-style: none; padding: 0; margin: 0; counter-reset: st; }
+.trail li { display: grid; grid-template-columns: 30px 1fr; gap: 10px; align-items: start; padding: 10px 12px; border-radius: 8px; border: 1px solid var(--line); background: var(--sunk); opacity: 0; transform: translateY(6px); transition: opacity .35s, transform .35s; }
+.trail li.in { opacity: 1; transform: none; }
+.trail li::before { counter-increment: st; content: counter(st); font: 600 0.8rem var(--f-mono); width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; background: var(--surface); border: 1px solid var(--line); }
+.trail li.ai { background: var(--ai-bg); border-color: var(--ai); }
+.trail li.det { background: var(--det-bg); border-color: var(--accent); }
+.trail li.ok { background: var(--pass-bg); border-color: var(--pass); }
+.trail li.bad { background: var(--fail-bg); border-color: var(--fail); }
+.trail b { font-family: var(--f-display); }
+.trail small { display: block; color: var(--muted); font-size: 0.86rem; }
+.facts { display: flex; flex-wrap: wrap; gap: 8px; }
+.pill { font: 600 0.78rem var(--f-mono); padding: 3px 9px; border-radius: 999px; border: 1px solid var(--line); background: var(--sunk); }
+.pill.pass { background: var(--pass-bg); color: var(--pass); border-color: var(--pass); }
+.pill.fail { background: var(--fail-bg); color: var(--fail); border-color: var(--fail); }
+.pill.warn { background: var(--warn-bg); color: var(--warn); border-color: var(--warn); }
+.pill.ai { background: var(--ai-bg); color: var(--ai); border-color: var(--ai); }
+.pill.det { background: var(--det-bg); color: var(--accent); border-color: var(--accent); }
+
+/* chapter 5: settle */
+.lanes { display: grid; gap: 8px; position: relative; }
+.lane { display: grid; grid-template-columns: 130px minmax(0, 1fr); gap: 10px; align-items: center; font-size: 0.85rem; }
+.track { position: relative; height: 22px; background: var(--sunk); border-radius: 5px; overflow: hidden; }
+.seg-on { position: absolute; top: 0; bottom: 0; background: var(--warn); opacity: .75; border-radius: 4px; }
+.quiet-fill { position: absolute; top: 0; bottom: 0; left: 0; width: 0; background: var(--pass); border-radius: 4px; }
+.head { position: absolute; top: -4px; bottom: -4px; width: 2px; background: var(--accent); left: 0; }
+.ticks { display: grid; grid-template-columns: 130px minmax(0, 1fr); gap: 10px; font: 0.72rem var(--f-mono); color: var(--muted); }
+.ticks div:last-child { display: flex; justify-content: space-between; font-variant-numeric: tabular-nums; }
+
+/* chapter 6: judge */
+.verdict { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; padding: 14px; border-radius: 10px; border: 1px solid var(--line); background: var(--sunk); }
+.verdict .big { font: 700 1.3rem var(--f-display); padding: 4px 14px; border-radius: 8px; }
+.verdict.pass .big { background: var(--pass); color: var(--surface); }
+.verdict.fail .big { background: var(--fail); color: var(--surface); }
+.verdict.error .big { background: var(--warn); color: var(--surface); }
+.verdict p { flex: 1 1 260px; font-size: 0.95rem; }
+.checks { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.checks li { display: flex; gap: 10px; align-items: baseline; font-size: 0.9rem; }
+
+/* chapter 8: theme demo */
+.tdemo { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); gap: 16px; }
+.app { background: var(--d-bg); color: var(--d-text); border-radius: 10px; padding: 14px; display: grid; gap: 10px; border: 1px solid var(--line); font-family: var(--f-body); transition: background .3s, color .3s; }
+.app.is-dark { --d-bg: #11151b; --d-surface: #1b222c; --d-text: #e6ebf1; --d-muted: #9aa5b3; --d-primary: #2dd4bf; --d-on-primary: #062420; }
+.app .top { display: flex; justify-content: space-between; align-items: center; font-weight: 700; }
+.app .tt { font-size: 0.8rem; border: 1px solid var(--d-muted); color: var(--d-text); background: transparent; border-radius: var(--d-radius-sm); padding: 2px 8px; cursor: pointer; }
+.app .card { background: var(--d-surface); border-radius: var(--d-radius); padding: 12px; display: grid; gap: 6px; transition: background .3s; position: relative; }
+.app .card p { color: var(--d-muted); font-size: 0.88rem; }
+.app .btn { justify-self: start; background: var(--d-primary); color: var(--d-on-primary); border: 0; border-radius: var(--d-radius-sm); padding: 5px 12px; font-weight: 600; font-size: 0.85rem; }
+.app.bugs .product { border-radius: 7px; }
+.app.bugs .newsletter { background: #ffffff; color: #1b1f24; }
+.app.bugs .newsletter p { color: #5d6673; }
+.app.bugs .newsletter .btn { background: #2f6fe4; color: #ffffff; }
+.app [data-flag]::after { content: attr(data-flag); position: absolute; top: -9px; right: 8px; font: 600 10px var(--f-mono); background: var(--fail); color: var(--surface); padding: 1px 6px; border-radius: 4px; opacity: 0; transition: opacity .3s; }
+.app.audited [data-flag]::after { opacity: 1; }
+.app.audited [data-flag] { outline: 2px dashed var(--fail); outline-offset: 2px; }
+.findings { display: grid; gap: 8px; align-content: start; font-size: 0.86rem; }
+.finding { border: 1px solid var(--line); border-radius: 8px; padding: 9px 11px; background: var(--sunk); display: grid; gap: 3px; }
+.finding .mono { font-size: 0.78rem; overflow-wrap: anywhere; }
+.steps-mini { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 6px; counter-reset: s; }
+.steps-mini div { font-size: 0.8rem; background: var(--sunk); border-radius: 7px; padding: 8px; display: grid; gap: 2px; transition: background .3s, outline-color .3s; outline: 2px solid transparent; }
+.steps-mini div b { font-family: var(--f-display); font-size: 0.85rem; }
+.steps-mini div.on { background: var(--det-bg); outline-color: var(--accent); }
+
+/* chapter 11 */
+.flow { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.flow .box { border: 1px solid var(--line); background: var(--sunk); border-radius: 8px; padding: 8px 12px; font-size: 0.9rem; }
+.flow .arr { color: var(--muted); font-family: var(--f-mono); font-size: 0.78rem; }
+.flow .pkt { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); display: inline-block; animation: hop 1.6s infinite ease-in-out; }
+@keyframes hop { 0%, 100% { transform: translateX(-6px); opacity: .3; } 50% { transform: translateX(6px); opacity: 1; } }
+
+table { border-collapse: collapse; width: 100%; font-size: 0.9rem; }
+th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { font-family: var(--f-mono); font-size: 0.72rem; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); font-weight: 600; }
+td.num { font-variant-numeric: tabular-nums; }
+.days { display: grid; gap: 10px; }
+.day { display: grid; grid-template-columns: 90px minmax(0, 1fr); gap: 12px; padding: 12px 14px; border-radius: 9px; background: var(--surface); border: 1px solid var(--line); }
+.day b { font-family: var(--f-display); }
+.day.now { border-color: var(--accent); background: var(--det-bg); }
+.day.done { opacity: .75; }
+dl.gloss { display: grid; grid-template-columns: minmax(120px, 200px) minmax(0, 1fr); gap: 8px 18px; margin: 0; }
+dl.gloss dt { font-weight: 600; }
+dl.gloss dd { margin: 0; color: var(--muted); }
+footer { color: var(--muted); font-size: 0.85rem; border-top: 1px solid var(--line); padding-top: 16px; }
+
+@media (max-width: 960px) {
+  .shell { grid-template-columns: minmax(0, 1fr); gap: 28px; padding-block: 24px 60px; }
+  .rail { position: static; max-height: none; }
+  .rail ol { grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); }
+}
+@media (max-width: 640px) {
+  body { font-size: 16px; }
+  .crawl, .kinds, .tdemo { grid-template-columns: minmax(0, 1fr); }
+  .steps-mini { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .lane, .ticks { grid-template-columns: 92px minmax(0, 1fr); }
+  dl.gloss { grid-template-columns: minmax(0, 1fr); }
+  dl.gloss dd { margin-bottom: 8px; }
+  .day { grid-template-columns: minmax(0, 1fr); gap: 4px; }
+}
+</style>
+
+<div class="shell">
+  <nav class="rail" aria-label="Chapters">
+    <div class="brand">ai-e2e-agent</div>
+    <div class="sub">Field guide · what we built and why</div>
+    <ol id="toc">
+      <li><a href="#pipeline"><span>01</span><span>The pipeline</span></a></li>
+      <li><a href="#crawl"><span>02</span><span>Crawl</span></a></li>
+      <li><a href="#plan"><span>03</span><span>Plan</span></a></li>
+      <li><a href="#run"><span>04</span><span>Run: agent, replay, heal</span></a></li>
+      <li><a href="#settle"><span>05</span><span>Settle</span></a></li>
+      <li><a href="#judge"><span>06</span><span>The strict judge</span></a></li>
+      <li><a href="#quality"><span>07</span><span>Quality evidence</span></a></li>
+      <li><a href="#theme"><span>08</span><span>Theme conformance</span></a></li>
+      <li><a href="#hints"><span>09</span><span>App hints</span></a></li>
+      <li><a href="#eval"><span>10</span><span>Evaluation</span></a></li>
+      <li><a href="#ui"><span>11</span><span>UI and live view</span></a></li>
+      <li><a href="#libs"><span>12</span><span>Libraries</span></a></li>
+      <li><a href="#lessons"><span>13</span><span>Lessons from real runs</span></a></li>
+      <li><a href="#next"><span>14</span><span>What's next</span></a></li>
+      <li><a href="#glossary"><span>Aa</span><span>Glossary</span></a></li>
+    </ol>
+  </nav>
+
+  <main>
+    <header class="hero">
+      <div class="eyebrow">Study guide · updated Thu 29 Oct 2026</div>
+      <h1>How the tester works, one piece at a time</h1>
+      <p class="lede">Give it a URL. It explores the app, writes tests, drives a real browser with an AI agent, and decides pass or fail only from evidence the agent cannot fake. Tests that pass are replayed later with plain Playwright and no AI at all.</p>
+      <div class="legend" aria-label="Colour legend">
+        <span><i class="sw" style="background:var(--ai)"></i>AI / LLM involved</span>
+        <span><i class="sw" style="background:var(--accent)"></i>Deterministic (Playwright, no LLM)</span>
+        <span><i class="sw" style="background:var(--pass)"></i>Pass</span>
+        <span><i class="sw" style="background:var(--fail)"></i>Fail</span>
+        <span><i class="sw" style="background:var(--warn)"></i>Warning, skipped or waiting</span>
+      </div>
+      <div class="pitch">
+        <strong>The 30-second version</strong>
+        <p>Teams already have Playwright suites, but those run against mock data. This tool tests the real app in real time. The core idea: <b>AI writes and repairs tests, Playwright replays them.</b> And because AI agents happily say "done" when they are not, <b>a separate judge checks the page, URL, network, console and screenshots</b> before anything counts as a pass.</p>
+      </div>
+    </header>
+
+    <!-- 01 -->
+    <section class="ch" id="pipeline">
+      <div class="ch-head"><div class="eyebrow">Chapter 01 · orchestration</div><h2>The pipeline</h2></div>
+      <p>A run is a LangGraph state graph with four nodes: <code>crawl</code> → <code>plan</code> → one <code>runTest</code> branch per test → <code>writeReport</code>. LangGraph's <code>Send</code> creates the parallel branches; each branch appends its result to shared state through a reducer.</p>
+      <p class="why"><b>Why a graph?</b> The steps, the state they share and the fan-out are explicit and drawable (<code>npm run graph</code> emits this diagram from the code). Each node is a plain function, so it is testable on its own.</p>
+      <div class="demo pipe">
+        <div class="demo-bar"><span class="label">Animated · a run with 3 tests, concurrency 2</span>
+          <div class="btns"><button class="b primary" id="pipePlay">Play</button><button class="b" id="pipeStep">Step</button><button class="b" id="pipeReset">Reset</button></div></div>
+        <div class="scroll-x">
+          <svg viewBox="0 0 760 230" role="img" aria-label="Pipeline graph: start, crawl, plan, three runTest branches, writeReport, end">
+            <path class="edge" id="e-s-c" d="M70 115 H100"/>
+            <path class="edge" id="e-c-p" d="M190 115 H220"/>
+            <path class="edge" id="e-p-a" d="M310 115 C335 115 335 45 370 45"/>
+            <path class="edge" id="e-p-b" d="M310 115 H370"/>
+            <path class="edge" id="e-p-c" d="M310 115 C335 115 335 185 370 185"/>
+            <path class="edge" id="e-a-r" d="M500 45 C535 45 535 115 560 115"/>
+            <path class="edge" id="e-b-r" d="M500 115 H560"/>
+            <path class="edge" id="e-c-r" d="M500 185 C535 185 535 115 560 115"/>
+            <path class="edge" id="e-r-e" d="M670 115 H690"/>
+            <rect class="lim" x="356" y="14" width="158" height="204" rx="12"/>
+            <text class="limtext" x="362" y="226">limiter: 2 at a time</text>
+            <g class="node" id="n-start"><rect x="10" y="95" width="60" height="40" rx="20"/><text x="40" y="115">START</text></g>
+            <g class="node" id="n-crawl"><rect x="100" y="90" width="90" height="50" rx="8"/><text x="145" y="108">crawl</text><text class="sm" x="145" y="126">capped BFS</text></g>
+            <g class="node ai" id="n-plan"><rect x="220" y="90" width="90" height="50" rx="8"/><text x="265" y="108">plan</text><text class="sm" x="265" y="126">LLM planner</text></g>
+            <g class="node ai" id="n-a"><rect x="370" y="25" width="130" height="40" rx="8"/><text x="435" y="45">runTest · cart</text></g>
+            <g class="node ai" id="n-b"><rect x="370" y="95" width="130" height="40" rx="8"/><text x="435" y="115">runTest · search</text></g>
+            <g class="node ai" id="n-c"><rect x="370" y="165" width="130" height="40" rx="8"/><text x="435" y="185">runTest · checkout</text></g>
+            <g class="node" id="n-report"><rect x="560" y="90" width="110" height="50" rx="8"/><text x="615" y="108">writeReport</text><text class="sm" x="615" y="126">HTML + JSON</text></g>
+            <g class="node" id="n-end"><rect x="690" y="95" width="60" height="40" rx="20"/><text x="720" y="115">END</text></g>
+          </svg>
+        </div>
+        <p class="caption" id="pipeCap" aria-live="polite">Press Play to watch a run move through the graph.</p>
+      </div>
+      <div class="files"><code>src/core/pipeline.js</code><code>src/util/misc.js · createLimiter</code><code>scripts/graph.js</code><code>tests/pipeline.test.js</code></div>
+      <div class="interview"><div class="eyebrow">Say it in an interview</div><p>"I used LangGraph's <code>Send</code> for the fan-out. I found that <code>maxConcurrency: 1</code> silently drops Send branches, reproduced it in isolation, and capped parallelism with my own limiter inside the branch instead. There's a test for concurrency 1 and 2."</p></div>
+    </section>
+
+    <!-- 02 -->
+    <section class="ch" id="crawl">
+      <div class="ch-head"><div class="eyebrow">Chapter 02 · discovery</div><h2>Crawl</h2></div>
+      <p>Before planning, a small breadth-first crawl visits the app: same origin only, a page cap, and it never clicks links that look destructive (logout, delete). For each page it records the title, headings, buttons, forms, API calls it saw, and any test ids or hints. That site map is what the planner is allowed to talk about.</p>
+      <p class="why"><b>Why?</b> A planner with no map invents URLs and button labels. Early runs failed on guessed paths like <code>/presentation</code>. Now the planner may only use URLs and endpoints the crawl actually saw.</p>
+      <div class="demo">
+        <div class="demo-bar"><span class="label">Animated · BFS with a cap of 6 pages</span>
+          <div class="btns"><button class="b primary" id="crawlPlay">Play</button><button class="b" id="crawlReset">Reset</button></div></div>
+        <div class="crawl" id="crawlGrid">
+          <div class="col"><h3>Depth 0</h3><div class="pg" data-o="1">/</div></div>
+          <div class="col"><h3>Depth 1</h3>
+            <div class="pg" data-o="2">/products</div><div class="pg" data-o="3">/cart</div><div class="pg" data-o="4">/about</div>
+            <div class="pg" data-o="5" data-skip="destructive link">/logout</div>
+            <div class="pg" data-o="6" data-skip="other origin">twitter.com/shop</div></div>
+          <div class="col"><h3>Depth 2</h3>
+            <div class="pg" data-o="7">/products/1</div><div class="pg" data-o="8">/checkout</div>
+            <div class="pg" data-o="9" data-cap="1">/products/2</div><div class="pg" data-o="10" data-cap="1">/products/3</div></div>
+        </div>
+        <p class="caption" id="crawlCap" aria-live="polite">Pages are visited level by level, nearest first.</p>
+      </div>
+      <div class="files"><code>src/crawler/bfsCrawler.js</code><code>src/crawler/noopCrawler.js</code></div>
+    </section>
+
+    <!-- 03 -->
+    <section class="ch" id="plan">
+      <div class="ch-head"><div class="eyebrow">Chapter 03 · test design</div><h2>Plan</h2></div>
+      <p>An LLM turns the site map (plus your one-line description) into test cases. Each test has a plain-English goal and <b>expectations</b>: machine-checkable statements about the end state. The goal is for the agent; the expectations are for the judge. You can also skip the planner: pass one <code>--goal</code>, or a committed suite file.</p>
+      <pre class="code"><span class="c">// one planned test (src/core/types.js → TestCase)</span>
+{
+  <span class="k">"id"</span>: <span class="s">"cart-total"</span>,
+  <span class="k">"title"</span>: <span class="s">"Cart total follows the quantity"</span>,
+  <span class="k">"goal"</span>: <span class="a">"Add the Mug, set quantity to 3, open the cart"</span>,
+  <span class="k">"expectations"</span>: [
+    { <span class="k">"kind"</span>: <span class="s">"url"</span>, <span class="k">"pattern"</span>: <span class="s">"/cart"</span> },
+    { <span class="k">"kind"</span>: <span class="s">"text-visible"</span>, <span class="k">"text"</span>: <span class="s">"Total: $36.00"</span> },
+    { <span class="k">"kind"</span>: <span class="s">"no-console-errors"</span> }
+  ]
+}</pre>
+      <div class="kinds">
+        <div class="kind hard"><h3>Hard (deterministic)</h3><ul><li><code>url</code></li><li><code>text-visible</code></li><li><code>selector-visible</code></li><li><code>api-call</code></li><li><code>download</code></li><li><code>text-appeared</code> (toasts)</li></ul></div>
+        <div class="kind soft"><h3>Soft (AI reads pixels)</h3><ul><li><code>visual</code>: a yes/no question answered from a screenshot timeline</li></ul><p>Used only when nothing deterministic can express the outcome.</p></div>
+        <div class="kind guard"><h3>Guards (regressions)</h3><ul><li><code>no-console-errors</code></li><li><code>no-network-failures</code></li><li><code>web-vitals</code></li><li><code>no-a11y-violations</code></li><li><code>theme-conformance</code></li></ul></div>
+      </div>
+      <p class="why"><b>Rules the planner follows:</b> prefer hard checks; a "change" question must compare before and after; never stack conditions in one question; take the shortest path (use sample content) unless the test is about creating it; only reference URLs, endpoints and test ids the crawl saw.</p>
+      <div class="files"><code>src/planner/llmPlanner.js</code><code>src/planner/suitePlanner.js</code><code>src/planner/cachedPlanner.js</code></div>
+    </section>
+
+    <!-- 04 -->
+    <section class="ch" id="run">
+      <div class="ch-head"><div class="eyebrow">Chapter 04 · the key idea</div><h2>Run: agent, replay, heal</h2></div>
+      <p>The first time a test runs, a Stagehand AI agent drives the browser. If the judge passes it, every action is <b>recorded as JSON steps</b> with stable selectors. Next time those steps are <b>replayed by plain Playwright: zero LLM calls</b>. If a replayed step breaks (the UI changed), the agent takes over from that exact point and the recording is updated. That's a <b>heal</b>, and every heal is logged in the report.</p>
+      <div class="demo">
+        <div class="demo-bar"><span class="label">Interactive · choose a situation, then play</span><div class="btns"><button class="b primary" id="runPlay">Play</button></div></div>
+        <div class="toggles" id="runToggles">
+          <div class="tog"><span>Recording for this test?</span><div class="seg"><label><input type="radio" name="rec" value="no" checked><span>No</span></label><label><input type="radio" name="rec" value="yes"><span>Yes</span></label></div></div>
+          <div class="tog"><span>A replayed step breaks?</span><div class="seg"><label><input type="radio" name="brk" value="no" checked><span>No</span></label><label><input type="radio" name="brk" value="yes"><span>Yes</span></label></div></div>
+          <div class="tog"><span>Healing</span><div class="seg"><label><input type="radio" name="heal" value="on" checked><span>On</span></label><label><input type="radio" name="heal" value="off"><span>Off (CI)</span></label></div></div>
+          <div class="tog"><span>Is the app actually working?</span><div class="seg"><label><input type="radio" name="app" value="ok" checked><span>Yes</span></label><label><input type="radio" name="app" value="bug"><span>Bug</span></label></div></div>
+        </div>
+        <ol class="trail" id="runTrail"></ol>
+        <div class="facts" id="runFacts"></div>
+      </div>
+      <p class="why"><b>Why it matters:</b> AI agents are slow and cost tokens on every run; Playwright is fast, free and repeatable. This gets AI flexibility for authoring and Playwright speed for regression runs. A recording is tied to a fingerprint of the test, so editing the test's goal or expectations forces a fresh recording.</p>
+      <div class="files"><code>src/executor/cachingExecutor.js</code><code>src/executor/agentExecutor.js</code><code>src/executor/replayExecutor.js</code><code>src/executor/steps.js</code><code>src/storage/recordStore.js</code></div>
+      <div class="interview"><div class="eyebrow">Say it in an interview</div><p>"Healing can hide regressions, so a heal never decides the verdict. The agent's outcome is provisional; the judge overwrites it from evidence. With <code>--no-heal</code> a broken step is just a failure, which is what CI wants."</p></div>
+    </section>
+
+    <!-- 05 -->
+    <section class="ch" id="settle">
+      <div class="ch-head"><div class="eyebrow">Chapter 05 · timing</div><h2>Settle: wait until the app goes quiet</h2></div>
+      <p>Real apps keep changing after a click: spinners, streaming AI text, late fetches. Taking evidence too early gives wrong verdicts. <code>settle()</code> polls every 150 ms and only returns once, for a whole quiet window, the URL and visible text length are unchanged, nothing has <code>aria-busy="true"</code>, no fetch/XHR is in flight, and the page isn't empty.</p>
+      <div class="demo">
+        <div class="demo-bar"><span class="label">Animated · before final evidence (quiet window 1 s)</span><div class="btns"><button class="b primary" id="setPlay">Play</button></div></div>
+        <div class="lanes" id="lanes">
+          <div class="lane"><span>Text changing</span><div class="track" data-segs="0,1.2;1.9,2.2"></div></div>
+          <div class="lane"><span>aria-busy</span><div class="track" data-segs="0.3,1.6"></div></div>
+          <div class="lane"><span>API in flight</span><div class="track" data-segs="0.5,1.7;1.95,2.3"></div></div>
+          <div class="lane"><span>Quiet timer</span><div class="track" id="quietTrack"><div class="quiet-fill" id="quietFill"></div></div></div>
+          <div class="ticks"><div></div><div><span>0 s</span><span>1 s</span><span>2 s</span><span>3 s</span><span>4 s</span></div></div>
+        </div>
+        <p class="caption" id="setCap" aria-live="polite">The green bar is the quiet timer. Any activity resets it.</p>
+      </div>
+      <p class="why"><b>Where it's used:</b> after navigation (cap 8 s, quiet 0.5 s), so start screenshots aren't blank; before final evidence (cap 15 s, quiet 1 s); between replay steps. A real run had 6 of 9 start screenshots blank before this existed.</p>
+      <div class="files"><code>src/browser/settle.js</code><code>src/browser/session.js</code></div>
+    </section>
+
+    <!-- 06 -->
+    <section class="ch" id="judge">
+      <div class="ch-head"><div class="eyebrow">Chapter 06 · the heart of it</div><h2>The strict judge</h2></div>
+      <p>The judge is our own code. It reads evidence the harness collected itself: the final URL, the live DOM (through Playwright), network calls, console errors, downloads, toasts and screenshots. Only <code>visual</code> checks call an LLM. Four rules make it strict:</p>
+      <ol>
+        <li><b>Never trust a success claim.</b> The agent saying "done" counts for nothing.</li>
+        <li><b>Vacuity.</b> A check that was already true on the start page proves nothing and isn't counted. If no outcome check is truly earned, the test fails as <i>Inconclusive</i>.</li>
+        <li><b>Asymmetric trust.</b> If the agent says it <i>failed</i> and the only proof of success is an AI reading screenshots, the test fails. Hard evidence still overrides the agent.</li>
+        <li><b>Execution errors are not failures.</b> A crash is <i>error</i>, not <i>fail</i>, so you know whether to blame the app or the harness.</li>
+      </ol>
+      <div class="demo">
+        <div class="demo-bar"><span class="label">Simulator · same rules as evidenceJudge.js</span></div>
+        <div class="toggles" id="jToggles">
+          <div class="tog"><span>Hard check (text "Order placed")</span><div class="seg"><label><input type="radio" name="jh" value="pass" checked><span>Passes</span></label><label><input type="radio" name="jh" value="fail"><span>Fails</span></label><label><input type="radio" name="jh" value="none"><span>None</span></label></div></div>
+          <div class="tog"><span>…was it already true at the start?</span><div class="seg"><label><input type="radio" name="jv" value="no" checked><span>No</span></label><label><input type="radio" name="jv" value="yes"><span>Yes</span></label></div></div>
+          <div class="tog"><span>Visual check (AI reads screenshots)</span><div class="seg"><label><input type="radio" name="js" value="none" checked><span>None</span></label><label><input type="radio" name="js" value="pass"><span>Says yes</span></label><label><input type="radio" name="js" value="fail"><span>Says no</span></label></div></div>
+          <div class="tog"><span>The agent claims</span><div class="seg"><label><input type="radio" name="jc" value="ok" checked><span>Success</span></label><label><input type="radio" name="jc" value="fail"><span>Failure</span></label></div></div>
+          <div class="tog"><span>Console error during the test</span><div class="seg"><label><input type="radio" name="je" value="no" checked><span>No</span></label><label><input type="radio" name="je" value="yes"><span>Yes</span></label></div></div>
+          <div class="tog"><span>Browser crashed</span><div class="seg"><label><input type="radio" name="jx" value="no" checked><span>No</span></label><label><input type="radio" name="jx" value="yes"><span>Yes</span></label></div></div>
+        </div>
+        <div class="verdict" id="jOut" aria-live="polite"><span class="big">PASS</span><p></p></div>
+        <ul class="checks" id="jChecks"></ul>
+      </div>
+      <p class="caption">Try: hard check <i>None</i> + visual <i>Says yes</i> + agent <i>Failure</i>. This is the exact false pass from run 13:19 ("Navigate between slides"), now a fail.</p>
+      <div class="files"><code>src/judge/evidenceJudge.js</code><code>src/core/testRunner.js</code><code>tests/integration/judge.test.js</code></div>
+      <div class="interview"><div class="eyebrow">Say it in an interview</div><p>"A false pass hides a regression; a false fail costs someone a minute of review. So the judge is deliberately asymmetric: it never believes 'I succeeded', but it does believe 'I couldn't' unless deterministic evidence says otherwise."</p></div>
+    </section>
+
+    <!-- 07 -->
+    <section class="ch" id="quality">
+      <div class="ch-head"><div class="eyebrow">Chapter 07 · what a QA engineer would also check</div><h2>Quality evidence</h2></div>
+      <p>Every test also collects quality signals, whatever its goal. A <b>quality gate</b> decides what they do: <code>off</code>, <code>warn</code> (shown as warnings, verdict unchanged) or <code>fail</code>.</p>
+      <div class="scroll-x"><table>
+        <thead><tr><th>Signal</th><th>How it's captured</th><th>Catches</th></tr></thead>
+        <tbody>
+          <tr><td>API calls</td><td>Playwright request/response events, with timing</td><td>Slow endpoints, 5xx, "Subscribed" shown while the API returned 500</td></tr>
+          <tr><td>Console + page errors</td><td>Playwright <code>console</code> / <code>pageerror</code></td><td>Uncaught exceptions</td></tr>
+          <tr><td>Downloads</td><td>Playwright <code>download</code> event, including blob downloads</td><td>Export buttons that do nothing</td></tr>
+          <tr><td>Transient toasts</td><td>A MutationObserver records text that appeared, even if it vanished</td><td>"Saved!" that disappeared before the screenshot</td></tr>
+          <tr><td>Core Web Vitals</td><td><code>web-vitals</code> injected into the page</td><td>LCP, CLS, INP, FCP, TTFB over budget</td></tr>
+          <tr><td>Accessibility</td><td><code>axe-core</code> run in the page</td><td>Missing alt text, contrast, nested interactive</td></tr>
+          <tr><td>Theme conformance</td><td>Chapter 08</td><td>Hard-coded colours, dark-mode leaks</td></tr>
+        </tbody>
+      </table></div>
+      <div class="files"><code>src/browser/collectors.js</code><code>src/browser/session.js · collectEvidence</code><code>src/config/config.js · quality</code></div>
+    </section>
+
+    <!-- 08 -->
+    <section class="ch" id="theme">
+      <div class="ch-head"><div class="eyebrow">Chapter 08 · newest · built Thu 29 Oct night</div><h2>Theme conformance</h2></div>
+      <p>The themes an app ships (light, dark, brand themes) live in its production CSS as custom properties. This audit discovers them from the page itself, switches through each one, and checks that every element actually uses the theme. When something doesn't, it asks Chrome which CSS rule set that value.</p>
+      <div class="demo">
+        <div class="demo-bar"><span class="label">Interactive · a tiny app with a light and dark theme</span>
+          <div class="btns"><button class="b" id="tBugs" aria-pressed="true">Seeded bugs: on</button><button class="b primary" id="tAudit">Run audit</button></div></div>
+        <div class="steps-mini" id="tSteps">
+          <div><b>Discover</b>read CSS variables from the CSSOM</div>
+          <div><b>Switch</b>class, attribute or media emulation</div>
+          <div><b>Probe</b>tag up to 400 elements</div>
+          <div><b>Match</b>colours by CIEDE2000, sizes by scale</div>
+          <div><b>Trace</b>CDP: which rule set it?</div>
+          <div><b>Leaks</b>surfaces that ignore the theme</div>
+        </div>
+        <div class="tdemo">
+          <div class="app bugs" id="tApp">
+            <div class="top"><span>Shop</span><button class="tt" id="tToggle" type="button">Theme</button></div>
+            <div class="card product" data-flag=""><b>Mug</b><p>Stoneware, 350 ml</p><span class="btn">Add to cart</span></div>
+            <div class="card newsletter" data-flag=""><b>Newsletter</b><p>One email a month.</p><span class="btn">Subscribe</span></div>
+          </div>
+          <div class="findings" id="tFind"><p class="caption">Toggle the app's theme, then run the audit.</p></div>
+        </div>
+      </div>
+      <p class="why"><b>How a value is classified:</b> Chrome DevTools Protocol <code>CSS.getMatchedStylesForNode</code> returns the declaration that won. If it uses <code>var(--…)</code>, it's derived from the theme: fine. An author rule without a variable is <b>hard-coded</b>, reported with selector and file:line. No author rule at all means a <b>browser default</b>. Colours count as on-theme within ΔE₀₀ 2.3, the "just noticeable difference".</p>
+      <div class="files"><code>src/theme/discover.js</code><code>src/theme/audit.js</code><code>tests/theme.test.js</code><code>tests/integration/theme.test.js</code></div>
+      <div class="interview"><div class="eyebrow">Say it in an interview</div><p>"The source of truth is the production build itself, not Figma. I don't guess whether a colour is hard-coded from its value; I ask the browser which declaration produced it. So the report says <code>.newsletter button { background: #2f6fe4 }</code>, nearest token <code>--color-primary</code>."</p></div>
+    </section>
+
+    <!-- 09 -->
+    <section class="ch" id="hints">
+      <div class="ch-head"><div class="eyebrow">Chapter 09 · optional contract</div><h2>App hints</h2></div>
+      <p>Nothing is required, but apps that add a few attributes get faster, more exact tests. These are read by the crawler, the agent and the recorder.</p>
+      <pre class="code"><span class="c">// all optional</span>
+&lt;button <span class="k">data-testid</span>=<span class="s">"add-to-cart"</span>&gt;Add&lt;/button&gt;        <span class="c">// stable recorded selector (also data-test, data-cy, data-qa)</span>
+&lt;section <span class="k">aria-busy</span>={loading}&gt;…&lt;/section&gt;                <span class="c">// settle waits for it (a web standard)</span>
+&lt;div <span class="k">data-aie2e-hint</span>=<span class="s">"Hover a slide to see delete"</span>&gt;    <span class="c">// free text for the planner and agent</span>
+&lt;button <span class="k">data-aie2e-reveal</span>=<span class="s">"hover"</span>&gt;Delete&lt;/button&gt;    <span class="c">// marks hover-only controls</span>
+&lt;div <span class="k">data-aie2e-ignore-theme</span>&gt;…&lt;/div&gt;                 <span class="c">// e.g. a user's own image or brand logo</span></pre>
+      <p class="why"><b>Recording with hints:</b> when the agent clicks, the harness looks for a unique test id on the element (or a close ancestor), then a non-generated <code>#id</code>. The recording stores that selector <i>plus</i> the XPath as a fallback, and replay uses whichever appears first. Apps with test ids also give the agent two extra tools: list test ids (hidden ones too) and act on one exactly.</p>
+      <div class="files"><code>src/browser/hints.js</code><code>docs/APP_HINTS.md</code></div>
+    </section>
+
+    <!-- 10 -->
+    <section class="ch" id="eval">
+      <div class="ch-head"><div class="eyebrow">Chapter 10 · proof it works</div><h2>Evaluation: a shop with 10 known bugs</h2></div>
+      <p><code>examples/buggy-shop</code> is a tiny shop where each bug can be switched on by name. <code>npm run eval</code> runs the clean shop several times (false positives? flakiness?), then each bug <b>alone</b>, so a detection is attributed exactly.</p>
+      <div class="facts"><span class="pill pass">10/10 bugs detected</span><span class="pill pass">0 false positives (3 × 7 clean tests)</span><span class="pill pass">0 flaky</span><span class="pill det">committed suite · 0 tokens</span></div>
+      <div class="scroll-x"><table>
+        <thead><tr><th>Seeded bug</th><th>Kind</th><th>Caught by</th></tr></thead>
+        <tbody>
+          <tr><td>"Add to cart" on the Notebook does nothing</td><td>functional</td><td>failed test</td></tr>
+          <tr><td>Cart total ignores quantities</td><td>functional</td><td>failed test</td></tr>
+          <tr><td>"Subscribed" shown although the API returns 500</td><td>functional</td><td>failed test</td></tr>
+          <tr><td>Checkout accepts an empty email</td><td>functional</td><td>failed test</td></tr>
+          <tr><td>Cart page throws a JavaScript error</td><td>error</td><td>3 failed tests</td></tr>
+          <tr><td>Product images have no alt text</td><td>accessibility</td><td>axe warning</td></tr>
+          <tr><td>Search API takes over 3 s</td><td>performance</td><td>slow-API warning</td></tr>
+          <tr><td>Subscribe button hard-codes #2f6fe4</td><td>theme</td><td>theme: hard-coded value</td></tr>
+          <tr><td>Newsletter card stays white in dark mode</td><td>theme</td><td>theme: leak</td></tr>
+          <tr><td>Cards use a 7px radius not on the scale</td><td>theme</td><td>theme: off-scale radius</td></tr>
+        </tbody>
+      </table></div>
+      <p class="why"><b>Be honest about what this proves:</b> it measures the judge and the replay path on a known app. <code>npm run eval -- --mode explore --heal</code> measures the full AI path (planner + agent), which costs tokens and varies run to run.</p>
+      <div class="files"><code>examples/buggy-shop/server.js</code><code>examples/buggy-shop/bugs.json</code><code>examples/buggy-shop/suite.json</code><code>scripts/evaluate.js</code><code>docs/EVALUATION.md</code></div>
+    </section>
+
+    <!-- 11 -->
+    <section class="ch" id="ui">
+      <div class="ch-head"><div class="eyebrow">Chapter 11 · seeing it</div><h2>The UI and live view</h2></div>
+      <p><code>npm run ui</code> starts a local Fastify server and a React app. You start runs, watch the browser live, and inspect each test as a step timeline with screenshots, checks, network, quality, theme and the agent's own claim (shown, never trusted).</p>
+      <div class="demo">
+        <div class="demo-bar"><span class="label">How the live view travels</span></div>
+        <div class="flow">
+          <span class="box">Chromium</span><span class="arr">CDP Page.screencastFrame</span><i class="pkt"></i>
+          <span class="box">Fastify server</span><span class="arr">Server-Sent Events</span><i class="pkt"></i>
+          <span class="box">React UI</span>
+        </div>
+        <p>Frames are only captured while someone is watching. Run events (test started, step finished, verdict) go over the same SSE stream into a reducer.</p>
+      </div>
+      <p class="why"><b>UI stack:</b> React 19, Tailwind v4 with theme tokens as CSS variables (light/dark, no flash on load), Radix UI primitives for selects, tabs, switches and dialogs, sonner for toasts, yet-another-react-lightbox for screenshots. The standalone <code>report.html</code> has the same views with no dependencies.</p>
+      <div class="files"><code>src/server/app.js</code><code>src/server/runManager.js</code><code>ui/src/screens/</code><code>ui/src/components/</code><code>src/reporter/htmlReporter.js</code></div>
+    </section>
+
+    <!-- 12 -->
+    <section class="ch" id="libs">
+      <div class="ch-head"><div class="eyebrow">Chapter 12 · choices</div><h2>Libraries, and why each one</h2></div>
+      <div class="scroll-x"><table>
+        <thead><tr><th>Job</th><th>Library</th><th>Why</th></tr></thead>
+        <tbody>
+          <tr><td>AI browser agent</td><td>Stagehand 3.7.3</td><td>Best JS option with DOM-mode act/observe/agent and step callbacks we can record. Pinned: 3.7.3 can't run claude-haiku-5-5 (thinking-signature error), so the agent uses claude-haiku-4-5.</td></tr>
+          <tr><td>Driver, replay, evidence</td><td>Playwright 1.64</td><td>The standard. Used as a library, not <code>@playwright/test</code>.</td></tr>
+          <tr><td>Orchestration</td><td>LangGraph JS 1.5.3</td><td>StateGraph, Annotation reducers, Send fan-out.</td></tr>
+          <tr><td>Structured LLM calls</td><td>Vercel AI SDK + zod</td><td>Provider-neutral, schema-validated planner and judge output.</td></tr>
+          <tr><td>Accessibility</td><td>axe-core</td><td>The de-facto engine, also inside Lighthouse.</td></tr>
+          <tr><td>Web Vitals</td><td>web-vitals</td><td>Google's reference implementation.</td></tr>
+          <tr><td>Colour science</td><td>culori</td><td>CIEDE2000 colour difference, parsing every CSS colour format.</td></tr>
+          <tr><td>Server</td><td>Fastify</td><td>Small, fast, good SSE story.</td></tr>
+          <tr><td>UI</td><td>React 19, Tailwind v4, Radix UI</td><td>Accessible primitives, theme tokens as CSS variables.</td></tr>
+          <tr><td>Tests</td><td>Vitest</td><td>80 tests: unit plus real-browser integration.</td></tr>
+        </tbody>
+      </table></div>
+      <p class="why"><b>Language:</b> JavaScript (ESM) with JSDoc types checked by <code>tsc</code>. You get type safety with no build step.</p>
+    </section>
+
+    <!-- 13 -->
+    <section class="ch" id="lessons">
+      <div class="ch-head"><div class="eyebrow">Chapter 13 · the honest history</div><h2>Lessons from real runs</h2></div>
+      <p>Most rules in the judge exist because a real run got it wrong first. The full log, with evidence, is <code>docs/IMPROVEMENTS.md</code>.</p>
+      <div class="scroll-x"><table>
+        <thead><tr><th>What we saw</th><th>What changed</th></tr></thead>
+        <tbody>
+          <tr><td>"text <i>edit</i> visible" passed, but it was on the page before the agent did anything</td><td>Vacuity: baseline before acting</td></tr>
+          <tr><td>"Navigate between slides" passed although the agent said it failed</td><td>Visual checks see a timeline; asymmetric trust</td></tr>
+          <tr><td>"Customize theme" failed although the theme changed</td><td>Before/after images; one question per check</td></tr>
+          <tr><td>6 of 9 start screenshots were blank</td><td><code>settle()</code> after load; empty page never counts as settled</td></tr>
+          <tr><td>A heal was labelled "healed" because the agent said so</td><td>The judge overwrites every heal outcome</td></tr>
+          <tr><td>1.04M tokens per run, mostly regenerating a deck per test</td><td>Shortest-path rule for planner and agent</td></tr>
+          <tr><td>Planner guessed URLs like <code>/presentation</code></td><td>Grounding: only URLs/endpoints from the crawl</td></tr>
+          <tr><td>LangGraph <code>maxConcurrency: 1</code> dropped branches</td><td>Own limiter + regression test</td></tr>
+          <tr><td>The judge caught a bug in my own demo shop (scripts ran before helpers)</td><td>Fixed in the app, not the tester</td></tr>
+        </tbody>
+      </table></div>
+    </section>
+
+    <!-- 14 -->
+    <section class="ch" id="next">
+      <div class="ch-head"><div class="eyebrow">Chapter 14 · plan to Mon 2 Nov</div><h2>What's next</h2></div>
+      <div class="days">
+        <div class="day done"><b>Thu</b><span>Agent loop, judge, planner, replay/heal, crawler, quality evidence, live view, UI, LangGraph, suites, evaluation, theme conformance v1. <i>Done.</i></span></div>
+        <div class="day now"><b>Fri</b><span>Theme audit on every state the agent reaches (not only the end) and cross-page consistency; text checks ignore hidden copies; first real run on the AI Presentation Builder in light and dark; fix what it teaches us.</span></div>
+        <div class="day"><b>Sat</b><span>Visual baselines per theme (pixel diff, <code>data-aie2e-mask</code>, approve flow; AI triage if time); test case manager in the UI; login flows (credentials + saved session).</span></div>
+        <div class="day"><b>Sun</b><span>Typed attribute contract (<code>.d.ts</code> for JSX); GitHub Action; a run on TodoMVC; README.</span></div>
+        <div class="day"><b>Mon</b><span>Final evaluation runs, demo GIF. Nothing new.</span></div>
+      </div>
+      <p class="why"><b>Cut order if behind:</b> Figma/reference-site comparison → Playwright spec export → MCP server → AI diff triage. <b>Never cut:</b> strict judge, record/replay/heal, live view, theme conformance v1, evaluation, honest limits.</p>
+    </section>
+
+    <section class="ch" id="glossary">
+      <div class="ch-head"><div class="eyebrow">Reference</div><h2>Glossary</h2></div>
+      <dl class="gloss">
+        <dt>Expectation</dt><dd>A machine-checkable statement about the end state (URL, text, API call…). The judge's input.</dd>
+        <dt>Vacuous check</dt><dd>A check that already passed on the start page, so it proves nothing about the test.</dd>
+        <dt>Baseline</dt><dd>Snapshot of the page before the agent acts: text, URL, request count.</dd>
+        <dt>Settle</dt><dd>Waiting until URL, text, aria-busy and in-flight requests are all quiet for a window.</dd>
+        <dt>Recording</dt><dd>The JSON steps of a passed run, replayed by Playwright with no LLM.</dd>
+        <dt>Fingerprint</dt><dd>Hash of a test's definition. If the test changes, its old recording is ignored.</dd>
+        <dt>Heal</dt><dd>The agent finishing a test after a replayed step broke; logged and judged like any run.</dd>
+        <dt>Trace</dt><dd>The run log: every agent or replay step with the screenshot taken after it.</dd>
+        <dt>Quality gate</dt><dd><code>off</code> / <code>warn</code> / <code>fail</code>: what quality signals do to the verdict.</dd>
+        <dt>Advisory check</dt><dd>A check shown as a warning under gate <code>warn</code>; it never changes the verdict.</dd>
+        <dt>Send (LangGraph)</dt><dd>Returns a list of branches to run in parallel, each with its own input.</dd>
+        <dt>Reducer</dt><dd>How parallel branches merge into shared state; here, appending results.</dd>
+        <dt>CDP</dt><dd>Chrome DevTools Protocol. Used for the screencast and for finding which CSS rule set a value.</dd>
+        <dt>CSSOM</dt><dd>The browser's object model of loaded stylesheets; where themes are discovered.</dd>
+        <dt>CIEDE2000 / JND</dt><dd>A perceptual colour-difference formula; ΔE₀₀ ≤ 2.3 is about the smallest difference people notice.</dd>
+      </dl>
+    </section>
+
+    <footer>This guide grows with the project: each build session adds or updates a chapter here and in <code>docs/STUDY_GUIDE.md</code>.</footer>
+  </main>
+</div>
+
+<script>
+(() => {
+  const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const $ = (s, r = document) => r.querySelector(s);
+  const $$ = (s, r = document) => [...r.querySelectorAll(s)];
+  const wait = (ms) => new Promise((r) => setTimeout(r, reduce ? 0 : ms));
+
+  /* ---------- 01 pipeline ---------- */
+  const P = [
+    { nodes: { start: 'active' }, edges: [], cap: 'START: you give a URL and, optionally, a one-line description of the app.' },
+    { nodes: { start: 'done', crawl: 'active' }, edges: ['s-c'], cap: 'crawl: a capped breadth-first crawl of same-origin pages builds the site map.' },
+    { nodes: { start: 'done', crawl: 'done', plan: 'active' }, edges: ['s-c', 'c-p'], cap: 'plan: an LLM writes test cases from the site map. Only URLs, endpoints and test ids the crawl saw are allowed.' },
+    { nodes: { start: 'done', crawl: 'done', plan: 'done', a: 'active', b: 'active', c: 'queued' }, edges: ['s-c', 'c-p', 'p-a', 'p-b', 'p-c'], cap: 'Send creates one runTest branch per test. The limiter lets 2 run at once; "checkout" waits.' },
+    { nodes: { start: 'done', crawl: 'done', plan: 'done', a: 'done', b: 'active', c: 'active' }, edges: ['s-c', 'c-p', 'p-a', 'p-b', 'p-c', 'a-r'], cap: '"cart" finished and its result was appended through the reducer, so "checkout" gets the free slot.' },
+    { nodes: { start: 'done', crawl: 'done', plan: 'done', a: 'done', b: 'done', c: 'done' }, edges: ['s-c', 'c-p', 'p-a', 'p-b', 'p-c', 'a-r', 'b-r', 'c-r'], cap: 'All branches done. Results arrive in finishing order; the report re-sorts them into plan order.' },
+    { nodes: { start: 'done', crawl: 'done', plan: 'done', a: 'done', b: 'done', c: 'done', report: 'active' }, edges: ['s-c', 'c-p', 'p-a', 'p-b', 'p-c', 'a-r', 'b-r', 'c-r'], cap: 'writeReport: a self-contained report.html plus report.json, with a summary and token costs.' },
+    { nodes: { start: 'done', crawl: 'done', plan: 'done', a: 'done', b: 'done', c: 'done', report: 'done', end: 'done' }, edges: ['s-c', 'c-p', 'p-a', 'p-b', 'p-c', 'a-r', 'b-r', 'c-r', 'r-e'], cap: 'END. Exit code 0 if all passed, 1 if a test failed, 2 on an execution error.' },
+  ];
+  let pi = -1, pTimer = 0;
+  const pShow = (i) => {
+    pi = i;
+    $$('.pipe .node').forEach((n) => n.classList.remove('active', 'done', 'queued'));
+    $$('.pipe .edge').forEach((e) => e.classList.remove('on'));
+    if (i < 0) { $('#pipeCap').textContent = 'Press Play to watch a run move through the graph.'; return; }
+    const s = P[i];
+    for (const [k, v] of Object.entries(s.nodes)) $('#n-' + k).classList.add(v);
+    s.edges.forEach((e) => $('#e-' + e).classList.add('on'));
+    $('#pipeCap').textContent = s.cap;
+  };
+  const pStop = () => { clearInterval(pTimer); pTimer = 0; $('#pipePlay').textContent = 'Play'; };
+  $('#pipePlay').onclick = () => {
+    if (pTimer) return pStop();
+    if (pi >= P.length - 1) pShow(-1);
+    if (reduce) return pShow(P.length - 1);
+    $('#pipePlay').textContent = 'Pause';
+    pShow(pi + 1);
+    pTimer = setInterval(() => { if (pi >= P.length - 1) return pStop(); pShow(pi + 1); }, 1900);
+  };
+  $('#pipeStep').onclick = () => { pStop(); pShow(pi >= P.length - 1 ? 0 : pi + 1); };
+  $('#pipeReset').onclick = () => { pStop(); pShow(-1); };
+
+  /* ---------- 02 crawl ---------- */
+  let crawlRun = 0;
+  const crawlReset = () => { crawlRun++; $$('#crawlGrid .pg').forEach((p) => { p.className = 'pg'; p.querySelector('.why-skip')?.remove(); }); $('#crawlCap').textContent = 'Pages are visited level by level, nearest first.'; };
+  $('#crawlReset').onclick = crawlReset;
+  $('#crawlPlay').onclick = async () => {
+    crawlReset(); const me = crawlRun; let visited = 0;
+    const pages = $$('#crawlGrid .pg').sort((a, b) => a.dataset.o - b.dataset.o);
+    for (const p of pages) {
+      await wait(550); if (me !== crawlRun) return;
+      const tag = (t) => { const s = document.createElement('span'); s.className = 'why-skip'; s.textContent = t; p.append(s); };
+      if (p.dataset.skip) { p.classList.add('skip'); tag('skipped: ' + p.dataset.skip); $('#crawlCap').textContent = `Skipped ${p.firstChild.textContent}: ${p.dataset.skip}.`; continue; }
+      if (visited >= 6) { p.classList.add('cap'); tag('not visited: cap reached'); $('#crawlCap').textContent = 'Page cap reached. The rest stay unvisited, which keeps crawling fast on big sites.'; continue; }
+      visited++; p.classList.add('seen'); $('#crawlCap').textContent = `Visited ${p.firstChild.textContent} (${visited}/6): title, headings, buttons, forms, API calls, test ids.`;
+    }
+  };
+
+  /* ---------- 04 run path ---------- */
+  const val = (name) => $(`input[name="${name}"]:checked`).value;
+  const runSteps = () => {
+    const rec = val('rec') === 'yes', brk = val('brk') === 'yes', heal = val('heal') === 'on', ok = val('app') === 'ok';
+    const s = [], facts = [];
+    let llm = false;
+    if (!rec) {
+      s.push(['ai', 'AI agent drives the browser', 'Stagehand reads the page and acts step by step; every action and screenshot is traced.']); llm = true;
+    } else {
+      s.push(['det', 'Replay the recording with Playwright', 'Stored selectors, then the XPath fallback. No LLM calls.']);
+      if (brk) {
+        if (heal) { s.push(['ai', 'A step breaks, so the agent heals', 'The agent continues from the current page with the completed steps as context. The heal is logged.']); llm = true; }
+        else s.push(['bad', 'A step breaks: marked as a failure', 'Healing is off, so there is no agent fallback. Deterministic, which suits CI.']);
+      }
+    }
+    const brokeNoHeal = rec && brk && !heal;
+    s.push(['det', 'Strict judge collects evidence', 'Settle, then URL, DOM, network, console, downloads, screenshots. The agent\'s claim is not evidence.']);
+    const pass = ok && !brokeNoHeal;
+    s.push(pass ? ['ok', 'Verdict: PASS', 'Every outcome check earned (not vacuous), no guard failed.'] : ['bad', 'Verdict: FAIL', ok ? 'The replay could not finish: "replay step N broke".' : 'The evidence shows the bug, whatever the agent said.']);
+    if (pass && !rec) s.push(['det', 'Save the recording', 'Next run replays it with zero tokens.']);
+    if (pass && rec && brk && heal) s.push(['det', 'Update the recording', 'The healed steps replace the broken ones; the report lists the heal.']);
+    facts.push(llm ? ['ai', 'LLM used'] : ['det', '0 LLM tokens']);
+    facts.push(pass ? ['pass', 'pass'] : ['fail', 'fail']);
+    if (rec && brk && heal) facts.push(['warn', 'heal logged']);
+    if (!ok && rec && brk && heal) facts.push(['warn', 'heal did not hide the bug']);
+    return { s, facts };
+  };
+  let runId = 0;
+  const runRender = async (animate) => {
+    const me = ++runId; const { s, facts } = runSteps();
+    const ol = $('#runTrail'); ol.innerHTML = ''; $('#runFacts').innerHTML = '';
+    for (const [cls, title, body] of s) {
+      const li = document.createElement('li'); li.className = cls;
+      li.innerHTML = `<div><b></b><small></small></div>`; li.querySelector('b').textContent = title; li.querySelector('small').textContent = body;
+      ol.append(li);
+      if (animate) { await wait(450); if (me !== runId) return; }
+      requestAnimationFrame(() => li.classList.add('in'));
+    }
+    facts.forEach(([c, t]) => { const p = document.createElement('span'); p.className = 'pill ' + c; p.textContent = t; $('#runFacts').append(p); });
+  };
+  $$('#runToggles input').forEach((i) => i.addEventListener('change', () => runRender(false)));
+  $('#runPlay').onclick = () => runRender(true);
+  runRender(false);
+
+  /* ---------- 05 settle ---------- */
+  const TOTAL = 4, QUIET = 1;
+  const lanes = $$('#lanes .track[data-segs]').map((t) => {
+    const segs = t.dataset.segs.split(';').map((p) => p.split(',').map(Number));
+    segs.forEach(([a, b]) => { const d = document.createElement('div'); d.className = 'seg-on'; d.style.left = (a / TOTAL * 100) + '%'; d.style.width = ((b - a) / TOTAL * 100) + '%'; t.append(d); });
+    return segs;
+  });
+  const heads = $$('#lanes .track').map((t) => { const h = document.createElement('div'); h.className = 'head'; t.append(h); return h; });
+  const activeAt = (x) => lanes.some((segs) => segs.some(([a, b]) => x >= a && x < b));
+  let settledAt = null; { let since = 0; for (let x = 0; x <= TOTAL; x += 0.01) { if (activeAt(x)) since = x + 0.01; else if (x - since >= QUIET) { settledAt = Math.round(x * 10) / 10; break; } } }
+  const setDraw = (x) => {
+    heads.forEach((h) => (h.style.left = (x / TOTAL * 100) + '%'));
+    let since = 0; for (let y = 0; y <= x; y += 0.01) if (activeAt(y)) since = y + 0.01;
+    const fill = $('#quietFill'); fill.style.left = (Math.min(since, x) / TOTAL * 100) + '%'; fill.style.width = (Math.max(0, x - since) / TOTAL * 100) + '%';
+    const cap = $('#setCap');
+    if (settledAt !== null && x >= settledAt) cap.textContent = `Settled at ${settledAt.toFixed(1)} s: nothing moved for a full second. Now the judge collects evidence.`;
+    else if (activeAt(x)) cap.textContent = `${x.toFixed(1)} s: still moving. The quiet timer resets.`;
+    else cap.textContent = `${x.toFixed(1)} s: quiet for ${(x - since).toFixed(1)} s so far…`;
+  };
+  setDraw(0);
+  let setRaf = 0;
+  $('#setPlay').onclick = () => {
+    cancelAnimationFrame(setRaf);
+    const end = settledAt ?? TOTAL;
+    if (reduce) return setDraw(end);
+    const t0 = performance.now();
+    const tick = (now) => { const x = Math.min(end, (now - t0) / 1000); setDraw(x); if (x < end) setRaf = requestAnimationFrame(tick); };
+    setRaf = requestAnimationFrame(tick);
+  };
+
+  /* ---------- 06 judge (mirrors src/judge/evidenceJudge.js) ---------- */
+  const judge = () => {
+    const h = val('jh'), vac = val('jv') === 'yes', s = val('js'), claim = val('jc'), cerr = val('je') === 'yes', crash = val('jx') === 'yes';
+    const checks = [];
+    if (h !== 'none') checks.push({ hard: true, outcome: true, passed: h === 'pass', vacuous: h === 'pass' && vac, label: 'text-visible "Order placed"' });
+    if (s !== 'none') checks.push({ hard: false, outcome: true, passed: s === 'pass', vacuous: false, label: 'visual: "is the order confirmation shown?"' });
+    checks.push({ hard: false, outcome: false, passed: !cerr, vacuous: false, label: 'no-console-errors (guard)' });
+    const outcome = checks.filter((c) => c.outcome);
+    const failed = checks.filter((c) => !c.passed);
+    const inconclusive = outcome.length > 0 && !outcome.some((c) => c.passed && !c.vacuous);
+    let status = failed.length || inconclusive ? 'fail' : 'pass';
+    let reason = failed.length ? 'Failed: ' + failed.map((c) => c.label).join('; ')
+      : inconclusive ? 'Inconclusive: every outcome expectation was already true on the start page, so nothing shows the goal was achieved.'
+      : `${checks.length} check(s) passed.`;
+    if (!outcome.length && status === 'pass') reason += ' Warning: no outcome expectation, so a pass only means "no errors".';
+    if (status === 'pass' && claim === 'fail' && !checks.some((c) => c.hard && c.passed && !c.vacuous)) {
+      status = 'fail'; reason = 'The agent reported it could not complete the goal, and the only evidence of success is an AI reading of screenshots. Treated as a failure.';
+    }
+    if (status === 'pass' && claim === 'fail') reason += ' The agent said it failed, but hard evidence shows the goal was reached, so the hard evidence wins.';
+    if (crash) { status = 'error'; reason = 'Execution error: the browser crashed. This is the harness, not a verdict on the app.'; }
+    const out = $('#jOut'); out.className = 'verdict ' + status; out.querySelector('.big').textContent = status.toUpperCase(); out.querySelector('p').textContent = reason;
+    const ul = $('#jChecks'); ul.innerHTML = '';
+    checks.forEach((c) => {
+      const li = document.createElement('li'); const p = document.createElement('span');
+      p.className = 'pill ' + (c.vacuous ? 'warn' : c.passed ? 'pass' : 'fail'); p.textContent = c.vacuous ? 'not counted' : c.passed ? 'passed' : 'failed';
+      const t = document.createElement('span'); t.textContent = c.label + (c.vacuous ? ' (already true before the agent acted)' : '') + (c.hard ? '' : c.outcome ? ' · AI' : '');
+      li.append(p, t); ul.append(li);
+    });
+    const cl = document.createElement('li'); const cp = document.createElement('span'); cp.className = 'pill ai'; cp.textContent = 'shown only';
+    const ct = document.createElement('span'); ct.textContent = `agent claim: "${claim === 'ok' ? 'I completed the goal' : 'I could not complete it'}" (never proof of success)`; cl.append(cp, ct); ul.append(cl);
+  };
+  $$('#jToggles input').forEach((i) => i.addEventListener('change', judge));
+  judge();
+
+  /* ---------- 08 theme ---------- */
+  const app = $('#tApp');
+  $('#tToggle').onclick = () => { app.classList.toggle('is-dark'); if (app.classList.contains('audited')) themeFindings(); };
+  $('#tBugs').onclick = (e) => {
+    const on = app.classList.toggle('bugs'); e.currentTarget.textContent = 'Seeded bugs: ' + (on ? 'on' : 'off'); e.currentTarget.setAttribute('aria-pressed', String(on));
+    if (app.classList.contains('audited')) themeFindings();
+  };
+  const FIND = [
+    { sel: '.product', flag: 'radius', both: true, title: 'Off-scale radius', body: '7px in .product { border-radius: 7px } · nearest --radius-sm (4px)', where: 'hard-coded' },
+    { sel: '.newsletter .btn', flag: 'colour', both: true, title: 'Hard-coded colour', body: 'background #2f6fe4 in .newsletter button · nearest --color-primary', where: 'hard-coded' },
+    { sel: '.newsletter', flag: 'leak', both: false, title: 'Theme leak (dark only)', body: '.newsletter stays #ffffff while the page background changes', where: 'leak' },
+  ];
+  const themeFindings = () => {
+    const dark = app.classList.contains('is-dark'), bugs = app.classList.contains('bugs');
+    $$('[data-flag]', app).forEach((n) => n.setAttribute('data-flag', ''));
+    $$('[data-flag]', app).forEach((n) => n.removeAttribute('data-flag'));
+    const box = $('#tFind'); box.innerHTML = '';
+    const list = bugs ? FIND.filter((f) => f.both || dark) : [];
+    const head = document.createElement('div'); head.className = 'facts';
+    const score = list.length ? 'pill fail' : 'pill pass';
+    head.innerHTML = `<span class="${score}"></span><span class="pill det"></span>`;
+    head.children[0].textContent = list.length ? `${dark ? 'dark' : 'light'}: ${list.length} finding(s)` : `${dark ? 'dark' : 'light'}: 100% on-theme`;
+    head.children[1].textContent = 'themes found: light, dark (.dark)';
+    box.append(head);
+    list.forEach((f) => {
+      const el = $(f.sel, app); el.setAttribute('data-flag', f.flag); if (getComputedStyle(el).position === 'static') el.style.position = 'relative';
+      const d = document.createElement('div'); d.className = 'finding';
+      d.innerHTML = '<b></b><span class="mono"></span><small></small>';
+      d.querySelector('b').textContent = f.title; d.querySelector('.mono').textContent = f.body;
+      d.querySelector('small').textContent = f.where === 'leak' ? 'Found by comparing the same surface across themes.' : 'Chrome says the winning declaration has no var(): hard-coded.';
+      box.append(d);
+    });
+    if (!list.length) { const p = document.createElement('p'); p.textContent = bugs ? 'No findings in this theme.' : 'Every value traces back to a var(--…) in both themes.'; box.append(p); }
+  };
+  $('#tAudit').onclick = async () => {
+    const steps = $$('#tSteps div');
+    app.classList.remove('audited');
+    for (const s of steps) { steps.forEach((x) => x.classList.remove('on')); s.classList.add('on'); await wait(380); }
+    steps.forEach((x) => x.classList.remove('on'));
+    app.classList.add('audited'); themeFindings();
+  };
+
+  /* ---------- rail highlight ---------- */
+  const links = $$('#toc a');
+  const io = new IntersectionObserver((es) => es.forEach((e) => { if (e.isIntersecting) links.forEach((a) => a.classList.toggle('on', a.getAttribute('href') === '#' + e.target.id)); }), { rootMargin: '-30% 0px -60% 0px' });
+  $$('section.ch').forEach((s) => io.observe(s));
+})();
+</script>

@@ -1,0 +1,57 @@
+{
+  "app": "buggy-shop",
+  "description": "A small shop: browse products, add them to the cart, change quantities, subscribe to the newsletter, check out.",
+  "bugs": [
+    {
+      "id": "dead-button",
+      "title": "\"Add to cart\" on the Notebook does nothing",
+      "kind": "functional"
+    },
+    {
+      "id": "wrong-total",
+      "title": "Cart total ignores quantities",
+      "kind": "functional"
+    },
+    {
+      "id": "fake-subscribe",
+      "title": "Newsletter shows \"Subscribed\" although the API returns 500",
+      "kind": "functional"
+    },
+    {
+      "id": "no-validation",
+      "title": "Checkout accepts an empty email and places the order",
+      "kind": "functional"
+    },
+    {
+      "id": "console-error",
+      "title": "Cart page throws a JavaScript error on load",
+      "kind": "error"
+    },
+    {
+      "id": "missing-alt",
+      "title": "Product images have no alt text",
+      "kind": "accessibility"
+    },
+    {
+      "id": "slow-search",
+      "title": "Search API takes over 3 seconds",
+      "kind": "performance"
+    },
+    {
+      "id": "hardcoded-color",
+      "title": "Subscribe button uses a hard-coded blue (#2f6fe4) instead of the primary token",
+      "kind": "theme"
+    },
+    {
+      "id": "dark-leak",
+      "title": "Newsletter card stays white in dark mode",
+      "kind": "theme"
+    },
+    {
+      "id": "off-scale-radius",
+      "title": "Product cards use a 7px radius that is not on the theme scale",
+      "kind": "theme"
+    }
+  ],
+  "howDetectionIsMeasured": "Each bug is switched on alone. It counts as detected when at least one test that passes on the clean app fails, or a new quality warning appears. Failures on the clean app are false positives."
+}

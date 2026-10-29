@@ -1,0 +1,206 @@
+import path from 'node:path';
+import { apiKeyEnvFor, loadConfig } from '../config/config.js';
+import { BfsCrawler } from '../crawler/bfsCrawler.js';
+import { NoopCrawler } from '../crawler/noopCrawler.js';
+import { buildPipeline } from '../core/pipeline.js';
+import { TestRunner } from '../core/testRunner.js';
+import { RunEvents } from '../events/runEvents.js';
+import { AgentExecutor } from '../executor/agentExecutor.js';
+import { CachingExecutor } from '../executor/cachingExecutor.js';
+import { ReplayExecutor } from '../executor/replayExecutor.js';
+import { EvidenceJudge } from '../judge/evidenceJudge.js';
+import { AiSdkLlm } from '../llm/aiSdkLlm.js';
+import { CachedPlanner } from '../planner/cachedPlanner.js';
+import { LlmPlanner } from '../planner/llmPlanner.js';
+import { StaticPlanner } from '../planner/staticPlanner.js';
+import { SeededRecordStore, SuitePlanner, loadSuite } from '../planner/suitePlanner.js';
+import { CompositeReporter } from '../reporter/compositeReporter.js';
+import { HtmlReporter } from '../reporter/htmlReporter.js';
+import { JsonReporter } from '../reporter/jsonReporter.js';
+import { RunArtifacts } from '../storage/artifacts.js';
+import { FileRecordStore } from '../storage/recordStore.js';
+import { createLogger } from '../util/logger.js';
+import { newRunId } from '../util/misc.js';
+
+/**
+ * @typedef {object} RunOptions  Everything a run needs; the CLI and the UI server both build this.
+ * @property {string} url
+ * @property {string} [description]
+ * @property {string} [goal]               test exactly this flow (skips the AI planner)
+ * @property {string} [expectUrl]
+ * @property {string[]} [expectText]
+ * @property {string} [model]
+ * @property {boolean} [headed]            show a real browser window
+ * @property {number} [maxSteps]
+ * @property {number} [maxTests]
+ * @property {number} [maxPages]
+ * @property {number} [concurrency]
+ * @property {string} [outDir]
+ * @property {boolean} [verbose]
+ * @property {boolean} [plan]              false = no AI planner (smoke test only)
+ * @property {boolean} [crawl]             false = skip crawling
+ * @property {boolean} [cache]             false = always use the agent (no replay, no recording)
+ * @property {boolean} [rerecord]
+ * @property {boolean} [replan]
+ * @property {string} [suite]            path to a committed test suite (JSON); replaces planning
+ * @property {boolean} [heal]             false = a broken replay is a plain failure, never handed to the agent
+ * @property {'off' | 'warn' | 'fail'} [quality]  Web Vitals / accessibility gate (default: warn = advisory)
+ * @property {string} [runId]              pre-generated id (the server needs it before the run starts)
+ */
+
+/**
+ * Whether this run will call an LLM, and which API key variable it then needs.
+ * Lets callers fail fast with a clear message instead of halfway through a run.
+ * @param {RunOptions} o
+ */
+export function llmRequirement(o) {
+  const model = o.model ?? loadConfig().model;
+  // The AI planner needs a model; so does an agent run for an explicit goal.
+  // A suite may run entirely from its recorded steps; if a test needs the agent, that test reports it.
+  const needed = o.suite ? false : (!o.goal && o.plan !== false) || !!o.goal;
+  const keyVar = apiKeyEnvFor(model);
+  return { needed, model, keyVar, keyPresent: keyVar ? !!process.env[keyVar] : true };
+}
+
+/**
+ * Run the whole pipeline once. Shared by the CLI and the UI server.
+ * @param {RunOptions} o
+ * @param {{ events?: RunEvents, signal?: AbortSignal }} [hooks]
+ * @returns {Promise<{ runId: string, report: import('../core/types.js').RunReport }>}
+ */
+export async function startRun(o, { events = new RunEvents(), signal } = {}) {
+  const config = loadConfig({
+    model: o.model,
+    headless: o.headed ? false : undefined,
+    maxSteps: o.maxSteps,
+    maxTests: o.maxTests,
+    concurrency: o.concurrency,
+    outDir: o.outDir,
+    logLevel: o.verbose ? 'debug' : undefined,
+    crawl: o.maxPages ? { maxPages: o.maxPages, maxDepth: 2 } : undefined,
+    quality: o.quality ? { gate: o.quality } : undefined,
+  });
+  const logger = createLogger(config.logLevel, '', (e) =>
+    events.emit('log', { level: e.level, scope: e.scope, message: e.message }),
+  );
+  const runId = o.runId ?? newRunId();
+  const artifacts = new RunArtifacts(config.outDir, runId);
+  await artifacts.init();
+
+  // Lazy: the provider/key is only resolved on the first LLM call, so smoke runs need no key.
+  // Planner and judge may use stronger models than the browser agent (see config.plannerModel).
+  const overhead = { inputTokens: 0, outputTokens: 0 };
+  const meter = (/** @type {{ inputTokens: number, outputTokens: number }} */ u) => {
+    overhead.inputTokens += u.inputTokens;
+    overhead.outputTokens += u.outputTokens;
+  };
+  const llm = lazyLlm(config.plannerModel ?? config.model, meter);
+  const judgeLlm = lazyLlm(config.judgeModel ?? config.model, meter);
+  const suite = o.suite ? await loadSuite(o.suite) : undefined;
+  const suitePlanner = suite ? new SuitePlanner(suite) : undefined;
+  const useAiPlanner = !suite && !o.goal && o.plan !== false;
+  const cache = o.cache !== false;
+  const heal = o.heal !== false;
+  const planner = suitePlanner
+    ? suitePlanner
+    : useAiPlanner
+      ? new CachedPlanner(
+          new LlmPlanner(llm, { maxTests: config.maxTests }, logger),
+          path.join(config.outDir, 'plans'),
+          {
+            replan: !!o.replan || !cache,
+            key: `${config.plannerModel ?? config.model}|${config.maxTests}`,
+          },
+          logger,
+        )
+      : new StaticPlanner();
+  const crawler =
+    useAiPlanner && o.crawl !== false ? new BfsCrawler(config, logger) : new NoopCrawler();
+
+  const agent = new AgentExecutor(config);
+  const fileStore = new FileRecordStore(path.join(config.outDir, 'recordings'));
+  const recordStore = suitePlanner
+    ? new SeededRecordStore(fileStore, suitePlanner.seeds)
+    : fileStore;
+  const pipeline = buildPipeline({
+    config,
+    logger,
+    events,
+    overheadUsage: () => ({ ...overhead }),
+    crawler,
+    planner,
+    reporter: new CompositeReporter([
+      new JsonReporter(artifacts, logger),
+      new HtmlReporter(artifacts, logger),
+    ]),
+    runner: new TestRunner({
+      config,
+      logger,
+      artifacts,
+      events,
+      signal,
+      executor: cache
+        ? new CachingExecutor({
+            agent,
+            replay: new ReplayExecutor(),
+            store: recordStore,
+            rerecord: !!o.rerecord,
+            heal,
+          })
+        : agent,
+      recordStore: cache ? recordStore : undefined,
+      fallbackExecutor: cache && heal ? agent : undefined,
+      judge: new EvidenceJudge(config.judge, judgeLlm, config.quality),
+    }),
+  });
+
+  events.emit('run.started', {
+    runId,
+    target: { url: o.url, description: o.description, goal: o.goal },
+    config: {
+      model: config.model,
+      plannerModel: config.plannerModel ?? config.model,
+      judgeModel: config.judgeModel ?? config.model,
+      concurrency: config.concurrency,
+      headless: config.headless,
+      quality: config.quality.gate,
+      cache,
+    },
+  });
+  try {
+    const final = await pipeline.invoke({
+      runId,
+      startedAt: new Date().toISOString(),
+      target: {
+        url: o.url,
+        description: o.description ?? suite?.description,
+        goal: o.goal,
+        expectUrl: o.expectUrl,
+        expectText: o.expectText,
+      },
+      tests: [],
+      results: [],
+    });
+    const report = /** @type {import('../core/types.js').RunReport} */ (final.report);
+    events.emit('run.finished', { runId, summary: report.summary });
+    return { runId, report };
+  } catch (e) {
+    events.emit('run.error', { message: e instanceof Error ? e.message : String(e) });
+    throw e;
+  }
+}
+
+/**
+ * Defer provider/key resolution until the first LLM call, so smoke-only runs need no key.
+ * @param {string} modelId
+ * @param {(u: { inputTokens: number, outputTokens: number }) => void} [onUsage]
+ * @returns {import('../core/ports.js').LlmClient}
+ */
+function lazyLlm(modelId, onUsage) {
+  /** @type {AiSdkLlm | undefined} */
+  let real;
+  return {
+    generateObject: (args) =>
+      (real ??= AiSdkLlm.fromModelId(modelId, onUsage)).generateObject(args),
+  };
+}

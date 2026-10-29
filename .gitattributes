@@ -1,0 +1,6 @@
+# Keep LF everywhere (prettier checks for LF; Windows checkouts would otherwise get CRLF and fail format:check)
+* text=auto eol=lf
+*.png binary
+*.jpg binary
+*.ps1 text eol=crlf
+*.cmd text eol=crlf

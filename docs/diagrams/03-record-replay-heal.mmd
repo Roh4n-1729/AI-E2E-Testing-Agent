@@ -1,0 +1,25 @@
+flowchart TD
+  start([Execute test]) --> hasRec{"Recording exists<br/>and fingerprint matches?"}
+
+  hasRec -- no --> author["AUTHOR: agent drives the browser<br/>(LLM calls)"]
+  author --> judgeA["Judge on harness evidence"]
+  judgeA --> okA{Verdict = pass?}
+  okA -- yes --> save["Save steps as deterministic JSON<br/>selector, method, args"]
+  okA -- no --> failA(["FAIL or ERROR<br/>nothing is recorded"])
+  save --> doneA([Result: mode = agent])
+
+  hasRec -- yes --> replay["REPLAY step: plain Playwright<br/>zero LLM calls"]
+  replay --> stepOk{Step succeeded?}
+  stepOk -- yes --> more{More steps?}
+  stepOk -- "no: selector missing, timeout" --> heal["HEAL: agent re-does this step only<br/>from the live page"]
+  heal --> healOk{Step done?}
+  healOk -- no --> failH(["FAIL: could not heal"])
+  healOk -- yes --> log["Log HealEvent<br/>old selector, new selector, reason"]
+  log --> more
+  more -- yes --> replay
+  more -- no --> judgeR["Judge on harness evidence<br/>(same strict checks as authoring)"]
+  judgeR --> okR{Verdict = pass?}
+  okR -- "yes, no heals" --> doneR([Result: mode = replay])
+  okR -- "yes, heals happened" --> upd["Update cache, flag every heal in report"]
+  upd --> doneH([Result: mode = healed])
+  okR -- no --> realFail(["FAIL: treated as a real regression<br/>cache NOT updated, heals listed as suspect"])

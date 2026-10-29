@@ -1,0 +1,128 @@
+@import 'tailwindcss';
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* Tokens. Indigo = the user's actions, saffron = the AI agent (same convention as the AI
+   Presentation Builder). Green/red/amber are reserved for verdicts so colour always means status. */
+:root {
+  --bg: #f6f7f9;
+  --panel: #ffffff;
+  --subtle: #f0f2f5;
+  --canvas: #e9ecf1;
+  --text: #14161b;
+  --muted: #5d6472;
+  --faint: #8d94a3;
+  --line: #e2e5ea;
+  --line-strong: #cfd4dc;
+  --user: #4250d5;
+  --ai: #d9612a;
+  --ok: #157a4c;
+  --ok-bg: #e6f4ec;
+  --warn: #9a6408;
+  --warn-bg: #fbf0dc;
+  --bad: #c2303b;
+  --bad-bg: #fbe9ea;
+  --shadow: 0 1px 2px rgb(20 22 27 / 0.06), 0 8px 24px -12px rgb(20 22 27 / 0.18);
+  color-scheme: light;
+}
+.dark {
+  --bg: #0d121c;
+  --panel: #141b28;
+  --subtle: #1a2232;
+  --canvas: #0a0e16;
+  --text: #e7eaf0;
+  --muted: #9aa3b5;
+  --faint: #6c7589;
+  --line: #243046;
+  --line-strong: #33415c;
+  --user: #8f9bff;
+  --ai: #f0874f;
+  --ok: #4cc58a;
+  --ok-bg: #12301f;
+  --warn: #e5b45a;
+  --warn-bg: #33270f;
+  --bad: #ff7a83;
+  --bad-bg: #3a161c;
+  --shadow: 0 1px 2px rgb(0 0 0 / 0.4), 0 12px 32px -12px rgb(0 0 0 / 0.6);
+  color-scheme: dark;
+}
+
+@theme inline {
+  --font-sans: 'Geist', ui-sans-serif, system-ui, sans-serif;
+  --font-mono: 'Geist Mono', ui-monospace, SFMono-Regular, monospace;
+  --color-bg: var(--bg);
+  --color-panel: var(--panel);
+  --color-subtle: var(--subtle);
+  --color-canvas: var(--canvas);
+  --color-text: var(--text);
+  --color-muted: var(--muted);
+  --color-faint: var(--faint);
+  --color-line: var(--line);
+  --color-line-strong: var(--line-strong);
+  --color-user: var(--user);
+  --color-ai: var(--ai);
+  --color-ok: var(--ok);
+  --color-ok-bg: var(--ok-bg);
+  --color-warn: var(--warn);
+  --color-warn-bg: var(--warn-bg);
+  --color-bad: var(--bad);
+  --color-bad-bg: var(--bad-bg);
+  --shadow-pop: var(--shadow);
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+:focus-visible {
+  outline: 2px solid var(--user);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+::selection {
+  background: color-mix(in srgb, var(--user) 25%, transparent);
+}
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--line-strong) transparent;
+}
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+@keyframes pulse-dot {
+  50% {
+    opacity: 0.35;
+  }
+}
+.pulse {
+  animation: pulse-dot 1.2s ease-in-out infinite;
+}
+@keyframes pop-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px) scale(0.98);
+  }
+}
+.pop-in {
+  animation: pop-in 120ms ease-out;
+}
+
+/* Lightbox: match our tokens */
+.yarl__root {
+  --yarl__color_backdrop: rgb(8 11 18 / 0.94);
+  --yarl__thumbnails_container_background_color: rgb(8 11 18 / 0.94);
+  --yarl__slide_captions_container_background: rgb(8 11 18 / 0.7);
+  font-family: var(--font-sans);
+}
