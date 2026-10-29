@@ -126,7 +126,9 @@ export class EvidenceJudge {
         auto.push({ kind: 'no-a11y-violations', minImpact: q.a11yMinImpact });
       if (
         q.theme &&
-        evidence.theme?.themes.length &&
+        [...(evidence.themeStates ?? []).map((st) => st.audit), evidence.theme].some(
+          (a) => a?.themes.length,
+        ) &&
         !test.expectations.some((e) => e.kind === 'theme-conformance')
       )
         auto.push({
@@ -215,8 +217,11 @@ export class EvidenceJudge {
         );
       }
       case 'text-visible': {
+        // visible matches only: apps often keep a hidden copy of the same text (closed menus,
+        // off-screen slides, responsive duplicates), and .first() alone would pick that copy
         const ok = await session.page
           .getByText(exp.text)
+          .filter({ visible: true })
           .first()
           .waitFor({ state: 'visible', timeout: 3000 })
           .then(() => true)
@@ -226,6 +231,7 @@ export class EvidenceJudge {
       case 'selector-visible': {
         const ok = await session.page
           .locator(exp.selector)
+          .filter({ visible: true })
           .first()
           .waitFor({ state: 'visible', timeout: 3000 })
           .then(() => true)
@@ -353,45 +359,43 @@ export class EvidenceJudge {
         );
       }
       case 'theme-conformance': {
-        const t = evidence.theme;
-        if (!t) return result(true, 'Theme audit was not run');
-        if (t.error) return result(true, `Theme audit could not run: ${t.error}`);
-        if (!t.themes.length)
-          return result(true, 'No theme variables found in the build: nothing to check');
-        /** @type {string[]} */
-        const problems = [];
-        for (const th of t.themes) {
-          const pct = th.score === null ? null : Math.round(th.score * 100);
-          if (pct !== null && th.score !== null && th.score < exp.minScore) {
-            const top = th.findings[0];
-            problems.push(
-              `${th.id}: ${pct}% on-theme${top ? ` (${top.kind} ${top.category} ${top.value}${top.examples[0] ? ` in ${top.examples[0].selector}` : ''}${top.declaration?.source ? ` at ${top.declaration.source}` : ''})` : ''}`,
-            );
-          }
-          const hard = th.findings.filter((f) => f.kind !== 'off-theme');
-          if (
-            !exp.allowHardCoded &&
-            hard.length &&
-            (pct === null || th.score === null || th.score >= exp.minScore)
-          ) {
-            const f = /** @type {import('../core/types.js').ThemeFinding} */ (hard[0]);
-            problems.push(
-              `${th.id}: ${hard.length} value(s) bypass the theme (${f.kind} ${f.category} ${f.value}${f.declaration?.selector ? ` in ${f.declaration.selector}` : f.examples[0] ? ` in ${f.examples[0].selector}` : ''}${f.nearest?.token ? `, nearest ${f.nearest.token}` : ''})`,
-            );
-          }
-          if (!exp.allowLeaks && th.leaks.length)
-            problems.push(
-              `${th.id}: ${th.leaks.length} surface(s) ignore the theme (e.g. ${th.leaks[0]?.value} ${th.leaks[0]?.selector})`,
-            );
+        // every distinct screen the test reached (start, after steps, final), not only the last one
+        const states = evidence.themeStates?.length
+          ? evidence.themeStates
+          : evidence.theme
+            ? [{ label: 'final', url: evidence.finalUrl, audit: evidence.theme }]
+            : [];
+        if (!states.length) return result(true, 'Theme audit was not run');
+        const audited = states.filter((st) => st.audit.themes.length);
+        if (!audited.length) {
+          const err = states.find((st) => st.audit.error)?.audit.error;
+          return result(
+            true,
+            err
+              ? `Theme audit could not run: ${err}`
+              : 'No theme variables found in the build: nothing to check',
+          );
         }
-        const summary = t.themes
-          .map((th) => `${th.id} ${th.score === null ? 'n/a' : `${Math.round(th.score * 100)}%`}`)
-          .join(', ');
+        /** the same problem on several screens is reported once, with the screens listed */
+        /** @type {Map<string, string[]>} */
+        const problems = new Map();
+        /** @type {Map<string, number>} lowest score per theme over all screens */
+        const lowest = new Map();
+        for (const st of audited) {
+          for (const p of themeProblems(st.audit, exp))
+            problems.set(p, [...(problems.get(p) ?? []), st.label]);
+          for (const th of st.audit.themes)
+            if (th.score !== null) lowest.set(th.id, Math.min(lowest.get(th.id) ?? 1, th.score));
+        }
+        const where = (/** @type {string[]} */ labels) =>
+          audited.length > 1 ? ` [${[...new Set(labels)].join(', ')}]` : '';
+        const screens = `${audited.length} screen${audited.length === 1 ? '' : 's'}`;
+        const summary = [...lowest].map(([id, sc]) => `${id} ${Math.round(sc * 100)}%`).join(', ');
         return result(
-          problems.length === 0,
-          problems.length
-            ? `Theme conformance: ${problems.join('; ')}`
-            : `Theme conformance: ${summary} on-theme, no leaks`,
+          problems.size === 0,
+          problems.size
+            ? `Theme conformance: ${[...problems].map(([p, l]) => `${p}${where(l)}`).join('; ')}`
+            : `Theme conformance: ${summary || 'n/a'} on-theme over ${screens}, no leaks`,
         );
       }
       case 'no-a11y-violations': {
@@ -518,4 +522,35 @@ function emptyEvidence(session) {
     console: [],
     networkFailures: [],
   };
+}
+
+/**
+ * What is wrong with one screen's theme audit, as short sentences (empty = conforms).
+ * @param {import('../core/types.js').ThemeAudit} t
+ * @param {{ minScore: number, allowLeaks: boolean, allowHardCoded: boolean }} exp
+ */
+function themeProblems(t, exp) {
+  /** @type {string[]} */
+  const out = [];
+  for (const th of t.themes) {
+    const pct = th.score === null ? null : Math.round(th.score * 100);
+    if (th.score !== null && th.score < exp.minScore) {
+      const top = th.findings[0];
+      out.push(
+        `${th.id}: ${pct}% on-theme${top ? ` (${top.kind} ${top.category} ${top.value}${top.examples[0] ? ` in ${top.examples[0].selector}` : ''}${top.declaration?.source ? ` at ${top.declaration.source}` : ''})` : ''}`,
+      );
+    }
+    const hard = th.findings.filter((f) => f.kind !== 'off-theme');
+    if (!exp.allowHardCoded && hard.length && (th.score === null || th.score >= exp.minScore)) {
+      const f = /** @type {import('../core/types.js').ThemeFinding} */ (hard[0]);
+      out.push(
+        `${th.id}: ${hard.length} value(s) bypass the theme (${f.kind} ${f.category} ${f.value}${f.declaration?.selector ? ` in ${f.declaration.selector}` : f.examples[0] ? ` in ${f.examples[0].selector}` : ''}${f.nearest?.token ? `, nearest ${f.nearest.token}` : ''})`,
+      );
+    }
+    if (!exp.allowLeaks && th.leaks.length)
+      out.push(
+        `${th.id}: ${th.leaks.length} surface(s) ignore the theme (e.g. ${th.leaks[0]?.value} ${th.leaks[0]?.selector})`,
+      );
+  }
+  return out;
 }

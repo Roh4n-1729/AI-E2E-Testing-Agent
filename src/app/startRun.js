@@ -21,6 +21,7 @@ import { RunArtifacts } from '../storage/artifacts.js';
 import { FileRecordStore } from '../storage/recordStore.js';
 import { createLogger } from '../util/logger.js';
 import { newRunId } from '../util/misc.js';
+import { ThemeStates } from '../theme/states.js';
 
 /**
  * @typedef {object} RunOptions  Everything a run needs; the CLI and the UI server both build this.
@@ -151,6 +152,7 @@ export async function startRun(o, { events = new RunEvents(), signal } = {}) {
       recordStore: cache ? recordStore : undefined,
       fallbackExecutor: cache && heal ? agent : undefined,
       judge: new EvidenceJudge(config.judge, judgeLlm, config.quality),
+      themeStates: new ThemeStates({ perTest: config.quality.themeStates }),
     }),
   });
 

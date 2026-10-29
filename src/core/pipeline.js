@@ -1,6 +1,7 @@
 import { Annotation, END, START, Send, StateGraph } from '@langchain/langgraph';
 import { nullEvents } from '../events/runEvents.js';
 import { createLimiter } from '../util/misc.js';
+import { analyseConsistency } from '../theme/consistency.js';
 
 /**
  * @import { Config } from '../config/config.js'
@@ -136,6 +137,11 @@ export function buildPipeline(deps) {
         summary: { ...summarize(results), overhead: deps.overheadUsage?.() },
         results,
       };
+      if (results.some((r) => r.evidence.themeStates?.length)) {
+        report.consistency = analyseConsistency(results);
+        const n = report.consistency.findings.length;
+        if (n) logger.warn(`Consistency: ${n} component look(s) drift across screens (advisory)`);
+      }
       phase('report', 'running');
       await reporter.report(report);
       phase('report', 'done');

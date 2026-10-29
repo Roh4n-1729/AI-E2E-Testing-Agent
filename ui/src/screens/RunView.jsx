@@ -24,6 +24,7 @@ import {
 import { go } from '../hooks/useHashRoute.js';
 import { useRunStream } from '../hooks/useRunStream.js';
 import { MODE, STATUS, fmtDuration, fmtTokens, fmtWhen, shortUrl } from '../lib/format.js';
+import { Consistency } from '../components/Consistency.jsx';
 
 const FILTERS = [
   ['all', 'All', () => true],
@@ -262,6 +263,7 @@ function Results({ runId, report }) {
   return (
     <div className="space-y-6">
       <Summary summary={report.summary} durationMs={duration} />
+      {report.consistency?.states > 0 && <Consistency consistency={report.consistency} />}
       <div className="grid gap-6 lg:grid-cols-[300px_minmax(0,1fr)]">
         <div className="lg:sticky lg:top-6 lg:self-start">
           <TestList items={items} selected={selected} onSelect={setSelected} />

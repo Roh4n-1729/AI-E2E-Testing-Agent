@@ -106,4 +106,26 @@ describe.skipIf(!hasChromium)('judge', () => {
       await s.close();
     }
   });
+
+  it('text and selector checks look at visible matches, not a hidden copy that comes first', async () => {
+    const s = await open();
+    try {
+      await s.goto(`${app.base}/dup`);
+      // .msg: the first match is hidden, the second is visible, so it WAS visible at the start
+      const baseline = await s.baseline([{ kind: 'selector-visible', selector: '.msg' }]);
+      expect(baseline.visibleSelectors).toEqual(['.msg']);
+      const judge = new EvidenceJudge(loadConfig({}, {}).judge, mockLlm({}));
+      /** @type {import('../../src/core/types.js').ExecutionOutcome} */
+      const outcome = { mode: 'agent', steps: [], heals: [], baseline };
+      const exp = [{ kind: 'text-visible', text: 'Order placed' }];
+      const before = await judge.judge(testCase(/** @type {any} */ (exp)), s, outcome);
+      expect(before.verdict.status).toBe('fail'); // only the hidden copy exists
+      await s.page.click('#place');
+      const after = await judge.judge(testCase(/** @type {any} */ (exp)), s, outcome);
+      expect(after.verdict.checks[0]?.passed).toBe(true); // the visible one, although the hidden one is first
+      expect(after.verdict.status).toBe('pass');
+    } finally {
+      await s.close();
+    }
+  });
 });

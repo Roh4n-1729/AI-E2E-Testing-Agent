@@ -23,6 +23,7 @@ import { errorMessage } from '../util/misc.js';
  * @property {Executor} [fallbackExecutor]  Pure agent executor, used to re-verify a replay that the judge failed.
  * @property {RunEvents} [events]  Progress events for the CLI/UI. Default: a bus nobody listens to.
  * @property {AbortSignal} [signal]  Aborting stops running browsers and skips tests that have not started.
+ * @property {import('../theme/states.js').ThemeStates} [themeStates]  run-wide memory of theme-audited screens
  */
 
 /** Runs one test in its own isolated browser: execute -> judge -> (record) -> close. */
@@ -116,7 +117,9 @@ export class TestRunner {
     /** @type {(() => void) | undefined} */
     let onAbort;
     try {
-      session = await BrowserSession.open(config, testArtifacts, ctx.logger);
+      session = await BrowserSession.open(config, testArtifacts, ctx.logger, {
+        themeStates: this.deps.themeStates,
+      });
       const s = session;
       s.onScreenshot = (ref) => events.emit('test.screenshot', { testId: test.id, ...ref });
       stopLiveView = s.startLiveView(

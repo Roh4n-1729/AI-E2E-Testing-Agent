@@ -6,6 +6,61 @@ teaches us something: it is the honest history of how the judge got stricter.
 
 ---
 
+## 2026-10-30 (early morning): every screen, cross-page consistency, visible-only text checks
+
+### 1. The theme audit now covers every screen a test reaches, not only the last one
+
+- **Why:** a theme bug inside a dialog, a menu or a step in the middle of a flow was invisible if the test ended
+  somewhere else. The new integration test shows exactly that case: a dialog with a hard-coded white surface is
+  clean at the end (the dialog is closed again) and only caught by the in-between audit.
+- **How:** after every replay step, and after every agent step (Stagehand awaits its `onEvidence` callbacks, so
+  the agent is paused), the harness takes a cheap fingerprint of the screen:
+  - the route, with ids normalised;
+  - open dialogs, menus and listboxes;
+  - the visible landmarks;
+  - the visible test ids.
+    Text is left out because AI apps generate new content every run. Only new screens are audited. A test audits
+    at most 4 screens besides the final one (`AIE2E_THEME_STATES`), and screens another test in the same run
+    already audited are reused rather than measured twice.
+- **Safe for the agent:** in-between audits only crop elements already in view and restore the scroll
+  position, so the screenshot the agent just saw still matches the page it acts on.
+- The `theme-conformance` check reports problems per screen and merges duplicates, e.g.
+  `dark: 1 surface(s) ignore the theme (e.g. #ffffff #d) [after step 1]`. The Theme tab has a screen picker; the
+  HTML report shows one block per screen.
+
+### 2. Cross-page consistency (advisory)
+
+- **Why:** a value can be "on theme" on every single screen and the product still drift. The seeded bug: the
+  checkout button uses `color-mix(in srgb, var(--color-primary) 88%, black)`. Because it is derived from the token,
+  the theme audit correctly accepts it, but it is a different blue from every other primary button.
+- **How:** each audit records how buttons, links, inputs, headings and named components look in each theme
+  (colours, radius, font, weight, padding). Hovered, focused and pressed elements are skipped, because their look
+  is a momentary state. Disabled/selected/pressed variants are compared separately. Across the run:
+  - two looks of the same kind of element that differ only slightly are flagged as near-duplicates: ΔE₀₀ between
+    2.3 and 10, radius or padding within 2px, size within 1px, weight within 100;
+  - an element marked `data-aie2e-component="…"` must look identical everywhere.
+    Clearly different looks (secondary buttons, outline buttons, other fonts, large sizes) are deliberate variants
+    and are not reported. This is advisory: shown in the run summary and the report, never a failed test.
+- **Found:** the seeded hard-coded Subscribe colour is now caught twice, as a theme violation and as a
+  near-duplicate of the primary button.
+
+### 3. Text and selector checks ignore hidden copies
+
+- **Seen (code review):** `getByText(text).first()` picks the first match in the DOM, often a hidden copy (closed
+  menu, off-screen slide, responsive duplicate), so a visible "Order placed" could still fail the check. The
+  baseline had the same flaw in reverse (a check could look earned when it was already visible).
+- **Change:** both use `filter({ visible: true })`. The new test fails against the old code and passes now.
+
+### Verified
+
+- 11/11 seeded bugs detected (new: `button-drift`, kind consistency, found as
+  `light: two near-identical button styles (background #2563eb vs #2157cf, ΔE 5.3)`), 0 false positives, 0 flaky.
+  Run time per suite run unchanged (~26 s).
+- New tests: unit tests for `nearDuplicate` (drift vs deliberate variants) and the run-level analysis; real-browser
+  tests for the dialog-only theme bug, cross-test reuse, scroll restore and visible-only text checks.
+
+---
+
 ## 2026-10-29 (late night): theme conformance of the production build
 
 **Goal (Rohan):** the themes an app's production build ships must actually be applied everywhere, in every

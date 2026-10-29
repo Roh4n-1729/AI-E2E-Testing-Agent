@@ -90,3 +90,102 @@ describe.skipIf(!hasChromium)('theme conformance (real browser)', () => {
     }
   });
 });
+
+// A themed page whose only theme bug lives in a dialog: a final-state-only audit misses it once the
+// dialog closes again. The page is tall so the scroll position can be checked after an audit.
+const STATES_PAGE = `<!doctype html><html lang="en"><head><title>States</title><style>
+:root{--bg:#ffffff;--text:#111827;--primary:#0f766e;--on-primary:#ffffff;--radius:6px}
+.dark{--bg:#0b1020;--text:#e5e7eb;--primary:#2dd4bf;--on-primary:#04201c}
+body{background:var(--bg);color:var(--text);font-family:sans-serif;margin:0;padding:16px;min-height:3000px}
+button{background:var(--primary);color:var(--on-primary);border:0;border-radius:var(--radius);padding:6px 12px}
+dialog{background:#ffffff;color:#111827;border:0;padding:24px;width:420px;height:220px}
+</style></head><body><main><h1>Settings</h1>
+<button id="open" onclick="document.getElementById('d').showModal()">Edit profile</button></main>
+<dialog id="d"><h2>Profile</h2><button id="close" onclick="document.getElementById('d').close()">Close</button></dialog>
+</body></html>`;
+
+describe.skipIf(!hasChromium)('theme conformance on every screen a test reaches', () => {
+  /** @type {import('node:http').Server} */
+  let srv;
+  /** @type {string} */
+  let base;
+  afterAll(() => srv?.close());
+
+  async function open(/** @type {any} */ themeStates) {
+    if (!srv) {
+      const http = await import('node:http');
+      srv = http.createServer((_q, r) => r.end(STATES_PAGE));
+      await new Promise((r) => srv.listen(0, '127.0.0.1', () => r(undefined)));
+      base = `http://127.0.0.1:${/** @type {any} */ (srv.address()).port}`;
+    }
+    const out = mkdtempSync(path.join(os.tmpdir(), 'aie2e-states-'));
+    const s = await BrowserSession.open(
+      testConfig({ outDir: out }),
+      new RunArtifacts(out, 'r').forTest(`t${Math.random().toString(36).slice(2, 6)}`),
+      silentLogger,
+      { themeStates },
+    );
+    await s.goto(`${base}/settings`);
+    return s;
+  }
+
+  it('audits the dialog the test opened, although the final screen no longer shows it', async () => {
+    const { ThemeStates: TS } = await import('../../src/theme/states.js');
+    const s = await open(new TS());
+    try {
+      const start = await s.auditState('start', { step: 0 });
+      // the inventory saw the button, for the cross-page consistency check
+      const inv = start?.audit.themes[0]?.inventory ?? [];
+      expect(inv.find((e) => e.kind === 'button')?.style).toMatchObject({ background: '#0f766e' });
+      await s.page.click('#open');
+      const inDialog = await s.auditState('after step 1', { step: 1 });
+      expect(inDialog?.audit.themes.find((t) => t.id === 'dark')?.leaks.length).toBeGreaterThan(0);
+      await s.page.click('#close'); // back to the start screen: the final audit alone would be clean
+      const evidence = await s.collectEvidence();
+      expect(evidence.themeStates?.map((st) => st.label)).toEqual(['start', 'after step 1']);
+      expect(evidence.theme?.themes.flatMap((t) => t.leaks)).toEqual([]); // final = start: clean
+      const judge = new EvidenceJudge(loadConfig({}, {}).judge, undefined, {
+        ...loadConfig({}, {}).quality,
+        gate: 'fail',
+      });
+      const { verdict } = await judge.judge(
+        {
+          id: 't',
+          title: 'T',
+          goal: '',
+          startUrl: base,
+          expectations: [
+            { kind: 'theme-conformance', minScore: 0.9, allowLeaks: false, allowHardCoded: false },
+          ],
+          tags: [],
+        },
+        s,
+        { mode: 'deterministic', steps: [], heals: [] },
+      );
+      expect(verdict.status).toBe('fail');
+      expect(verdict.reason).toContain('[after step 1]');
+      expect(verdict.reason).toContain('#d'); // the dialog, with the rule that hard-codes its white
+    } finally {
+      await s.close();
+    }
+  });
+
+  it('reuses a screen another test already audited, and leaves the scroll position alone', async () => {
+    const { ThemeStates: TS } = await import('../../src/theme/states.js');
+    const shared = new TS();
+    const a = await open(shared);
+    const b = await open(shared);
+    try {
+      await a.page.evaluate(() => scrollTo(0, 900));
+      const first = await a.auditState('start', { step: 0 });
+      expect(first?.reusedFrom).toBeUndefined();
+      expect(await a.page.evaluate(() => scrollY)).toBe(900); // scroll-safe in-between audit
+      const second = await b.auditState('start', { step: 0 });
+      expect(second?.reusedFrom).toEqual({ testId: first?.testId, label: 'start' });
+      expect(shared.audited).toBe(1);
+    } finally {
+      await a.close();
+      await b.close();
+    }
+  });
+});

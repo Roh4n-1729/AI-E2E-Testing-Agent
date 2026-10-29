@@ -83,6 +83,10 @@ const warningsOf = (report) =>
       r.verdict.warnings.map((w) => `${r.test.title}: ${w.replace(/[\d.]+s\b/g, 'Ns')}`),
     ),
   );
+/** run-level consistency findings (advisory), digits normalised so counts do not make them "new" */
+/** @param {RunReport} report */
+const consistencyOf = (report) =>
+  new Set((report.consistency?.findings ?? []).map((f) => `consistency: ${f.message}`));
 /** @param {RunReport} r */
 const tokens = (r) =>
   r.summary.inputTokens +
@@ -141,11 +145,15 @@ const stablePass = testIds.filter((id) =>
   clean.every((r) => statusById(r.report).get(id) === 'pass'),
 );
 const cleanWarnings = new Set(clean.flatMap((r) => [...warningsOf(r.report)]));
+const cleanConsistency = new Set(clean.flatMap((r) => [...consistencyOf(r.report)]));
 
 const detections = bugRuns.map((b) => {
   const st = statusById(b.report);
   const newlyFailing = stablePass.filter((id) => st.get(id) && st.get(id) !== 'pass');
-  const newWarnings = [...warningsOf(b.report)].filter((w) => !cleanWarnings.has(w));
+  const newWarnings = [
+    ...[...warningsOf(b.report)].filter((w) => !cleanWarnings.has(w)),
+    ...[...consistencyOf(b.report)].filter((w) => !cleanConsistency.has(w)),
+  ];
   const meta = truth.bugs.find((/** @type {any} */ x) => x.id === b.bug);
   return {
     bug: b.bug,
@@ -208,7 +216,11 @@ const md = [
               [
                 ...d.failedTests.map((t) => `failed: ${t}`),
                 ...new Set(
-                  d.newWarnings.map((w) => `warning: ${w.split(': ').slice(1).join(': ')}`),
+                  d.newWarnings.map((w) =>
+                    w.startsWith('consistency: ')
+                      ? w
+                      : `warning: ${w.split(': ').slice(1).join(': ')}`,
+                  ),
                 ),
               ]
                 .slice(0, 3)

@@ -54,6 +54,8 @@ export const ConfigSchema = z.object({
       /** Theme conformance: the page uses the themes its own build ships, in every theme. */
       theme: z.boolean().default(true),
       themeMinScore: z.number().min(0).max(1).default(0.9),
+      /** Screens audited per test besides the final one (start, after steps). 0 = final state only. */
+      themeStates: z.number().int().min(0).max(20).default(4),
       budgets: z
         .object({
           lcpMs: z.number().positive().default(4000),
@@ -90,6 +92,8 @@ const int = (v) => (v === undefined || v === '' ? undefined : Number(v));
  * @returns {Config}
  */
 export function loadConfig(overrides = {}, env = process.env) {
+  /** @param {object} o */
+  const defined = (o) => Object.fromEntries(Object.entries(o).filter(([, v]) => v !== undefined));
   /** @type {Partial<ConfigInput>} */
   const fromEnv = {
     model: env.AIE2E_MODEL || undefined,
@@ -106,12 +110,14 @@ export function loadConfig(overrides = {}, env = process.env) {
     chromePath: env.AIE2E_CHROME_PATH || undefined,
     chromeArgs: env.AIE2E_CHROME_ARGS ? env.AIE2E_CHROME_ARGS.split(' ') : undefined,
     logLevel: /** @type {ConfigInput['logLevel']} */ (env.AIE2E_LOG_LEVEL || undefined),
-    quality: env.AIE2E_QUALITY_GATE
-      ? { gate: /** @type {'off' | 'warn' | 'fail'} */ (env.AIE2E_QUALITY_GATE) }
-      : undefined,
+    quality:
+      env.AIE2E_QUALITY_GATE || env.AIE2E_THEME_STATES
+        ? defined({
+            gate: /** @type {'off' | 'warn' | 'fail' | undefined} */ (env.AIE2E_QUALITY_GATE),
+            themeStates: env.AIE2E_THEME_STATES ? Number(env.AIE2E_THEME_STATES) : undefined,
+          })
+        : undefined,
   };
-  /** @param {object} o */
-  const defined = (o) => Object.fromEntries(Object.entries(o).filter(([, v]) => v !== undefined));
   return ConfigSchema.parse({ ...defined(fromEnv), ...defined(overrides) });
 }
 

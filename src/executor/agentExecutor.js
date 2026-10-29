@@ -76,6 +76,7 @@ export class AgentExecutor {
           screenshot: shot.path,
           url: shot.url,
         });
+        await session.auditState('start', { step: 0 });
       }
 
       if (!test.goal.trim()) {
@@ -88,6 +89,8 @@ export class AgentExecutor {
       const stable = new Map();
       /** @type {TraceEntry[]} entries still waiting for the screenshot taken after them */
       let pending = [];
+      /** did the agent change anything since the last theme check (not just look around)? */
+      let acted = false;
 
       const agent = session.stagehand.agent({
         mode: 'dom',
@@ -106,6 +109,15 @@ export class AgentExecutor {
               const ref = await session.saveScreenshotBytes('agent', event.screenshot, event.url);
               for (const e of pending) e.screenshot ??= ref.path;
               pending = [];
+            } else if (event.type === 'step_observed') {
+              // Stagehand awaits this callback before its next model call, so the page holds still:
+              // a new screen the agent reached gets its theme audit here (scroll-safe, restored after).
+              if (acted) {
+                acted = false;
+                await session.auditState(`after step ${trace.length - 1}`, {
+                  step: trace.length - 1,
+                });
+              }
             } else if (event.type === 'step_finished') {
               const ok = event.toolOutput?.ok !== false;
               const description = describeAgentStep(event);
@@ -118,6 +130,7 @@ export class AgentExecutor {
                 url: session.page.url(),
               });
               pending.push(entry);
+              if (!OBSERVE.has(event.actionName) && event.actionName !== 'done') acted = true;
               ctx.events.emit('test.step', { testId: test.id, source: 'agent', description, ok });
               // While the element is (very likely) still on the page, find a selector that will
               // outlive layout changes. Recordings then prefer it over the XPath.

@@ -33,33 +33,42 @@ const SOURCE_DOT = { agent: 'bg-ai', replay: 'bg-user', harness: 'bg-faint' };
 /** Everything known about one finished test, built only from the report. */
 export function TestDetail({ result, runId }) {
   const { test, verdict, evidence } = result;
-  const theme = evidence.theme;
+  // every screen the test reached that was theme-audited (older reports: the final state only)
+  const themeStates = (
+    evidence.themeStates?.length
+      ? evidence.themeStates
+      : evidence.theme
+        ? [{ key: 'final', label: 'final', url: evidence.finalUrl, audit: evidence.theme }]
+        : []
+  ).filter((st) => st.audit.themes?.length);
   // theme screenshots and finding crops join the same viewer
   const shots = [
     ...(evidence.screenshots ?? []),
-    ...(theme?.themes ?? []).flatMap((t) => [
-      ...(t.screenshot
-        ? [
-            {
-              path: t.screenshot,
-              label: `theme:${t.id}`,
-              source: 'harness',
-              url: evidence.finalUrl,
-            },
-          ]
-        : []),
-      ...t.findings
-        .filter((f) => f.crop)
-        .map((f) => ({
-          path: f.crop,
-          label: `crop:${t.id}: ${f.category} ${f.value} (${f.kind})`,
-          source: 'harness',
-          url: evidence.finalUrl,
-        })),
-    ]),
+    ...themeStates.flatMap((st) =>
+      st.audit.themes.flatMap((t) => [
+        ...(t.screenshot
+          ? [
+              {
+                path: t.screenshot,
+                label: `theme:${st.label} · ${t.id}`,
+                source: 'harness',
+                url: st.url,
+              },
+            ]
+          : []),
+        ...t.findings
+          .filter((f) => f.crop)
+          .map((f) => ({
+            path: f.crop,
+            label: `crop:${st.label} · ${t.id}: ${f.category} ${f.value} (${f.kind})`,
+            source: 'harness',
+            url: st.url,
+          })),
+      ]),
+    ),
   ];
-  const themeIssues = (theme?.themes ?? []).reduce(
-    (n, t) => n + t.findings.length + t.leaks.length,
+  const themeIssues = themeStates.reduce(
+    (n, st) => n + st.audit.themes.reduce((m, t) => m + t.findings.length + t.leaks.length, 0),
     0,
   );
   const final =
@@ -138,7 +147,7 @@ export function TestDetail({ result, runId }) {
             <Tab value="network" count={api.length}>
               Network
             </Tab>
-            {theme?.themes?.length > 0 && (
+            {themeStates.length > 0 && (
               <Tab value="theme" count={themeIssues || undefined}>
                 Theme
               </Tab>
@@ -158,7 +167,7 @@ export function TestDetail({ result, runId }) {
             <Network evidence={evidence} runId={runId} />
           </TabPanel>
           <TabPanel value="theme" className="pt-4">
-            {theme && <ThemePanel theme={theme} runId={runId} />}
+            {themeStates.length > 0 && <ThemePanel states={themeStates} runId={runId} />}
           </TabPanel>
           <TabPanel value="quality" className="pt-4">
             <Quality evidence={evidence} />
@@ -542,16 +551,58 @@ const Swatch = ({ value }) => (
   />
 );
 
-/** Does the page use the themes its own build ships, in every theme? */
-function ThemePanel({ theme, runId }) {
+const issuesOf = (st) =>
+  st.audit.themes.reduce((n, t) => n + t.findings.length + t.leaks.length, 0);
+
+/** Does every screen the test reached use the themes its own build ships, in every theme? */
+function ThemePanel({ states, runId }) {
+  const [pick, setPick] = useState(() => {
+    const bad = states.findIndex((st) => issuesOf(st) > 0);
+    return bad >= 0 ? bad : states.length - 1;
+  });
+  const st = states[Math.min(pick, states.length - 1)];
+  const theme = st.audit;
   return (
     <div className="space-y-6">
       <p className="max-w-3xl text-[13px] text-muted">
         {theme.tokenCount} theme variables found in the production CSS. Every visible element was
-        checked in each theme: a value counts as on-theme when it equals a token (colours within the
+        checked in each theme, on {states.length === 1 ? 'the screen' : `${states.length} screens`}{' '}
+        this test reached: a value counts as on-theme when it equals a token (colours within the
         just-noticeable difference) or when Chrome reports that the CSS rule producing it uses{' '}
         <code className="font-mono text-[12px]">var(--…)</code>.
       </p>
+      {states.length > 1 && (
+        <div role="group" aria-label="Screen" className="flex flex-wrap gap-2">
+          {states.map((s, i) => {
+            const n = issuesOf(s);
+            const on = i === pick;
+            return (
+              <button
+                key={`${s.key}-${i}`}
+                type="button"
+                aria-pressed={on}
+                onClick={() => setPick(i)}
+                className={`rounded-lg border px-3 py-1.5 text-left text-[12px] transition-colors ${on ? 'border-user bg-user/10' : 'border-line bg-panel hover:border-user/60'}`}
+              >
+                <span className="font-medium capitalize">{s.label}</span>{' '}
+                <span className={n ? 'text-bad' : 'text-ok'}>
+                  {n ? `${n} issue${n === 1 ? '' : 's'}` : 'clean'}
+                </span>
+                <span className="block max-w-[220px] truncate font-mono text-[11px] text-muted">
+                  {pathOf(s.url)}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      )}
+      {st.reusedFrom && (
+        <p className="text-[12px] text-muted">
+          This screen was already audited in test{' '}
+          <span className="font-mono">{st.reusedFrom.testId}</span> ({st.reusedFrom.label}); the
+          result is shared rather than measured twice.
+        </p>
+      )}
       <div className="grid gap-4 lg:grid-cols-2">
         {theme.themes.map((t) => {
           const pct = t.score === null ? null : Math.round(t.score * 100);

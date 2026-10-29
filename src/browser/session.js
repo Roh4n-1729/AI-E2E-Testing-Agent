@@ -7,12 +7,13 @@ import { QualityCollector } from './collectors.js';
 import { CURSOR_SCRIPT } from './cursor.js';
 import { settle } from './settle.js';
 import { auditThemes } from '../theme/audit.js';
+import { ThemeStates, fingerprintOf } from '../theme/states.js';
 
 /**
  * @import { Browser, BrowserContext, Page } from 'playwright'
  * @import { Config } from '../config/config.js'
  * @import { TestArtifacts } from '../storage/artifacts.js'
- * @import { Baseline, ConsoleEntry, Evidence, Expectation, NetworkFailure, ScreenshotRef } from '../core/types.js'
+ * @import { Baseline, ConsoleEntry, Evidence, Expectation, NetworkFailure, ScreenshotRef, ThemeAudit, ThemeState } from '../core/types.js'
  * @import { Logger } from '../util/logger.js'
  */
 
@@ -31,6 +32,11 @@ export class BrowserSession {
   #screenshots = [];
   /** @type {((ref: ScreenshotRef) => void) | undefined} Called for every screenshot saved (harness or agent). */
   onScreenshot;
+  /** @type {ThemeState[]} distinct screens of this test that were theme-audited, in order */
+  #themeStates = [];
+  #themeInBetween = 0;
+  #noThemes = false;
+  static #auditSeq = 0;
 
   /**
    * @param {Stagehand} stagehand
@@ -39,14 +45,16 @@ export class BrowserSession {
    * @param {TestArtifacts} artifacts
    * @param {QualityCollector} quality  API calls, downloads, transient text, web vitals, a11y.
    * @param {Config['quality']} qualityCfg
+   * @param {ThemeStates} [themeStates]  run-wide: screens already audited by other tests are reused
    */
-  constructor(stagehand, browser, context, artifacts, quality, qualityCfg) {
+  constructor(stagehand, browser, context, artifacts, quality, qualityCfg, themeStates) {
     this.stagehand = stagehand;
     this.browser = browser;
     this.context = context;
     this.artifacts = artifacts;
     this.quality = quality;
     this.qualityCfg = qualityCfg;
+    this.themeStates = themeStates ?? new ThemeStates({ perTest: qualityCfg.themeStates });
     for (const p of context.pages()) this.#attach(p);
     context.on('page', (p) => this.#attach(p));
   }
@@ -55,8 +63,9 @@ export class BrowserSession {
    * @param {Config} cfg
    * @param {TestArtifacts} artifacts
    * @param {Logger} logger
+   * @param {{ themeStates?: ThemeStates }} [opts]
    */
-  static async open(cfg, artifacts, logger) {
+  static async open(cfg, artifacts, logger, opts = {}) {
     await artifacts.init();
     const executablePath = resolveChromePath(cfg);
     logger.debug(`launching Chromium (${executablePath ?? 'system chrome'})`);
@@ -90,7 +99,15 @@ export class BrowserSession {
       await context.addInitScript(CURSOR_SCRIPT);
       for (const p of context.pages()) await p.evaluate(CURSOR_SCRIPT).catch(() => undefined);
     }
-    return new BrowserSession(stagehand, browser, context, artifacts, quality, cfg.quality);
+    return new BrowserSession(
+      stagehand,
+      browser,
+      context,
+      artifacts,
+      quality,
+      cfg.quality,
+      opts.themeStates,
+    );
   }
 
   /** Most recently opened page that is still open (agents sometimes open new tabs). */
@@ -268,11 +285,11 @@ export class BrowserSession {
     for (const e of expectations) {
       if (e.kind !== 'selector-visible') continue;
       if (
-        await page
+        (await page
           .locator(e.selector)
-          .first()
-          .isVisible()
-          .catch(() => false)
+          .filter({ visible: true })
+          .count()
+          .catch(() => 0)) > 0
       ) {
         visibleSelectors.push(e.selector);
       }
@@ -283,6 +300,64 @@ export class BrowserSession {
       visibleSelectors,
       requestCount: this.quality.requestCount,
     };
+  }
+
+  get #themeOn() {
+    return this.qualityCfg.theme && this.qualityCfg.gate !== 'off';
+  }
+
+  /**
+   * Theme-audit the screen the test is on now, if this run has not audited it yet. Called by the
+   * executors between steps (the agent is paused while this runs) and by collectEvidence for the final
+   * state. In-between audits are capped per test and skipped once the build turned out to ship no themes.
+   * @param {string} label  "start", "after step 3", "final"
+   * @param {{ step?: number, final?: boolean }} [o]
+   * @returns {Promise<ThemeState | null>}
+   */
+  async auditState(label, { step, final = false } = {}) {
+    if (!this.#themeOn) return null;
+    if (!final && (this.#noThemes || this.#themeInBetween >= this.themeStates.perTest)) return null;
+    const page = this.page;
+    /** @param {string | null} k */
+    const knownAs = (k) => this.#themeStates.find((st) => st.key === k);
+    let key = await fingerprintOf(page);
+    if (!key) return null;
+    if (knownAs(key)) return knownAs(key) ?? null; // this test already covered this screen (cheap: no wait)
+    if (!final) {
+      // a new screen: let it finish rendering, then make sure it is still the same new screen
+      await this.settle({ maxMs: 3000, quietMs: 400 });
+      key = await fingerprintOf(page);
+      if (!key) return null;
+      if (knownAs(key)) return knownAs(key) ?? null;
+    }
+    if (!final) this.#themeInBetween++;
+    const dir = path.join(
+      this.artifacts.dir,
+      'theme',
+      `${++BrowserSession.#auditSeq}-${label.replace(/[^\w]+/g, '-')}`,
+    );
+    const state = await this.themeStates.visit(
+      key,
+      { testId: this.artifacts.testId, label, url: page.url(), step, final },
+      () =>
+        auditThemes(page, {
+          dir,
+          rel: (abs) => path.relative(this.artifacts.runDir, abs).split(path.sep).join('/'),
+          scrollSafe: !final,
+        }).catch(
+          (e) =>
+            /** @type {ThemeAudit} */ ({
+              themes: [],
+              tokenCount: 0,
+              skippedSheets: [],
+              error: String(e).split('\n')[0],
+            }),
+        ),
+    );
+    if (!state) return null;
+    if (!state.audit.themes.length && !state.audit.error) this.#noThemes = true;
+    this.#themeStates.push(state);
+    return state;
   }
 
   /**
@@ -317,18 +392,8 @@ export class BrowserSession {
       downloads: this.quality.downloads,
       seenText: this.quality.seenText,
       vitals: this.quality.vitals(),
-      theme:
-        this.qualityCfg.theme && this.qualityCfg.gate !== 'off'
-          ? await auditThemes(page, {
-              dir: path.join(this.artifacts.dir, 'theme'),
-              rel: (abs) => path.relative(this.artifacts.runDir, abs).split(path.sep).join('/'),
-            }).catch((e) => ({
-              themes: [],
-              tokenCount: 0,
-              skippedSheets: [],
-              error: String(e).split('\n')[0],
-            }))
-          : undefined,
+      theme: this.#themeOn ? (await this.auditState('final', { final: true }))?.audit : undefined,
+      themeStates: this.#themeOn ? [...this.#themeStates] : undefined,
       a11y:
         this.qualityCfg.a11y && this.qualityCfg.gate !== 'off'
           ? await this.quality.scanA11y(page)

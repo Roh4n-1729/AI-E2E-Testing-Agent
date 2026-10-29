@@ -156,35 +156,88 @@ const thumb = (group, src, caption, style = '') =>
 
 /** Theme conformance: score per theme, leaks, and off-theme values with the CSS rule that set them. @param {TestResult} r @param {string} g */
 function renderTheme(r, g) {
-  const t = r.evidence.theme;
-  if (!t?.themes.length) return '';
-  const cards = t.themes
-    .map((th) => {
-      const pct = th.score === null ? 'n/a' : `${Math.round(th.score * 100)}%`;
-      const cls =
-        th.score === null
-          ? ''
-          : th.score >= 0.98 && !th.leaks.length
-            ? 'pass'
-            : th.score >= 0.9
-              ? 'warn'
-              : 'fail';
-      return `<div class="chip" style="display:flex;gap:10px;align-items:center">${th.screenshot ? thumb(g, th.screenshot, `Theme ${th.id}`, 'width:96px;height:60px') : ''}<div><span class="small muted">${h(th.id)} · ${h(th.switch)}</span><b class="${cls}">${pct}</b><span class="small muted">${th.onTheme}/${th.checked} on-theme · ${th.leaks.length} leaks · ${th.contrastIssues} contrast</span></div></div>`;
-    })
+  const states = r.evidence.themeStates?.length
+    ? r.evidence.themeStates
+    : r.evidence.theme
+      ? [
+          {
+            label: 'final',
+            url: r.evidence.finalUrl,
+            audit: r.evidence.theme,
+            reusedFrom: undefined,
+          },
+        ]
+      : [];
+  const audited = states.filter((st) => st.audit.themes.length);
+  if (!audited.length) return '';
+  const blocks = audited.map((st) => {
+    const t = st.audit;
+    const cards = t.themes
+      .map((th) => {
+        const pct = th.score === null ? 'n/a' : `${Math.round(th.score * 100)}%`;
+        const cls =
+          th.score === null
+            ? ''
+            : th.score >= 0.98 && !th.leaks.length
+              ? 'pass'
+              : th.score >= 0.9
+                ? 'warn'
+                : 'fail';
+        return `<div class="chip" style="display:flex;gap:10px;align-items:center">${th.screenshot ? thumb(g, th.screenshot, `${st.label} · theme ${th.id}`, 'width:96px;height:60px') : ''}<div><span class="small muted">${h(th.id)} · ${h(th.switch)}</span><b class="${cls}">${pct}</b><span class="small muted">${th.onTheme}/${th.checked} on-theme · ${th.leaks.length} leaks · ${th.contrastIssues} contrast</span></div></div>`;
+      })
+      .join('');
+    const rows = t.themes
+      .flatMap((th) => [
+        ...th.leaks.map(
+          (l) =>
+            `<tr><td>${h(th.id)}</td><td><span class="badge b-bad">leak</span></td><td class="mono">${h(l.value)}</td><td class="u mono">${h(l.selector)}${l.source ? ` · ${h(l.source)}` : ''}</td></tr>`,
+        ),
+        ...th.findings.map(
+          (f) =>
+            `<tr><td>${h(th.id)}</td><td><span class="badge ${f.kind === 'hard-coded' ? 'b-bad' : 'b-warn'}">${h(f.kind)}</span> ${h(f.category)}</td><td class="mono">${h(f.value)} ×${f.count}${f.nearest?.token ? `<br><span class="faint">nearest ${h(f.nearest.token)} ${h(f.nearest.value)}${f.nearest.deltaE != null ? ` ΔE ${f.nearest.deltaE}` : ''}</span>` : ''}</td><td class="u mono">${f.declaration ? `${h(f.declaration.selector ?? '')} { ${h(f.declaration.value)} }${f.declaration.source ? ` · ${h(f.declaration.source)}` : ''}` : h(f.examples[0]?.selector ?? '')}</td></tr>`,
+        ),
+      ])
+      .join('');
+    const head =
+      audited.length > 1
+        ? `<p class="small" style="margin:14px 0 6px"><b>${h(st.label)}</b> <span class="mono faint">${h(route(st.url))}</span>${st.reusedFrom ? ` <span class="faint">· audited in ${h(st.reusedFrom.testId)} (${h(st.reusedFrom.label)})</span>` : ''}</p>`
+        : '';
+    return `${head}<div class="chips">${cards}</div>${rows ? `<table style="margin-top:10px"><tr><th>Theme</th><th>Problem</th><th>Value</th><th>Where</th></tr>${rows}</table>` : ''}`;
+  });
+  const tokens = audited[0]?.audit.tokenCount ?? 0;
+  return `<h3>Theme conformance (${tokens} theme variables · ${audited.length} screen${audited.length === 1 ? '' : 's'})</h3>${blocks.join('')}`;
+}
+
+/** @param {string} url */
+function route(url) {
+  try {
+    const u = new URL(url);
+    return `${u.pathname}${u.hash.startsWith('#/') ? u.hash : ''}`;
+  } catch {
+    return url;
+  }
+}
+
+/**
+ * Run-level: the same kinds of element compared across every audited screen. Advisory.
+ * @param {RunReport} report
+ */
+function renderConsistency(report) {
+  const c = report.consistency;
+  if (!c || !c.states) return '';
+  const style = (/** @type {Record<string, string>} */ st) =>
+    Object.entries(st)
+      .map(([k, v]) => `${k} ${v}`)
+      .join(' · ');
+  const rows = c.findings
+    .map(
+      (f) =>
+        `<tr><td>${h(f.theme)}</td><td><span class="badge b-warn">${f.type === 'near-duplicate' ? 'near-duplicate' : 'component varies'}</span> ${h(f.component ? `${f.component} (${f.kind})` : f.kind)}</td><td class="mono">${f.diffs.map((d) => `${h(d.prop)}: ${h(d.a)} vs ${h(d.b)}${d.deltaE !== undefined ? ` <span class="faint">ΔE ${d.deltaE}</span>` : ''}`).join('<br>')}</td><td class="u mono">${f.styles.map((s) => `${h(s.pages.join(', '))} · ${h(s.example.selector)}${s.example.text ? ` "${h(s.example.text)}"` : ''} ×${s.count}<br><span class="faint">${h(style(s.style))}</span>`).join('<br>')}</td></tr>`,
+    )
     .join('');
-  const rows = t.themes
-    .flatMap((th) => [
-      ...th.leaks.map(
-        (l) =>
-          `<tr><td>${h(th.id)}</td><td><span class="badge b-bad">leak</span></td><td class="mono">${h(l.value)}</td><td class="u mono">${h(l.selector)}${l.source ? ` · ${h(l.source)}` : ''}</td></tr>`,
-      ),
-      ...th.findings.map(
-        (f) =>
-          `<tr><td>${h(th.id)}</td><td><span class="badge ${f.kind === 'hard-coded' ? 'b-bad' : 'b-warn'}">${h(f.kind)}</span> ${h(f.category)}</td><td class="mono">${h(f.value)} ×${f.count}${f.nearest?.token ? `<br><span class="faint">nearest ${h(f.nearest.token)} ${h(f.nearest.value)}${f.nearest.deltaE != null ? ` ΔE ${f.nearest.deltaE}` : ''}</span>` : ''}</td><td class="u mono">${f.declaration ? `${h(f.declaration.selector ?? '')} { ${h(f.declaration.value)} }${f.declaration.source ? ` · ${h(f.declaration.source)}` : ''}` : h(f.examples[0]?.selector ?? '')}</td></tr>`,
-      ),
-    ])
-    .join('');
-  return `<h3>Theme conformance (${t.tokenCount} theme variables in the build)</h3><div class="chips">${cards}</div>${rows ? `<table style="margin-top:10px"><tr><th>Theme</th><th>Problem</th><th>Value</th><th>Where</th></tr>${rows}</table>` : ''}`;
+  return `<section class="summary"><h3 style="margin-top:0">Consistency across screens</h3>
+<p class="small muted">${c.states} distinct screen${c.states === 1 ? '' : 's'} audited in ${c.themes.length} theme${c.themes.length === 1 ? '' : 's'}. Buttons, links, inputs, headings and named components (data-aie2e-component) are compared; looks that differ only slightly are probably meant to be one. Advisory: this never changes a verdict.</p>
+${rows ? `<table><tr><th>Theme</th><th>Element</th><th>What differs</th><th>Where</th></tr>${rows}</table>` : '<p class="pass">No drift found: every kind of element looks the same wherever it appears.</p>'}</section>`;
 }
 
 /** @param {TestResult} r */
@@ -299,6 +352,7 @@ export function renderReport(report) {
 <section class="summary"><div class="nums"><div class="big"><b>${s.passed}<span style="font-size:inherit;color:var(--faint)">/${s.total}</span></b><span>tests passed</span></div>
 ${num('failed', s.failed, s.failed ? 'fail' : '')}${num('errors', s.errored, s.errored ? 'warn' : '')}${num('healed', s.healed)}${num('claim ≠ evidence', s.claimMismatches, s.claimMismatches ? 'fail' : '')}${num('agent tokens', tok(s.inputTokens + s.outputTokens))}${over ? num('planner + judge tokens', tok(over)) : ''}${Number.isFinite(ms) ? num('duration', dur(ms)) : ''}</div>
 <div class="bar"><i style="width:${pct(s.passed)};background:var(--ok)"></i><i style="width:${pct(s.failed)};background:var(--bad)"></i><i style="width:${pct(s.errored)};background:var(--warn)"></i></div></section>
+${renderConsistency(report)}
 ${report.results.map(renderTest).join('\n')}
 <p class="small faint">Pass or fail is decided only from evidence the harness collected (page, URL, network, downloads, screenshots). What the agent said is shown for comparison and never used for the verdict.</p>
 </main>

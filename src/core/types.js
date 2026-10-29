@@ -152,6 +152,26 @@ export const RecordingSchema = z.object({
  * @property {ThemeLeak[]} leaks
  * @property {number} contrastIssues  elements failing WCAG AA contrast in this theme
  * @property {string} [screenshot]
+ * @property {InventoryEntry[]} [inventory]  how buttons, links, inputs, headings and named components look
+ */
+/**
+ * @typedef {object} InventoryEntry  One distinct look of one kind of element in one theme.
+ * @property {string} kind  button | link | input | h1..h6 | component
+ * @property {string} [component]  the app's own name for it (data-aie2e-component)
+ * @property {string} [variant]  disabled, selected, pressed, current, expanded: compared separately
+ * @property {Record<string, string>} style  colours as hex; color, background, border, radius, fontSize, fontWeight, fontFamily, padding
+ * @property {number} count
+ * @property {{ selector: string, text: string }} example
+ */
+/**
+ * @typedef {object} ThemeState  The theme audit of one screen a test reached.
+ * @property {string} key  state fingerprint (route, overlays, landmarks, test ids)
+ * @property {string} testId
+ * @property {string} label  e.g. "start", "after step 3", "final"
+ * @property {string} url
+ * @property {number} [step]
+ * @property {{ testId: string, label: string }} [reusedFrom]  the run already audited this screen there
+ * @property {ThemeAudit} audit
  */
 /** @typedef {{ themes: ThemeResult[], tokenCount: number, skippedSheets: string[], error?: string }} ThemeAudit */
 /**
@@ -170,6 +190,7 @@ export const RecordingSchema = z.object({
  * @property {VitalsRecord[]} [vitals]
  * @property {A11yResult} [a11y]
  * @property {ThemeAudit} [theme]  theme conformance of the final state, in every theme the build ships
+ * @property {ThemeState[]} [themeStates]  every distinct screen the test reached that was audited, final included
  */
 /**
  * @typedef {object} Baseline  Harness snapshot of the start page BEFORE the agent acts.
@@ -249,6 +270,32 @@ export const RecordingSchema = z.object({
  * @property {string} targetUrl
  * @property {RunSummary} summary
  * @property {TestResult[]} results
+ * @property {Consistency} [consistency]  how consistently the same kinds of element look across screens
+ */
+/**
+ * @typedef {object} ConsistencyStyle
+ * @property {Record<string, string>} style
+ * @property {number} count
+ * @property {string[]} pages  routes where this look appears
+ * @property {{ selector: string, text: string }} example
+ */
+/**
+ * @typedef {object} ConsistencyFinding  Advisory: never changes a verdict.
+ * @property {'near-duplicate' | 'component-variants'} type
+ *   near-duplicate = two looks of the same kind of element that differ only slightly (probably meant to be one);
+ *   component-variants = an element the app names (data-aie2e-component) renders in more than one way
+ * @property {string} theme
+ * @property {string} kind
+ * @property {string} [component]
+ * @property {ConsistencyStyle[]} styles
+ * @property {{ prop: string, a: string, b: string, deltaE?: number }[]} diffs
+ * @property {string} message
+ */
+/**
+ * @typedef {object} Consistency
+ * @property {number} states  distinct screens audited in this run
+ * @property {string[]} themes
+ * @property {ConsistencyFinding[]} findings
  */
 
 // ---------- Crawl / plan inputs ----------

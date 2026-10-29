@@ -215,6 +215,19 @@ button.b.primary { background: var(--accent); color: var(--surface); border-colo
 .steps-mini div b { font-family: var(--f-display); font-size: 0.85rem; }
 .steps-mini div.on { background: var(--det-bg); outline-color: var(--accent); }
 
+/* chapter 08b: screens + drift */
+.screens { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.scr { border: 1px solid var(--line); background: var(--sunk); border-radius: 9px; padding: 10px 12px; display: grid; gap: 4px; font-size: 0.88rem; transition: border-color .3s, background .3s; }
+.scr .mono { font-size: 0.74rem; color: var(--muted); overflow-wrap: anywhere; }
+.scr .res { min-height: 1.3em; font: 600 0.78rem var(--f-mono); }
+.scr.on { border-color: var(--accent); background: var(--det-bg); }
+.scr.bad { border-color: var(--fail); background: var(--fail-bg); } .scr.bad .res { color: var(--fail); }
+.scr.ok { border-color: var(--pass); background: var(--pass-bg); } .scr.ok .res { color: var(--pass); }
+.drift { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.drift > div { display: grid; gap: 6px; justify-items: start; }
+.drift small { font-size: 0.74rem; color: var(--muted); overflow-wrap: anywhere; }
+.dbtn { color: #ffffff; border-radius: 4px; padding: 7px 14px; font-weight: 600; font-size: 0.9rem; }
+
 /* chapter 11 */
 .flow { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .flow .box { border: 1px solid var(--line); background: var(--sunk); border-radius: 8px; padding: 8px 12px; font-size: 0.9rem; }
@@ -243,7 +256,7 @@ footer { color: var(--muted); font-size: 0.85rem; border-top: 1px solid var(--li
 }
 @media (max-width: 640px) {
   body { font-size: 16px; }
-  .crawl, .kinds, .tdemo { grid-template-columns: minmax(0, 1fr); }
+  .crawl, .kinds, .tdemo, .screens, .drift { grid-template-columns: minmax(0, 1fr); }
   .steps-mini { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .lane, .ticks { grid-template-columns: 92px minmax(0, 1fr); }
   dl.gloss { grid-template-columns: minmax(0, 1fr); }
@@ -277,7 +290,7 @@ footer { color: var(--muted); font-size: 0.85rem; border-top: 1px solid var(--li
 
   <main>
     <header class="hero">
-      <div class="eyebrow">Study guide · updated Thu 29 Oct 2026</div>
+      <div class="eyebrow">Study guide · updated Fri 30 Oct 2026</div>
       <h1>How the tester works, one piece at a time</h1>
       <p class="lede">Give it a URL. It explores the app, writes tests, drives a real browser with an AI agent, and decides pass or fail only from evidence the agent cannot fake. Tests that pass are replayed later with plain Playwright and no AI at all.</p>
       <div class="legend" aria-label="Colour legend">
@@ -425,6 +438,7 @@ footer { color: var(--muted); font-size: 0.85rem; border-top: 1px solid var(--li
         <li><b>Vacuity.</b> A check that was already true on the start page proves nothing and isn't counted. If no outcome check is truly earned, the test fails as <i>Inconclusive</i>.</li>
         <li><b>Asymmetric trust.</b> If the agent says it <i>failed</i> and the only proof of success is an AI reading screenshots, the test fails. Hard evidence still overrides the agent.</li>
         <li><b>Execution errors are not failures.</b> A crash is <i>error</i>, not <i>fail</i>, so you know whether to blame the app or the harness.</li>
+        <li><b>Visible matches only.</b> Text and selector checks ignore hidden copies (<code>filter({ visible: true })</code>). Apps keep hidden duplicates in closed menus and off-screen slides, and the first match in the DOM is often one of them.</li>
       </ol>
       <div class="demo">
         <div class="demo-bar"><span class="label">Simulator · same rules as evidenceJudge.js</span></div>
@@ -457,7 +471,8 @@ footer { color: var(--muted); font-size: 0.85rem; border-top: 1px solid var(--li
           <tr><td>Transient toasts</td><td>A MutationObserver records text that appeared, even if it vanished</td><td>"Saved!" that disappeared before the screenshot</td></tr>
           <tr><td>Core Web Vitals</td><td><code>web-vitals</code> injected into the page</td><td>LCP, CLS, INP, FCP, TTFB over budget</td></tr>
           <tr><td>Accessibility</td><td><code>axe-core</code> run in the page</td><td>Missing alt text, contrast, nested interactive</td></tr>
-          <tr><td>Theme conformance</td><td>Chapter 08</td><td>Hard-coded colours, dark-mode leaks</td></tr>
+          <tr><td>Theme conformance</td><td>Chapter 08, on every screen</td><td>Hard-coded colours, dark-mode leaks</td></tr>
+          <tr><td>Consistency</td><td>Chapter 08, across the run</td><td>The same button in two shades of blue</td></tr>
         </tbody>
       </table></div>
       <div class="files"><code>src/browser/collectors.js</code><code>src/browser/session.js · collectEvidence</code><code>src/config/config.js · quality</code></div>
@@ -465,7 +480,7 @@ footer { color: var(--muted); font-size: 0.85rem; border-top: 1px solid var(--li
 
     <!-- 08 -->
     <section class="ch" id="theme">
-      <div class="ch-head"><div class="eyebrow">Chapter 08 · newest · built Thu 29 Oct night</div><h2>Theme conformance</h2></div>
+      <div class="ch-head"><div class="eyebrow">Chapter 08 · built Thu 29 Oct, extended Fri 30 Oct</div><h2>Theme conformance</h2></div>
       <p>The themes an app ships (light, dark, brand themes) live in its production CSS as custom properties. This audit discovers them from the page itself, switches through each one, and checks that every element actually uses the theme. When something doesn't, it asks Chrome which CSS rule set that value.</p>
       <div class="demo">
         <div class="demo-bar"><span class="label">Interactive · a tiny app with a light and dark theme</span>
@@ -488,7 +503,28 @@ footer { color: var(--muted); font-size: 0.85rem; border-top: 1px solid var(--li
         </div>
       </div>
       <p class="why"><b>How a value is classified:</b> Chrome DevTools Protocol <code>CSS.getMatchedStylesForNode</code> returns the declaration that won. If it uses <code>var(--…)</code>, it's derived from the theme: fine. An author rule without a variable is <b>hard-coded</b>, reported with selector and file:line. No author rule at all means a <b>browser default</b>. Colours count as on-theme within ΔE₀₀ 2.3, the "just noticeable difference".</p>
-      <div class="files"><code>src/theme/discover.js</code><code>src/theme/audit.js</code><code>tests/theme.test.js</code><code>tests/integration/theme.test.js</code></div>
+      <h3>On every screen a test reaches</h3>
+      <p>After each replay step and each agent step, the harness fingerprints the screen: route, open dialogs and menus, landmarks, visible test ids (never text, which AI apps rewrite every run). New screens get audited, at most 4 per test plus the final one; a screen another test already audited is reused. Stagehand waits for this callback, so the agent is paused, and in-between audits restore the scroll position.</p>
+      <div class="demo">
+        <div class="demo-bar"><span class="label">Animated · why the final screen is not enough</span><div class="btns"><button class="b primary" id="scrPlay">Play</button></div></div>
+        <div class="screens" id="scrRow">
+          <div class="scr" data-i="0"><b>start</b><span class="mono">/settings</span><span class="res"></span></div>
+          <div class="scr" data-i="1"><b>after step 1</b><span class="mono">/settings + dialog</span><span class="res"></span></div>
+          <div class="scr" data-i="2"><b>final</b><span class="mono">/settings</span><span class="res"></span></div>
+        </div>
+        <p class="caption" id="scrCap" aria-live="polite">A test opens a profile dialog, edits, and closes it again.</p>
+      </div>
+      <h3>Consistency across screens</h3>
+      <p>A value can pass on every single screen and the product still drift. Each audit also records how buttons, links, inputs and headings look; the run then flags looks that differ only slightly (ΔE between 2.3 and 10, radius within 2px), and elements named with <code>data-aie2e-component</code> that render in more than one way. Advisory: it never fails a test.</p>
+      <div class="demo">
+        <div class="demo-bar"><span class="label">The seeded <code>button-drift</code> bug</span></div>
+        <div class="drift">
+          <div><span class="dbtn" style="background:#2563eb">Add to cart</span><small class="mono">/ · #2563eb · var(--color-primary)</small></div>
+          <div><span class="dbtn" style="background:#2157cf">Place order</span><small class="mono">/checkout · #2157cf · color-mix(var(--color-primary) 88%, black)</small></div>
+        </div>
+        <p class="caption">Both values trace back to <code>var(--color-primary)</code>, so neither screen is off-theme. Comparing the screens gives: <span class="mono">light: two near-identical button styles (background #2563eb vs #2157cf, ΔE 5.3)</span>.</p>
+      </div>
+      <div class="files"><code>src/theme/discover.js</code><code>src/theme/audit.js</code><code>src/theme/states.js</code><code>src/theme/consistency.js</code><code>tests/theme.test.js</code><code>tests/integration/theme.test.js</code></div>
       <div class="interview"><div class="eyebrow">Say it in an interview</div><p>"The source of truth is the production build itself, not Figma. I don't guess whether a colour is hard-coded from its value; I ask the browser which declaration produced it. So the report says <code>.newsletter button { background: #2f6fe4 }</code>, nearest token <code>--color-primary</code>."</p></div>
     </section>
 
@@ -501,16 +537,17 @@ footer { color: var(--muted); font-size: 0.85rem; border-top: 1px solid var(--li
 &lt;section <span class="k">aria-busy</span>={loading}&gt;…&lt;/section&gt;                <span class="c">// settle waits for it (a web standard)</span>
 &lt;div <span class="k">data-aie2e-hint</span>=<span class="s">"Hover a slide to see delete"</span>&gt;    <span class="c">// free text for the planner and agent</span>
 &lt;button <span class="k">data-aie2e-reveal</span>=<span class="s">"hover"</span>&gt;Delete&lt;/button&gt;    <span class="c">// marks hover-only controls</span>
-&lt;div <span class="k">data-aie2e-ignore-theme</span>&gt;…&lt;/div&gt;                 <span class="c">// e.g. a user's own image or brand logo</span></pre>
+&lt;div <span class="k">data-aie2e-ignore-theme</span>&gt;…&lt;/div&gt;                 <span class="c">// e.g. a user's own image or brand logo</span>
+&lt;button <span class="k">data-aie2e-component</span>=<span class="s">"PrimaryButton"</span>&gt;   <span class="c">// must look the same on every screen</span></pre>
       <p class="why"><b>Recording with hints:</b> when the agent clicks, the harness looks for a unique test id on the element (or a close ancestor), then a non-generated <code>#id</code>. The recording stores that selector <i>plus</i> the XPath as a fallback, and replay uses whichever appears first. Apps with test ids also give the agent two extra tools: list test ids (hidden ones too) and act on one exactly.</p>
       <div class="files"><code>src/browser/hints.js</code><code>docs/APP_HINTS.md</code></div>
     </section>
 
     <!-- 10 -->
     <section class="ch" id="eval">
-      <div class="ch-head"><div class="eyebrow">Chapter 10 · proof it works</div><h2>Evaluation: a shop with 10 known bugs</h2></div>
+      <div class="ch-head"><div class="eyebrow">Chapter 10 · proof it works</div><h2>Evaluation: a shop with 11 known bugs</h2></div>
       <p><code>examples/buggy-shop</code> is a tiny shop where each bug can be switched on by name. <code>npm run eval</code> runs the clean shop several times (false positives? flakiness?), then each bug <b>alone</b>, so a detection is attributed exactly.</p>
-      <div class="facts"><span class="pill pass">10/10 bugs detected</span><span class="pill pass">0 false positives (3 × 7 clean tests)</span><span class="pill pass">0 flaky</span><span class="pill det">committed suite · 0 tokens</span></div>
+      <div class="facts"><span class="pill pass">11/11 bugs detected</span><span class="pill pass">0 false positives (3 × 7 clean tests)</span><span class="pill pass">0 flaky</span><span class="pill det">committed suite · 0 tokens</span></div>
       <div class="scroll-x"><table>
         <thead><tr><th>Seeded bug</th><th>Kind</th><th>Caught by</th></tr></thead>
         <tbody>
@@ -524,6 +561,7 @@ footer { color: var(--muted); font-size: 0.85rem; border-top: 1px solid var(--li
           <tr><td>Subscribe button hard-codes #2f6fe4</td><td>theme</td><td>theme: hard-coded value</td></tr>
           <tr><td>Newsletter card stays white in dark mode</td><td>theme</td><td>theme: leak</td></tr>
           <tr><td>Cards use a 7px radius not on the scale</td><td>theme</td><td>theme: off-scale radius</td></tr>
+          <tr><td>Checkout button a slightly darker blue (derived from the token)</td><td>consistency</td><td>near-duplicate button, ΔE 5.3</td></tr>
         </tbody>
       </table></div>
       <p class="why"><b>Be honest about what this proves:</b> it measures the judge and the replay path on a known app. <code>npm run eval -- --mode explore --heal</code> measures the full AI path (planner + agent), which costs tokens and varies run to run.</p>
@@ -562,7 +600,7 @@ footer { color: var(--muted); font-size: 0.85rem; border-top: 1px solid var(--li
           <tr><td>Colour science</td><td>culori</td><td>CIEDE2000 colour difference, parsing every CSS colour format.</td></tr>
           <tr><td>Server</td><td>Fastify</td><td>Small, fast, good SSE story.</td></tr>
           <tr><td>UI</td><td>React 19, Tailwind v4, Radix UI</td><td>Accessible primitives, theme tokens as CSS variables.</td></tr>
-          <tr><td>Tests</td><td>Vitest</td><td>80 tests: unit plus real-browser integration.</td></tr>
+          <tr><td>Tests</td><td>Vitest</td><td>85 tests: unit plus real-browser integration.</td></tr>
         </tbody>
       </table></div>
       <p class="why"><b>Language:</b> JavaScript (ESM) with JSDoc types checked by <code>tsc</code>. You get type safety with no build step.</p>
@@ -584,6 +622,8 @@ footer { color: var(--muted); font-size: 0.85rem; border-top: 1px solid var(--li
           <tr><td>Planner guessed URLs like <code>/presentation</code></td><td>Grounding: only URLs/endpoints from the crawl</td></tr>
           <tr><td>LangGraph <code>maxConcurrency: 1</code> dropped branches</td><td>Own limiter + regression test</td></tr>
           <tr><td>The judge caught a bug in my own demo shop (scripts ran before helpers)</td><td>Fixed in the app, not the tester</td></tr>
+          <tr><td><code>.first()</code> picked a hidden copy of the text, so a visible "Order placed" failed</td><td>Visible-only text and selector checks</td></tr>
+          <tr><td>A theme bug lived in a dialog the test closed again</td><td>Audit every screen, share screens across tests</td></tr>
         </tbody>
       </table></div>
     </section>
@@ -593,7 +633,7 @@ footer { color: var(--muted); font-size: 0.85rem; border-top: 1px solid var(--li
       <div class="ch-head"><div class="eyebrow">Chapter 14 · plan to Mon 2 Nov</div><h2>What's next</h2></div>
       <div class="days">
         <div class="day done"><b>Thu</b><span>Agent loop, judge, planner, replay/heal, crawler, quality evidence, live view, UI, LangGraph, suites, evaluation, theme conformance v1. <i>Done.</i></span></div>
-        <div class="day now"><b>Fri</b><span>Theme audit on every state the agent reaches (not only the end) and cross-page consistency; text checks ignore hidden copies; first real run on the AI Presentation Builder in light and dark; fix what it teaches us.</span></div>
+        <div class="day now"><b>Fri</b><span><s>Theme audit on every screen</s>, <s>cross-page consistency</s>, <s>visible-only text checks</s>: done. Left: first real run on the AI Presentation Builder in light and dark, fix what it teaches us, rehearse the demo story.</span></div>
         <div class="day"><b>Sat</b><span>Visual baselines per theme (pixel diff, <code>data-aie2e-mask</code>, approve flow; AI triage if time); test case manager in the UI; login flows (credentials + saved session).</span></div>
         <div class="day"><b>Sun</b><span>Typed attribute contract (<code>.d.ts</code> for JSX); GitHub Action; a run on TodoMVC; README.</span></div>
         <div class="day"><b>Mon</b><span>Final evaluation runs, demo GIF. Nothing new.</span></div>
@@ -831,6 +871,25 @@ footer { color: var(--muted); font-size: 0.85rem; border-top: 1px solid var(--li
     for (const s of steps) { steps.forEach((x) => x.classList.remove('on')); s.classList.add('on'); await wait(380); }
     steps.forEach((x) => x.classList.remove('on'));
     app.classList.add('audited'); themeFindings();
+  };
+
+  /* ---------- 08b screens ---------- */
+  const SCR = [
+    ['on', '', 'start: audited. Clean in light and dark.'],
+    ['bad', 'dark: dialog leaks #ffffff', 'after step 1: a new screen (a dialog opened), so it is audited. The dialog keeps a hard-coded white in dark mode.'],
+    ['ok', 'same as start: reused', 'final: the dialog is closed again, so this is the start screen. A final-only audit would call this test clean. With every screen audited, the test fails with "[after step 1]".'],
+  ];
+  $('#scrPlay').onclick = async () => {
+    const cards = $$('#scrRow .scr');
+    cards.forEach((c) => { c.className = 'scr'; c.querySelector('.res').textContent = ''; });
+    for (let i = 0; i < SCR.length; i++) {
+      const [cls, res, cap] = SCR[i];
+      cards[i].classList.add('on'); $('#scrCap').textContent = cap;
+      await wait(900);
+      cards[i].classList.remove('on'); if (i > 0) cards[i].classList.add(cls); else cards[i].classList.add('ok');
+      cards[i].querySelector('.res').textContent = res || 'clean';
+      await wait(500);
+    }
   };
 
   /* ---------- rail highlight ---------- */

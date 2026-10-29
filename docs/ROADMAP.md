@@ -1,4 +1,4 @@
-# Roadmap: real-time AI testing + theme conformance (updated Thu 29 Oct, 23:15)
+# Roadmap: real-time AI testing + theme conformance (updated Fri 30 Oct, 03:00)
 
 ## Vision (Rohan, 29 Oct)
 
@@ -14,13 +14,13 @@
 
 ## Where we stand
 
-| Pillar                            | Status | Done                                                                                                                                                       | Missing                                                                                   |
-| --------------------------------- | ------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
-| Real-time AI testing on real apps | ~75%   | real browser and backend, agent + replay + heal, strict evidence judge, API/download/toast/vitals/a11y evidence, settle on aria-busy and in-flight API     | login flows, test data setup/cleanup                                                      |
-| User-authored tests and flows     | ~40%   | single goal in the UI, JSON suites (CLI), export run → suite                                                                                               | in-UI test case manager                                                                   |
-| Theme conformance                 | v1 ✅  | CSSOM discovery, class/attr/media switching, CDP declaration lookup, CIEDE2000 match, leaks, per-theme contrast, Theme tab + report, 3 seeded bugs in eval | every agent-reached state (not only the final one), cross-page consistency, DTCG override |
-| Visual testing                    | ~25%   | per-step screenshots, timeline-based AI visual checks                                                                                                      | baselines, pixel diff + masks, AI diff triage, approve flow                               |
-| Client attribute contract         | ~50%   | data-testid family, aria-busy, data-aie2e-hint, data-aie2e-reveal                                                                                          | data-aie2e-mask, data-aie2e-component, data-aie2e-theme, TS/JSX types                     |
+| Pillar                            | Status  | Done                                                                                                                                                       | Missing                                                               |
+| --------------------------------- | ------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------- |
+| Real-time AI testing on real apps | ~75%    | real browser and backend, agent + replay + heal, strict evidence judge, API/download/toast/vitals/a11y evidence, settle on aria-busy and in-flight API     | login flows, test data setup/cleanup                                  |
+| User-authored tests and flows     | ~40%    | single goal in the UI, JSON suites (CLI), export run → suite                                                                                               | in-UI test case manager                                               |
+| Theme conformance                 | v1.1 ✅ | CSSOM discovery, class/attr/media switching, CDP declaration lookup, CIEDE2000 match, leaks, per-theme contrast, Theme tab + report, 3 seeded bugs in eval | DTCG override (optional); first real run on the Presentation Builder  |
+| Visual testing                    | ~25%    | per-step screenshots, timeline-based AI visual checks                                                                                                      | baselines, pixel diff + masks, AI diff triage, approve flow           |
+| Client attribute contract         | ~50%    | data-testid family, aria-busy, data-aie2e-hint, data-aie2e-reveal                                                                                          | data-aie2e-mask, data-aie2e-component, data-aie2e-theme, TS/JSX types |
 
 ## Design: theme conformance (source of truth = the production build)
 
@@ -78,9 +78,9 @@ Loose ends from Thu (Rohan, on his machine):
 
 **Fri**
 
-- [ ] Theme audit on every state the agent reaches (not only the final page)
-- [ ] Cross-page consistency (same component, different token values)
-- [ ] `text-visible` ignores hidden copies (`filter({ visible: true })`)
+- [x] Theme audit on every state the agent reaches (not only the final page)
+- [x] Cross-page consistency: near-duplicate looks + `data-aie2e-component` (advisory); seeded `button-drift` → 11/11
+- [x] `text-visible` ignores hidden copies (`filter({ visible: true })`), baseline too
 - [ ] First real run on the AI Presentation Builder in light and dark; fix what it teaches us
 - [ ] Rehearse the demo story on the real app: replay at 0 tokens, a forced self-heal, a wrong expectation failing
 - [ ] DTCG token-file override (cut first if Friday runs long)

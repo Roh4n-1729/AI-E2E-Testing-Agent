@@ -38,9 +38,38 @@ const INHERITED = new Set(['color', 'fontSize', 'fontFamily']);
  * @param {number} max
  */
 function tagElements(max) {
-  /** @type {{ i: number, tag: string, sel: string, text: string, w: number, h: number, area: number }[]} */
+  /** @type {{ i: number, tag: string, sel: string, text: string, w: number, h: number, area: number, inView: boolean, kind: string, component: string, variant: string }[]} */
   const out = [];
   const vh = innerHeight;
+  const vw = innerWidth;
+  /** what a person would call this element; '' = not part of the component inventory */
+  const kindOf = (/** @type {Element} */ el) => {
+    const tag = el.tagName.toLowerCase();
+    const role = el.getAttribute('role');
+    if (/^h[1-6]$/.test(tag)) return tag;
+    if (
+      tag === 'button' ||
+      role === 'button' ||
+      (tag === 'input' && /^(button|submit|reset)$/.test(/** @type {HTMLInputElement} */ (el).type))
+    )
+      return 'button';
+    if (tag === 'a' && el.hasAttribute('href')) return 'link';
+    if (tag === 'input' || tag === 'select' || tag === 'textarea') return 'input';
+    return '';
+  };
+  /** states that legitimately look different (disabled, selected...) are compared separately */
+  const variantOf = (/** @type {Element} */ el) =>
+    [
+      el.hasAttribute('disabled') || el.getAttribute('aria-disabled') === 'true' ? 'disabled' : '',
+      el.getAttribute('aria-pressed') === 'true' ? 'pressed' : '',
+      el.getAttribute('aria-selected') === 'true' ? 'selected' : '',
+      el.hasAttribute('aria-current') && el.getAttribute('aria-current') !== 'false'
+        ? 'current'
+        : '',
+      el.getAttribute('aria-expanded') === 'true' ? 'expanded' : '',
+    ]
+      .filter(Boolean)
+      .join(' ');
   const short = (/** @type {Element} */ el) => {
     const parts = [];
     for (
@@ -86,14 +115,23 @@ function tagElements(max) {
     const ownText = Array.from(el.childNodes).some(
       (n) => n.nodeType === 3 && (n.textContent ?? '').trim(),
     );
+    const component = el.getAttribute('data-aie2e-component') ?? '';
+    const kind = kindOf(el) || (component ? 'component' : '');
     out.push({
       i,
       tag: el.tagName.toLowerCase(),
       sel: short(el),
-      text: ownText ? (el.textContent ?? '').trim().replace(/\s+/g, ' ').slice(0, 40) : '',
+      text: (ownText || kind ? (el.textContent ?? '') : '')
+        .trim()
+        .replace(/\s+/g, ' ')
+        .slice(0, 40),
       w: r.width,
       h: r.height,
       area: r.width * r.height,
+      inView: r.top >= 0 && r.left >= 0 && r.bottom <= vh && r.right <= vw,
+      kind,
+      component,
+      variant: kind ? variantOf(el) : '',
     });
   }
   return out;
@@ -134,6 +172,40 @@ function readProbes() {
       ? getComputedStyle(document.documentElement).backgroundColor
       : bodyBg;
   return { values: out, page };
+}
+
+/**
+ * Runs in the page: the full look of the inventory elements (buttons, links, inputs, headings, named
+ * components) in the CURRENT theme, for the cross-page consistency check. Elements that are hovered,
+ * focused or pressed right now are skipped: their look is a momentary state, not their design.
+ * @param {number[]} indices
+ */
+function readStyles(indices) {
+  /** @type {Record<number, Record<string, string>>} */
+  const out = {};
+  const transparent = (/** @type {string} */ c) =>
+    c === 'transparent' || /,\s*0\)$|\/\s*0\)$/.test(c);
+  for (const i of indices) {
+    const el = document.querySelector(`[data-aie2e-probe="${i}"]`);
+    if (!el || el.matches(':hover, :focus, :active')) continue;
+    const cs = getComputedStyle(el);
+    /** @type {Record<string, string>} */
+    const st = {
+      color: cs.color,
+      fontSize: cs.fontSize,
+      fontWeight: cs.fontWeight,
+      fontFamily: (cs.fontFamily.split(',')[0] ?? '').replace(/["']/g, '').trim().toLowerCase(),
+    };
+    if (!transparent(cs.backgroundColor)) st.background = cs.backgroundColor;
+    if (parseFloat(cs.borderTopWidth) > 0 && cs.borderTopStyle !== 'none')
+      st.border = cs.borderTopColor;
+    if (st.background || st.border) {
+      st.radius = cs.borderTopLeftRadius;
+      st.padding = `${cs.paddingTop} ${cs.paddingLeft}`;
+    }
+    out[i] = st;
+  }
+  return out;
 }
 
 /** Runs in the page: resolve every token in the CURRENT theme to a colour, a length or a font list. */
@@ -184,11 +256,17 @@ function resolveTokens(/** @type {string[]} */ names) {
 
 /**
  * Audit the page as it is now, in every theme the build ships.
+ * `scrollSafe` is for audits in the middle of a run: element crops are only taken of elements already
+ * in view (a crop of anything else would scroll the page), and the scroll position is restored, so the
+ * page the agent saw in its last screenshot is still the page it acts on.
  * @param {Page} page
- * @param {{ dir: string, rel: (abs: string) => string, maxElements?: number, crops?: number }} opts
+ * @param {{ dir: string, rel: (abs: string) => string, maxElements?: number, crops?: number, scrollSafe?: boolean }} opts
  * @returns {Promise<ThemeAudit>}
  */
-export async function auditThemes(page, { dir, rel, maxElements = 400, crops = 6 }) {
+export async function auditThemes(
+  page,
+  { dir, rel, maxElements = 400, crops = 6, scrollSafe = false },
+) {
   const discovery = await discoverThemes(page);
   if (!discovery.themes.length || !discovery.tokenNames.length) {
     return {
@@ -198,6 +276,7 @@ export async function auditThemes(page, { dir, rel, maxElements = 400, crops = 6
     };
   }
   const original = await themeState(page);
+  const scroll = await page.evaluate(() => [scrollX, scrollY]).catch(() => [0, 0]);
   const cdp = await page.context().newCDPSession(page);
   /** @type {Map<string, { sourceURL: string, startLine: number, isInline: boolean }>} */
   const sheets = new Map();
@@ -209,6 +288,7 @@ export async function auditThemes(page, { dir, rel, maxElements = 400, crops = 6
     await cdp.send('CSS.enable');
     const elements = await page.evaluate(tagElements, maxElements);
     const meta = new Map(elements.map((e) => [e.i, e]));
+    const inventoryIdx = elements.filter((e) => e.kind).map((e) => e.i);
     const { root } = await cdp.send('DOM.getDocument', { depth: 0 });
     /** @type {Map<string, Declaration | null>} */
     const declCache = new Map();
@@ -234,6 +314,7 @@ export async function auditThemes(page, { dir, rel, maxElements = 400, crops = 6
       const tokens = await page.evaluate(resolveTokens, discovery.tokenNames);
       const snap = await page.evaluate(readProbes);
       perTheme.set(theme.id, snap);
+      const styles = inventoryIdx.length ? await page.evaluate(readStyles, inventoryIdx) : {};
       const shot = path.join(dir, `${theme.id}.png`);
       await page.screenshot({ path: shot }).catch(() => undefined);
 
@@ -297,7 +378,7 @@ export async function auditThemes(page, { dir, rel, maxElements = 400, crops = 6
           };
           f.count++;
           if (f.examples.length < 3) f.examples.push({ selector: m.sel, text: m.text });
-          if (!f.crop && cropsLeft > 0) {
+          if (!f.crop && cropsLeft > 0 && (!scrollSafe || m.inView)) {
             const file = path.join(dir, `${theme.id}-${cat}-${findings.size}.png`);
             const ok = await page
               .locator(`[data-aie2e-probe="${i}"]`)
@@ -328,6 +409,7 @@ export async function auditThemes(page, { dir, rel, maxElements = 400, crops = 6
         leaks: [],
         contrastIssues: await contrastIssues(page),
         screenshot: rel(shot),
+        inventory: inventoryOf(styles, meta),
       });
     }
 
@@ -372,8 +454,43 @@ export async function auditThemes(page, { dir, rel, maxElements = 400, crops = 6
       )
       .catch(() => undefined);
     await restoreTheme(page, original).catch(() => undefined);
+    if (scrollSafe)
+      await page.evaluate(([x, y]) => scrollTo(x ?? 0, y ?? 0), scroll).catch(() => undefined);
     await cdp.detach().catch(() => undefined);
   }
+}
+
+/**
+ * Group the inventory elements by what they are and exactly how they look (colours as hex).
+ * @param {Record<number, Record<string, string>>} styles
+ * @param {Map<number, { sel: string, text: string, kind: string, component: string, variant: string }>} meta
+ * @returns {import('../core/types.js').InventoryEntry[]}
+ */
+function inventoryOf(styles, meta) {
+  /** @type {Map<string, import('../core/types.js').InventoryEntry>} */
+  const groups = new Map();
+  for (const [idx, raw] of Object.entries(styles)) {
+    const m = meta.get(Number(idx));
+    if (!m) continue;
+    /** @type {Record<string, string>} */
+    const style = {};
+    for (const k of Object.keys(raw).sort()) {
+      const v = raw[k] ?? '';
+      style[k] = k === 'color' || k === 'background' || k === 'border' ? toHex(v) : v;
+    }
+    const key = `${m.kind}|${m.component}|${m.variant}|${JSON.stringify(style)}`;
+    const g = groups.get(key) ?? {
+      kind: m.kind,
+      component: m.component || undefined,
+      variant: m.variant || undefined,
+      style,
+      count: 0,
+      example: { selector: m.sel, text: m.text },
+    };
+    g.count++;
+    groups.set(key, g);
+  }
+  return [...groups.values()].sort((a, b) => b.count - a.count).slice(0, 80);
 }
 
 /** @param {ThemeDef} t */

@@ -88,6 +88,12 @@ export function startApp() {
   <button data-testid="exit" onclick="document.title='Exited'">Exit</button>
 </div>
 </body></html>`);
+    if (url === '/dup')
+      // a hidden copy of the text comes FIRST in the DOM, as with closed menus or off-screen slides
+      return void res.end(`<!doctype html><html lang="en"><head><title>Dup</title></head><body>
+<div class="msg" style="display:none">Order placed</div><p class="msg">Welcome</p>
+<button id="place" onclick="document.getElementById('out').textContent='Order placed'">Place order</button><p id="out"></p>
+</body></html>`);
     if (url === '/anim')
       return void res.end(`<!doctype html><html lang="en"><head><title>Anim</title><style>
 @keyframes spin{to{transform:rotate(360deg)}}#s{width:120px;height:120px;margin:60px;background:#e96c2f;animation:spin 1s linear infinite}</style></head><body><h1>Anim</h1><div id="s"></div></body></html>`);

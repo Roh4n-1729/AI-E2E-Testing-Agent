@@ -8,7 +8,7 @@ BOTH this file and `docs/study-guide.html` (with an animation or interactive dem
 next", and republish the artifact. Keep each chapter in the same shape: what it is → why it exists → how it works →
 where in the code → one line to say in an interview.
 
-_Last updated: Thu 29 Oct 2026, after theme conformance v1._
+_Last updated: Fri 30 Oct 2026, after theme audits on every screen and cross-page consistency._
 
 ---
 
@@ -91,6 +91,9 @@ green/red/amber = pass/fail/warning.
   3. **Asymmetric trust:** if the agent says it failed and the only success proof is visual (AI), the test fails.
      Hard evidence (URL, text, test id, API call, download, toast) overrides the agent.
   4. A crash is **error**, not **fail**. A replay break with healing off is `outcome.failure` → **fail**.
+  5. **Visible matches only:** `text-visible` and `selector-visible` ignore hidden copies of the text
+     (`filter({ visible: true })`). Without this, a hidden copy that comes first in the DOM made a visible
+     "Order placed" fail.
 - Quality gate `off | warn | fail` auto-adds web-vitals, a11y and theme-conformance checks. In `warn` they are
   advisory (shown as warnings, verdict unchanged).
 - Code: `src/judge/evidenceJudge.js` (`HARD_KINDS`, `GUARD_KINDS`), `src/core/testRunner.js`.
@@ -107,10 +110,11 @@ green/red/amber = pass/fail/warning.
 | Core Web Vitals     | `web-vitals` in page               | LCP/CLS/INP/FCP/TTFB budgets           |
 | Accessibility       | `axe-core` in page                 | alt text, contrast, nested interactive |
 | Theme conformance   | chapter 08                         | hard-coded values, dark-mode leaks     |
+| Consistency         | chapter 08 (run level)             | the same button in two shades of blue  |
 
 Code: `src/browser/collectors.js`, `session.js#collectEvidence`, `src/config/config.js`.
 
-## 08 Theme conformance (newest)
+## 08 Theme conformance
 
 The source of truth is the app's production build (CSS custom properties), not Figma. The audit runs in six steps:
 
@@ -139,8 +143,37 @@ A score alone hid single hard-coded values, which is why the hard-coded rule exi
 the UI and in the HTML report: a screenshot per theme, element crops and findings. `data-aie2e-ignore-theme` opts an
 element out.
 
-Code: `src/theme/discover.js`, `src/theme/audit.js`, tests `tests/theme.test.js`, `tests/integration/theme.test.js`.
-Interview: "I don't guess from the value; I ask the browser which declaration produced it."
+### On every screen, not just the last one (added Fri 30 Oct)
+
+- After every replay step and every agent step, the harness fingerprints the screen:
+  - the route, with ids normalised;
+  - open dialogs, menus and listboxes;
+  - the visible landmarks;
+  - the visible test ids.
+    Text is left out on purpose, because AI apps write new text on every run.
+- Only new screens are audited. The cap is 4 per test plus the final screen (`AIE2E_THEME_STATES`). A screen
+  another test already audited in the same run is reused (`reusedFrom`).
+- This is safe with the agent: Stagehand awaits its `onEvidence` callback, so the agent is paused. In-between
+  audits only crop elements already in view and restore the scroll position.
+- Why: a theme bug inside a dialog is invisible to a final-only audit once the dialog closes. The test for this is
+  exactly that dialog.
+
+### Consistency across screens (advisory, run level)
+
+- Each audit also records how buttons, links, inputs, headings and named components look in each theme. It skips
+  anything hovered, focused or pressed, because that look is momentary.
+- At report time, two looks of the same kind of element that differ only slightly are flagged as
+  **near-duplicates**: ΔE between 2.3 and 10, radius or padding within 2px, size within 1px. Elements named with
+  `data-aie2e-component` must look identical everywhere. Clearly different looks (secondary, outline, large) are
+  deliberate variants and are not reported.
+- Why: `color-mix(in srgb, var(--color-primary) 88%, black)` is derived from the token, so every single screen is
+  "on theme", yet the checkout button is a different blue. Only comparing screens catches that.
+- It never fails a test; it shows in the run summary and the report.
+
+Code: `src/theme/discover.js`, `src/theme/audit.js`, `src/theme/states.js`, `src/theme/consistency.js`, tests
+`tests/theme.test.js`, `tests/integration/theme.test.js`.
+Interview: "I don't guess from the value; I ask the browser which declaration produced it. And because a value can be
+on-theme on each screen and still drift, I also compare the same component across screens."
 
 ## 09 App hints (optional contract)
 
@@ -151,16 +184,17 @@ Interview: "I don't guess from the value; I ask the browser which declaration pr
   - `data-aie2e-hint`: free text for the planner and agent.
   - `data-aie2e-reveal="hover"`: marks hover-only controls.
   - `data-aie2e-ignore-theme`: opts an element out of the theme audit.
+  - `data-aie2e-component="PrimaryButton"`: names a component, which must look the same on every screen.
 - Apps with test ids give the agent two more tools: `appTestIds` (lists them, hidden ones too) and `useTestId` (acts
   on one exactly).
 - Code: `src/browser/hints.js`, docs `docs/APP_HINTS.md`.
 
 ## 10 Evaluation
 
-- `examples/buggy-shop` has 10 bugs you can switch on by name: functional, error, accessibility, performance and
-  three theme bugs.
+- `examples/buggy-shop` has 11 bugs you can switch on by name: functional, error, accessibility, performance, three
+  theme bugs and one consistency bug (`button-drift`).
 - `npm run eval` runs the clean app N times, then each bug on its own, so every detection is attributed exactly.
-- Result (committed suite, 0 tokens): **10/10 detected · 0 false positives (3 × 7) · 0 flaky.**
+- Result (committed suite, 0 tokens): **11/11 detected · 0 false positives (3 × 7) · 0 flaky.**
 - This measures the judge and the replay path. `npm run eval -- --mode explore --heal` measures the full AI path.
 - Code: `scripts/evaluate.js`, `docs/EVALUATION.md`.
 
@@ -185,7 +219,7 @@ Interview: "I don't guess from the value; I ask the browser which declaration pr
 - **Vercel AI SDK + zod:** structured LLM calls.
 - **axe-core, web-vitals, culori:** accessibility, Web Vitals and colour difference.
 - **Fastify, React 19, Tailwind v4, Radix UI:** server and UI.
-- **Vitest:** 80 tests, unit plus real-browser integration.
+- **Vitest:** 85 tests, unit plus real-browser integration.
 - **Language:** JavaScript ESM with JSDoc types checked by `tsc`, so there is no build step.
 
 ## 13 Lessons from real runs
@@ -202,14 +236,15 @@ Full log: `docs/IMPROVEMENTS.md`.
 | The planner guessed URLs                                | grounding                        |
 | LangGraph dropped Send branches                         | own limiter                      |
 | The judge caught a script-order bug in the demo shop    | fixed in the app, not the tester |
+| `.first()` picked a hidden copy of the text             | visible-only text checks         |
+| A theme bug lived in a dialog the test closed again     | audit every screen               |
 
 ## 14 What's next (deadline Mon 2 Nov)
 
 - **Fri:**
-  - theme audit on every state the agent reaches, not only the end;
-  - cross-page consistency;
-  - text checks ignore hidden copies;
-  - first real run on the AI Presentation Builder in light and dark.
+  - ~~theme audit on every screen~~, ~~cross-page consistency~~, ~~visible-only text checks~~: done;
+  - first real run on the AI Presentation Builder in light and dark, and fixes from it;
+  - rehearse the demo story on the real app.
 - **Sat:**
   - visual baselines per theme: pixel diff, `data-aie2e-mask`, approve flow, AI triage if time;
   - a test case manager in the UI;

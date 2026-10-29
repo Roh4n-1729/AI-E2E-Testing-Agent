@@ -3,13 +3,14 @@
 Nothing here is required. Without hints the agent works from what it sees, and recordings use XPaths.
 A few attributes make runs cheaper, replays sturdier, and hover-only or conditional controls findable.
 
-| Attribute                                                                               | What changes                                                                                                                                                                                                                     |
-| --------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `data-testid` (also `data-test-id`, `data-test`, `data-cy`, `data-qa`, `data-aie2e-id`) | Recordings use it instead of an XPath (the XPath is kept as fallback), so replays survive layout changes. The agent gets `appTestIds` / `useTestId` tools to act on it exactly. The planner may assert `selector-visible` on it. |
-| `aria-busy="true"`                                                                      | Standard ARIA. The harness waits for it to clear before the next replay step and before judging.                                                                                                                                 |
-| `data-aie2e-hint="…"`                                                                   | Free text shown to the planner (via the crawl) and to the agent: "Controls appear when the mouse moves to the bottom-right", "Enabled only after a title is set".                                                                |
-| `data-aie2e-ignore-theme`                                                               | Leave this element out of the theme audit (third-party widgets, embedded content you do not style).                                                                                                                              |
-| `data-aie2e-reveal="hover"`                                                             | Marks a control that is hidden until hovered. The agent can hover it by test id, which reveals opacity-based toolbars.                                                                                                           |
+| Attribute                                                                               | What changes                                                                                                                                                                                                                                                        |
+| --------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `data-testid` (also `data-test-id`, `data-test`, `data-cy`, `data-qa`, `data-aie2e-id`) | Recordings use it instead of an XPath (the XPath is kept as fallback), so replays survive layout changes. The agent gets `appTestIds` / `useTestId` tools to act on it exactly. The planner may assert `selector-visible` on it.                                    |
+| `aria-busy="true"`                                                                      | Standard ARIA. The harness waits for it to clear before the next replay step and before judging.                                                                                                                                                                    |
+| `data-aie2e-hint="…"`                                                                   | Free text shown to the planner (via the crawl) and to the agent: "Controls appear when the mouse moves to the bottom-right", "Enabled only after a title is set".                                                                                                   |
+| `data-aie2e-ignore-theme`                                                               | Leave this element out of the theme audit (third-party widgets, embedded content you do not style).                                                                                                                                                                 |
+| `data-aie2e-component="PrimaryButton"`                                                  | Names a component. Every element with the same name must look the same on every screen and in every theme; differences show up in "Consistency across screens" (advisory). Unnamed buttons, links, inputs and headings are still compared for near-duplicate looks. |
+| `data-aie2e-reveal="hover"`                                                             | Marks a control that is hidden until hovered. The agent can hover it by test id, which reveals opacity-based toolbars.                                                                                                                                              |
 
 ```html
 <button data-testid="export-button">Export</button>
@@ -43,4 +44,6 @@ A few attributes make runs cheaper, replays sturdier, and hover-only or conditio
 - `src/crawler/bfsCrawler.js` → `src/planner/llmPlanner.js`: test ids and hints appear in the crawl summary.
   `selector-visible` is kept only for test ids the crawl saw.
 
-Tests: `tests/integration/hints.test.js`.
+- `src/theme/audit.js` + `src/theme/consistency.js`: `data-aie2e-ignore-theme` and `data-aie2e-component`.
+
+Tests: `tests/integration/hints.test.js`, `tests/integration/theme.test.js`, `tests/theme.test.js`.

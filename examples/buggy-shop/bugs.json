@@ -51,6 +51,11 @@
       "id": "off-scale-radius",
       "title": "Product cards use a 7px radius that is not on the theme scale",
       "kind": "theme"
+    },
+    {
+      "id": "button-drift",
+      "title": "The checkout button is a slightly darker blue than every other primary button (derived from the token, so no single screen looks wrong)",
+      "kind": "consistency"
     }
   ],
   "howDetectionIsMeasured": "Each bug is switched on alone. It counts as detected when at least one test that passes on the clean app fails, or a new quality warning appears. Failures on the clean app are false positives."

@@ -68,7 +68,8 @@ input{font:inherit;color:var(--color-text);background:var(--color-surface);paddi
 table{width:100%;border-collapse:collapse;background:var(--color-surface)}td,th{padding:10px;border-bottom:1px solid var(--color-border);text-align:left}
 ${bugs.has('hardcoded-color') ? '.newsletter button{background:#2f6fe4}' : ''}
 ${bugs.has('dark-leak') ? '.newsletter{background:#ffffff}' : ''}
-${bugs.has('off-scale-radius') ? '.product{border-radius:7px}' : ''}`;
+${bugs.has('off-scale-radius') ? '.product{border-radius:7px}' : ''}
+${bugs.has('button-drift') ? '#f button{background:color-mix(in srgb, var(--color-primary) 88%, black)}' : ''}`;
 
 /** @param {string} color */
 const swatch = (color) =>

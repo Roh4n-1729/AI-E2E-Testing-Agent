@@ -147,6 +147,20 @@ START → crawl → plan ──Send(test)──▶ runTest (× N, `concurrency` 
 - `examples/buggy-shop` + `scripts/evaluate.js` (`npm run eval`): clean runs, then one bug at a time; results in
   `docs/EVALUATION.md`.
 
+## 4e. Theme conformance on every screen, and consistency (30 Oct)
+
+- `src/theme/states.js`: `stateFingerprint` (in-page) identifies a screen by route, open overlays, landmarks and
+  visible test ids, never text. `ThemeStates` is created once per run (`startRun` → `TestRunner` →
+  `BrowserSession.open`). It audits each screen once, shares the result across tests (`reusedFrom`), and caps
+  fresh audits.
+- `BrowserSession.auditState(label)`: replay calls it after every step; the agent calls it on Stagehand's
+  `step_observed` event, when the agent is paused. The fingerprint is checked first (cheap). Only a new screen
+  is settled and audited, scroll-safe. `collectEvidence` audits the final screen the same way, and
+  `evidence.themeStates` lists them all. `evidence.theme` stays the final screen's audit.
+- `src/theme/consistency.js`: `analyseConsistency(results)` runs in `writeReport` over each screen once, using the
+  component inventory (`ThemeResult.inventory`). It produces `report.consistency`: near-duplicate looks and
+  `data-aie2e-component` variants. Advisory; rendered in the run summary (UI) and the HTML report.
+
 ## 5. Data model
 
 ![data model](diagrams/04-data-model.png)

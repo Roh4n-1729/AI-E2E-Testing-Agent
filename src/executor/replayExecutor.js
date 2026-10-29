@@ -56,6 +56,7 @@ export class ReplayExecutor {
       url: start.url,
       ts: new Date().toISOString(),
     });
+    await session.auditState('start', { step: 0 });
 
     for (const step of recording.steps) {
       if (step.kind === 'navigate' && step.index === 0) continue; // the start page is already open
@@ -91,6 +92,8 @@ export class ReplayExecutor {
         url: session.page.url(),
         ts: new Date().toISOString(),
       });
+      if (step.kind !== 'wait')
+        await session.auditState(`after step ${step.index}`, { step: step.index });
     }
     await session.settle(FINAL_SETTLE);
     return { mode: 'replay', steps: recording.steps, heals: [], baseline, trace };

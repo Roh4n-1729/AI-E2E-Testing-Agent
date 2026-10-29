@@ -26,8 +26,10 @@ run test:   recording? ──yes──▶ replay with Playwright (no LLM) ──
 - **Quality on every test.** Core Web Vitals (`web-vitals`), accessibility (`axe-core`), API calls and slow
   endpoints, downloads, and transient messages, with a quality gate that can be off, warn or fail.
 - **Theme conformance of your production build.** The themes your CSS ships (light, dark, brand themes as CSS
-  variables) are discovered automatically. Every element is checked in every theme, and Chrome reports the exact CSS
-  rule behind each hard-coded value. Leaks such as a white card in dark mode are caught too.
+  variables) are discovered automatically. Every element on every screen a test reaches is checked in every theme,
+  and Chrome reports the exact CSS rule behind each hard-coded value. Leaks such as a white card in dark mode are
+  caught too, and buttons, links, inputs and headings are compared across screens to catch drift (a slightly
+  different blue on one page).
 - **Watch it live.** A local web UI streams the browser (CDP screencast) with a visible cursor, then shows
   each test as a step timeline with screenshots, checks, network, quality and the agent's own claim.
 
@@ -66,11 +68,11 @@ Exit codes: `0` all passed, `1` a test failed, `2` an error occurred. Reports: `
 
 ## Evaluation
 
-`examples/buggy-shop` is a small shop with 10 switchable, known bugs (functional, error, accessibility, performance
-and theme). `npm run eval` runs the clean app
+`examples/buggy-shop` is a small shop with 11 switchable, known bugs (functional, error, accessibility, performance,
+theme and consistency). `npm run eval` runs the clean app
 several times and then each bug on its own:
 
-> **10/10 seeded bugs detected (incl. 3 theme bugs) · 0 false positives over 3 × 7 clean tests · 0 flaky tests** (committed suite,
+> **11/11 seeded bugs detected (incl. 3 theme bugs and 1 consistency bug) · 0 false positives over 3 × 7 clean tests · 0 flaky tests** (committed suite,
 > no LLM). Details and the per-bug table: [docs/EVALUATION.md](docs/EVALUATION.md).
 > `npm run eval -- --mode explore --heal` measures the full AI path (planner + agent).
 
