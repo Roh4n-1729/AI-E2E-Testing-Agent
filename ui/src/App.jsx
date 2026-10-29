@@ -8,6 +8,7 @@ import { NewRun } from './screens/NewRun.jsx';
 import { Recordings } from './screens/Recordings.jsx';
 import { RunView } from './screens/RunView.jsx';
 import { Runs } from './screens/Runs.jsx';
+import { Suites } from './screens/Suites.jsx';
 
 export function App() {
   const route = useHashRoute();
@@ -25,6 +26,7 @@ export function App() {
       {route.name === 'runs' && <Runs />}
       {route.name === 'run' && <RunView key={route.id} id={route.id} />}
       {route.name === 'recordings' && <Recordings id={route.id} />}
+      {route.name === 'suites' && <Suites name={route.id} />}
       {route.name === 'hints' && <Hints />}
       <Toaster position="bottom-right" theme="system" richColors closeButton />
     </AppShell>

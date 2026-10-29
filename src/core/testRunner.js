@@ -1,3 +1,4 @@
+import path from 'node:path';
 import { BrowserSession } from '../browser/session.js';
 import { testFingerprint } from '../storage/recordStore.js';
 import { nullEvents } from '../events/runEvents.js';
@@ -24,6 +25,8 @@ import { errorMessage } from '../util/misc.js';
  * @property {RunEvents} [events]  Progress events for the CLI/UI. Default: a bus nobody listens to.
  * @property {AbortSignal} [signal]  Aborting stops running browsers and skips tests that have not started.
  * @property {import('../theme/states.js').ThemeStates} [themeStates]  run-wide memory of theme-audited screens
+ * @property {import('../visual/baselines.js').BaselineStore} [baselines]  approved screenshots
+ * @property {import('../auth/login.js').StorageState} [storageState]  logged-in session every test starts with
  */
 
 /** Runs one test in its own isolated browser: execute -> judge -> (record) -> close. */
@@ -119,6 +122,7 @@ export class TestRunner {
     try {
       session = await BrowserSession.open(config, testArtifacts, ctx.logger, {
         themeStates: this.deps.themeStates,
+        storageState: this.deps.storageState,
       });
       const s = session;
       s.onScreenshot = (ref) => events.emit('test.screenshot', { testId: test.id, ...ref });
@@ -141,6 +145,26 @@ export class TestRunner {
             ? /** @type {const} */ ('healed')
             : /** @type {const} */ ('failed'),
       }));
+
+      // Screenshots of a passing test with no baseline yet become the baseline (like recordings, only
+      // judge-approved runs count). --update-baselines re-approves every screenshot of a passing test.
+      if (this.deps.baselines && verdict.status === 'pass' && evidence.visual?.results) {
+        for (const r of evidence.visual.results) {
+          const update = config.visual.update && (r.status === 'changed' || r.status === 'size');
+          if (r.status !== 'new' && !update) continue;
+          await this.deps.baselines.save(
+            test.id,
+            r.checkpoint,
+            path.join(artifacts.runDir, r.current),
+            {
+              runId: artifacts.runId,
+              fingerprint: testFingerprint(test),
+              how: update ? 'update' : 'first-pass',
+            },
+          );
+          r.saved = true;
+        }
+      }
 
       // Only runs the independent judge passed are worth replaying.
       if (

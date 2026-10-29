@@ -7,6 +7,7 @@ function parse(hash) {
   if (parts[0] === 'runs') return { name: 'runs' };
   if (parts[0] === 'recordings') return { name: 'recordings', id: parts[1] };
   if (parts[0] === 'hints') return { name: 'hints' };
+  if (parts[0] === 'suites') return { name: 'suites', id: parts[1] };
   return { name: 'new' };
 }
 

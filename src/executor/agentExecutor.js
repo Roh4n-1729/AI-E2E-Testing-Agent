@@ -31,6 +31,8 @@ export class AgentExecutor {
   /** @param {Config} cfg */
   constructor(cfg) {
     this.cfg = cfg;
+    /** the run logged in first: tests share that session, so none may end it */
+    this.loggedIn = false;
   }
 
   /**
@@ -101,7 +103,7 @@ export class AgentExecutor {
         },
       });
       const result = await agent.execute({
-        instruction: buildInstruction(test, resume, useHints ? hints : []),
+        instruction: buildInstruction(test, resume, useHints ? hints : [], this.loggedIn),
         maxSteps: test.maxSteps ?? this.cfg.maxSteps,
         callbacks: {
           onEvidence: async (event) => {
@@ -288,7 +290,7 @@ export function describeAgentStep(e) {
 }
 
 /** @param {TestCase} test @param {ResumeContext} [resume] @param {PageHint[]} [hints] */
-function buildInstruction(test, resume, hints = []) {
+function buildInstruction(test, resume, hints = [], loggedIn = false) {
   const lines = [
     `You are testing a web application starting at ${test.startUrl}.`,
     `Goal: ${test.goal}`,
@@ -302,6 +304,12 @@ function buildInstruction(test, resume, hints = []) {
     'Take the shortest path: if the app offers a sample or template that gets you to the needed state, use it,',
     'unless the goal is about creating that state.',
   ];
+  if (loggedIn)
+    lines.push(
+      '',
+      'You are already logged in. Do not log out, change the password or delete the account unless the goal',
+      'says so: other tests running at the same time use the same session.',
+    );
   if (hints.length) {
     lines.push(
       '',

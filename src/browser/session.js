@@ -8,12 +8,23 @@ import { CURSOR_SCRIPT } from './cursor.js';
 import { settle } from './settle.js';
 import { auditThemes } from '../theme/audit.js';
 import { ThemeStates, fingerprintOf } from '../theme/states.js';
+import { applyTheme, discoverThemes, restoreTheme, themeState } from '../theme/discover.js';
+import { applyStorageState } from '../auth/login.js';
+
+/** Visual-comparison captures hide the harness's own cursor overlay: its position is not the app's. */
+const VISUAL_STYLE = '#__aie2e_cursor{display:none!important}';
+/**
+ * ...and, by default, live regions: a toast from the previous step may or may not still be on screen
+ * depending on timing (seen: "Added T-shirt" stacked behind "Added Notebook" in 1 of 5 runs).
+ */
+const LIVE_STYLE =
+  '[role=status],[role=alert],[role=log],[role=timer],[role=marquee],[aria-live=polite],[aria-live=assertive]{visibility:hidden!important}';
 
 /**
  * @import { Browser, BrowserContext, Page } from 'playwright'
  * @import { Config } from '../config/config.js'
  * @import { TestArtifacts } from '../storage/artifacts.js'
- * @import { Baseline, ConsoleEntry, Evidence, Expectation, NetworkFailure, ScreenshotRef, ThemeAudit, ThemeState } from '../core/types.js'
+ * @import { Baseline, ConsoleEntry, Evidence, Expectation, NetworkFailure, ScreenshotRef, ThemeAudit, ThemeState, VisualCapture } from '../core/types.js'
  * @import { Logger } from '../util/logger.js'
  */
 
@@ -37,6 +48,11 @@ export class BrowserSession {
   #themeInBetween = 0;
   #noThemes = false;
   static #auditSeq = 0;
+  /** @type {VisualCapture[]} */
+  #visual = [];
+  /** @type {'off' | 'warn' | 'fail'} visual regression gate; 'off' = no comparison captures */
+  visualGate = 'off';
+  hideLiveRegions = true;
 
   /**
    * @param {Stagehand} stagehand
@@ -63,7 +79,7 @@ export class BrowserSession {
    * @param {Config} cfg
    * @param {TestArtifacts} artifacts
    * @param {Logger} logger
-   * @param {{ themeStates?: ThemeStates }} [opts]
+   * @param {{ themeStates?: ThemeStates, storageState?: import('../auth/login.js').StorageState }} [opts]
    */
   static async open(cfg, artifacts, logger, opts = {}) {
     await artifacts.init();
@@ -93,13 +109,15 @@ export class BrowserSession {
       throw new Error('Playwright attached over CDP but found no browser context');
     }
     context.setDefaultNavigationTimeout(cfg.navTimeoutMs);
+    // logged-in runs: every test starts with the session the login produced (cookies + localStorage)
+    if (opts.storageState) await applyStorageState(context, opts.storageState);
     const quality = new QualityCollector({ downloadDir: (n) => artifacts.downloadPath(n) });
     await quality.installOn(context);
     if (cfg.showCursor) {
       await context.addInitScript(CURSOR_SCRIPT);
       for (const p of context.pages()) await p.evaluate(CURSOR_SCRIPT).catch(() => undefined);
     }
-    return new BrowserSession(
+    const session = new BrowserSession(
       stagehand,
       browser,
       context,
@@ -108,6 +126,9 @@ export class BrowserSession {
       cfg.quality,
       opts.themeStates,
     );
+    session.visualGate = cfg.visual.gate;
+    session.hideLiveRegions = cfg.visual.hideLiveRegions;
+    return session;
   }
 
   /** Most recently opened page that is still open (agents sometimes open new tabs). */
@@ -302,6 +323,52 @@ export class BrowserSession {
     };
   }
 
+  /**
+   * A deterministic screenshot for visual regression: animations finished, caret hidden, the harness
+   * cursor hidden, and every [data-aie2e-mask] area painted over (timestamps, AI-written text...).
+   * @param {string} checkpoint  stable name the baseline is stored under
+   * @param {string} label  for people
+   * @param {string} [theme]
+   * @returns {Promise<VisualCapture | null>}
+   */
+  async visualCapture(checkpoint, label, theme) {
+    if (this.visualGate === 'off') return null;
+    const page = this.page;
+    const { abs, rel } = await this.artifacts.nextVisual(checkpoint);
+    const ok = await page
+      .screenshot({
+        path: abs,
+        animations: 'disabled',
+        caret: 'hide',
+        mask: [page.locator('[data-aie2e-mask]')],
+        maskColor: '#8a8f98',
+        style: this.hideLiveRegions ? `${VISUAL_STYLE}${LIVE_STYLE}` : VISUAL_STYLE,
+      })
+      .then(() => true)
+      .catch(() => false);
+    if (!ok) return null;
+    /** @type {VisualCapture} */
+    const cap = { checkpoint, label, path: rel, url: page.url(), theme };
+    this.#visual.push(cap);
+    return cap;
+  }
+
+  /** The final screen once per theme the build ships, so a dark-only regression is caught too. */
+  async #visualThemes() {
+    const page = this.page;
+    const d = await discoverThemes(page).catch(() => null);
+    if (!d || d.themes.length < 2 || !d.tokenNames.length) return;
+    const original = await themeState(page);
+    try {
+      for (const t of d.themes) {
+        await applyTheme(page, t, d.themes);
+        await this.visualCapture(`theme-${t.id}`, `final · ${t.id}`, t.id);
+      }
+    } finally {
+      await restoreTheme(page, original).catch(() => undefined);
+    }
+  }
+
   get #themeOn() {
     return this.qualityCfg.theme && this.qualityCfg.gate !== 'off';
   }
@@ -379,6 +446,13 @@ export class BrowserSession {
     }
     const ariaRef = aria ? await this.artifacts.writeText(`aria-${label}.txt`, aria) : undefined;
     const text = await page.evaluate(() => document.body?.innerText ?? '').catch(() => '');
+    const theme = this.#themeOn
+      ? (await this.auditState('final', { final: true }))?.audit
+      : undefined;
+    if (this.visualGate !== 'off') {
+      await this.visualCapture('final', 'final');
+      await this.#visualThemes().catch(() => undefined);
+    }
     return {
       finalUrl: page.url(),
       title: await page.title().catch(() => ''),
@@ -392,8 +466,9 @@ export class BrowserSession {
       downloads: this.quality.downloads,
       seenText: this.quality.seenText,
       vitals: this.quality.vitals(),
-      theme: this.#themeOn ? (await this.auditState('final', { final: true }))?.audit : undefined,
+      theme,
       themeStates: this.#themeOn ? [...this.#themeStates] : undefined,
+      visual: this.visualGate !== 'off' ? { captures: [...this.#visual] } : undefined,
       a11y:
         this.qualityCfg.a11y && this.qualityCfg.gate !== 'off'
           ? await this.quality.scanA11y(page)

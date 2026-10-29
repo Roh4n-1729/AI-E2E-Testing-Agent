@@ -46,6 +46,33 @@ export const ConfigSchema = z.object({
    * they do to the verdict: off = not collected for judging, warn = reported but advisory, fail = a
    * breach fails the test. Budgets default to Google's "poor" thresholds, i.e. only clear problems trip.
    */
+  /**
+   * Visual regression: screenshots compared with approved baselines (per test, per replay step, per theme).
+   * gate: off = no captures; warn = differences are shown for review; fail = a difference fails the test.
+   */
+  visual: z
+    .object({
+      gate: z.enum(['off', 'warn', 'fail']).default('warn'),
+      /** share of pixels that may differ before a screenshot counts as changed */
+      maxDiffRatio: z.number().min(0).max(1).default(0.001),
+      /**
+       * pixelmatch colour tolerance per pixel (0 = exact, 1 = anything). Strict on purpose: a light card
+       * on a white page differs by only ~0.03, and one machine renders the same page identically
+       * (anti-aliased edges are ignored anyway). Raise it (0.1-0.2) for baselines shared across machines.
+       */
+      threshold: z.number().min(0).max(1).default(0.02),
+      /** where approved baselines live; default <outDir>/baselines. Point it into the repo to commit them. */
+      dir: z.string().optional(),
+      /** accept every screenshot of a passing test as the new baseline (--update-baselines) */
+      update: z.boolean().default(false),
+      /**
+       * Hide live regions (toasts, status lines, alerts: role=status|alert|log|timer, aria-live) in the
+       * comparison screenshots. They come and go with timing, not design; their text is still evidence
+       * (transient messages). Turn off for apps that put whole sections in a live region.
+       */
+      hideLiveRegions: z.boolean().default(true),
+    })
+    .prefault({}),
   quality: z
     .object({
       gate: z.enum(['off', 'warn', 'fail']).default('warn'),
@@ -110,6 +137,13 @@ export function loadConfig(overrides = {}, env = process.env) {
     chromePath: env.AIE2E_CHROME_PATH || undefined,
     chromeArgs: env.AIE2E_CHROME_ARGS ? env.AIE2E_CHROME_ARGS.split(' ') : undefined,
     logLevel: /** @type {ConfigInput['logLevel']} */ (env.AIE2E_LOG_LEVEL || undefined),
+    visual:
+      env.AIE2E_VISUAL_GATE || env.AIE2E_BASELINES_DIR
+        ? defined({
+            gate: /** @type {'off' | 'warn' | 'fail' | undefined} */ (env.AIE2E_VISUAL_GATE),
+            dir: env.AIE2E_BASELINES_DIR || undefined,
+          })
+        : undefined,
     quality:
       env.AIE2E_QUALITY_GATE || env.AIE2E_THEME_STATES
         ? defined({
@@ -118,7 +152,11 @@ export function loadConfig(overrides = {}, env = process.env) {
           })
         : undefined,
   };
-  return ConfigSchema.parse({ ...defined(fromEnv), ...defined(overrides) });
+  const merged = { ...defined(fromEnv), ...defined(overrides) };
+  // nested groups merge, so a CLI flag (--visual fail) keeps the env's settings (AIE2E_BASELINES_DIR)
+  for (const k of /** @type {const} */ (['visual', 'quality']))
+    if (fromEnv[k] && overrides[k]) merged[k] = { ...fromEnv[k], ...defined(overrides[k]) };
+  return ConfigSchema.parse(merged);
 }
 
 /**

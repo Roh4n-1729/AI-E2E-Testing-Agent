@@ -7,6 +7,7 @@
 
 import { settle } from '../browser/settle.js';
 import { moveMouseToPercent } from './mouse.js';
+import { stepCheckpoint } from '../visual/baselines.js';
 
 export { settle };
 
@@ -92,8 +93,10 @@ export class ReplayExecutor {
         url: session.page.url(),
         ts: new Date().toISOString(),
       });
-      if (step.kind !== 'wait')
+      if (step.kind !== 'wait') {
         await session.auditState(`after step ${step.index}`, { step: step.index });
+        await session.visualCapture(stepCheckpoint(step), `after step ${step.index}`);
+      }
     }
     await session.settle(FINAL_SETTLE);
     return { mode: 'replay', steps: recording.steps, heals: [], baseline, trace };

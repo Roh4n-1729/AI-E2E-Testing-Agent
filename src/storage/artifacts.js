@@ -6,6 +6,8 @@ const posix = (p) => p.split(path.sep).join('/');
 
 /** Run-level layout: <outDir>/runs/<runId>/{report.json, report.html, <testId>/...} */
 export class RunArtifacts {
+  /** @type {Map<string, TestArtifacts>} */
+  #tests = new Map();
   /**
    * @param {string} outDir
    * @param {string} runId
@@ -17,9 +19,18 @@ export class RunArtifacts {
   async init() {
     await mkdir(this.runDir, { recursive: true });
   }
-  /** @param {string} testId */
+  /**
+   * One instance per test for the whole run: a second attempt (the agent re-checking a failed replay)
+   * keeps numbering its files instead of overwriting the first attempt's screenshots.
+   * @param {string} testId
+   */
   forTest(testId) {
-    return new TestArtifacts(this.runDir, testId);
+    let t = this.#tests.get(testId);
+    if (!t) {
+      t = new TestArtifacts(this.runDir, testId);
+      this.#tests.set(testId, t);
+    }
+    return t;
   }
   /** @param {string} rel @param {unknown} data */
   async writeJson(rel, data) {
@@ -38,6 +49,7 @@ export class RunArtifacts {
 export class TestArtifacts {
   #shot = 0;
   #dl = 0;
+  #vis = 0;
   /**
    * @param {string} runDir
    * @param {string} testId
@@ -55,6 +67,17 @@ export class TestArtifacts {
     const safe = label.replace(/[^a-z0-9-]+/gi, '-').slice(0, 40);
     const name = `${String(++this.#shot).padStart(3, '0')}-${safe}.png`;
     const abs = path.join(this.dir, 'screenshots', name);
+    return { abs, rel: posix(path.relative(this.runDir, abs)) };
+  }
+  /** A screenshot for visual comparison (separate from the step screenshots people look at). @param {string} checkpoint */
+  async nextVisual(checkpoint) {
+    const safe = checkpoint.replace(/[^a-z0-9-]+/gi, '-').slice(0, 60);
+    const abs = path.join(
+      this.dir,
+      'visual',
+      `${String(++this.#vis).padStart(3, '0')}-${safe}.png`,
+    );
+    await mkdir(path.dirname(abs), { recursive: true });
     return { abs, rel: posix(path.relative(this.runDir, abs)) };
   }
   /** Where a file the browser downloaded during this test is saved. @param {string} name */

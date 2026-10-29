@@ -46,10 +46,14 @@ export function isSafeLink(url, text, origin) {
  * @implements {Crawler}
  */
 export class BfsCrawler {
-  /** @param {Config} cfg @param {Logger} logger */
-  constructor(cfg, logger) {
+  /**
+   * @param {Config} cfg @param {Logger} logger
+   * @param {{ storageState?: import('../auth/login.js').StorageState }} [o]  explore logged in
+   */
+  constructor(cfg, logger, o = {}) {
     this.cfg = cfg;
     this.logger = logger;
+    this.storageState = o.storageState;
   }
 
   /** @param {Target} target @returns {Promise<SiteMap>} */
@@ -65,7 +69,10 @@ export class BfsCrawler {
     /** @type {SitePage[]} */
     const pages = [];
     try {
-      const context = await browser.newContext({ viewport: this.cfg.viewport });
+      const context = await browser.newContext({
+        viewport: this.cfg.viewport,
+        storageState: this.storageState,
+      });
       const page = await context.newPage();
       page.setDefaultNavigationTimeout(this.cfg.navTimeoutMs);
       const seen = new Set([start]);

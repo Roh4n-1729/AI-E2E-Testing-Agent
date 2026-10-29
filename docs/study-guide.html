@@ -223,10 +223,17 @@ button.b.primary { background: var(--accent); color: var(--surface); border-colo
 .scr.on { border-color: var(--accent); background: var(--det-bg); }
 .scr.bad { border-color: var(--fail); background: var(--fail-bg); } .scr.bad .res { color: var(--fail); }
 .scr.ok { border-color: var(--pass); background: var(--pass-bg); } .scr.ok .res { color: var(--pass); }
+.screens.four { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 .drift { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
 .drift > div { display: grid; gap: 6px; justify-items: start; }
 .drift small { font-size: 0.74rem; color: var(--muted); overflow-wrap: anywhere; }
 .dbtn { color: #ffffff; border-radius: 4px; padding: 7px 14px; font-weight: 600; font-size: 0.9rem; }
+
+/* chapter 08b */
+.vgrid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.vgrid figure { margin: 0; display: grid; gap: 4px; }
+.vgrid canvas { width: 100%; height: auto; border: 1px solid var(--line); border-radius: 8px; background: #ffffff; }
+.vgrid figcaption { font-size: 0.8rem; color: var(--muted); }
 
 /* chapter 11 */
 .flow { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
@@ -256,7 +263,7 @@ footer { color: var(--muted); font-size: 0.85rem; border-top: 1px solid var(--li
 }
 @media (max-width: 640px) {
   body { font-size: 16px; }
-  .crawl, .kinds, .tdemo, .screens, .drift { grid-template-columns: minmax(0, 1fr); }
+  .crawl, .kinds, .tdemo, .screens, .screens.four, .drift, .vgrid { grid-template-columns: minmax(0, 1fr); }
   .steps-mini { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .lane, .ticks { grid-template-columns: 92px minmax(0, 1fr); }
   dl.gloss { grid-template-columns: minmax(0, 1fr); }
@@ -273,11 +280,14 @@ footer { color: var(--muted); font-size: 0.85rem; border-top: 1px solid var(--li
       <li><a href="#pipeline"><span>01</span><span>The pipeline</span></a></li>
       <li><a href="#crawl"><span>02</span><span>Crawl</span></a></li>
       <li><a href="#plan"><span>03</span><span>Plan</span></a></li>
+      <li><a href="#suites"><span>03b</span><span>Your own tests</span></a></li>
       <li><a href="#run"><span>04</span><span>Run: agent, replay, heal</span></a></li>
+      <li><a href="#login"><span>04b</span><span>Apps behind a login</span></a></li>
       <li><a href="#settle"><span>05</span><span>Settle</span></a></li>
       <li><a href="#judge"><span>06</span><span>The strict judge</span></a></li>
       <li><a href="#quality"><span>07</span><span>Quality evidence</span></a></li>
       <li><a href="#theme"><span>08</span><span>Theme conformance</span></a></li>
+      <li><a href="#visual"><span>08b</span><span>Visual regression</span></a></li>
       <li><a href="#hints"><span>09</span><span>App hints</span></a></li>
       <li><a href="#eval"><span>10</span><span>Evaluation</span></a></li>
       <li><a href="#ui"><span>11</span><span>UI and live view</span></a></li>
@@ -390,6 +400,36 @@ footer { color: var(--muted); font-size: 0.85rem; border-top: 1px solid var(--li
       <div class="files"><code>src/planner/llmPlanner.js</code><code>src/planner/suitePlanner.js</code><code>src/planner/cachedPlanner.js</code></div>
     </section>
 
+    <!-- 03b -->
+    <section class="ch" id="suites">
+      <div class="ch-head"><div class="eyebrow">Chapter 03b · built Fri 30 Oct</div><h2>Your own tests: suites</h2></div>
+      <p>The planner is optional. People can write the tests themselves on the <b>Test suites</b> page: a title, a start page, a goal in plain English, and the checks that prove it worked, picked from a list. The page saves exactly the JSON file the CLI runs, so a suite written in the UI is the same suite CI runs.</p>
+      <div class="demo">
+        <div class="demo-bar"><span class="label">What the form saves</span></div>
+        <div class="tdemo">
+          <div class="app" style="gap:8px">
+            <div class="top"><span>02 · Checkout refuses an empty email</span></div>
+            <div class="card"><b style="font-size:.8rem">Start page</b><p class="mono">/checkout</p></div>
+            <div class="card"><b style="font-size:.8rem">Goal, in plain English</b><p>Leave the email empty and place the order.</p></div>
+            <div class="card"><b style="font-size:.8rem">Checks</b><p>Text is visible · “Enter your email”</p><p>Page URL contains · /checkout</p></div>
+          </div>
+<pre class="code" style="margin:0;white-space:pre-wrap;overflow-wrap:anywhere"><span class="c">// checkout.suite.json</span>
+{ <span class="k">"title"</span>: <span class="s">"Checkout refuses an empty email"</span>,
+  <span class="k">"startUrl"</span>: <span class="s">"/checkout"</span>,
+  <span class="k">"goal"</span>: <span class="a">"Leave the email empty and place the order."</span>,
+  <span class="k">"expectations"</span>: [
+    { <span class="k">"kind"</span>: <span class="s">"text-visible"</span>, <span class="k">"text"</span>: <span class="s">"Enter your email"</span> },
+    { <span class="k">"kind"</span>: <span class="s">"url"</span>, <span class="k">"pattern"</span>: <span class="s">"/checkout"</span> } ] }</pre>
+        </div>
+      </div>
+      <ul>
+        <li><b>No goal</b> = a page-load check (no AI). <b>A goal</b> = the agent does it the first time and the passing run is recorded. <b>Recorded steps</b> replay with no AI; clear them when the test should do something else.</li>
+        <li><b>Save as suite</b> on any finished run keeps its tests and recorded steps, ready to edit.</li>
+        <li>Saving validates the file and lists problems by path (<code>tests.0.title</code>) instead of writing a broken suite. <code>AIE2E_SUITES_DIR</code> puts suites in the repo, next to the code they test.</li>
+      </ul>
+      <div class="files"><code>ui/src/screens/Suites.jsx</code><code>src/server/suites.js</code><code>src/planner/suitePlanner.js</code><code>tests/suites.test.js</code></div>
+    </section>
+
     <!-- 04 -->
     <section class="ch" id="run">
       <div class="ch-head"><div class="eyebrow">Chapter 04 · the key idea</div><h2>Run: agent, replay, heal</h2></div>
@@ -408,6 +448,30 @@ footer { color: var(--muted); font-size: 0.85rem; border-top: 1px solid var(--li
       <p class="why"><b>Why it matters:</b> AI agents are slow and cost tokens on every run; Playwright is fast, free and repeatable. This gets AI flexibility for authoring and Playwright speed for regression runs. A recording is tied to a fingerprint of the test, so editing the test's goal or expectations forces a fresh recording.</p>
       <div class="files"><code>src/executor/cachingExecutor.js</code><code>src/executor/agentExecutor.js</code><code>src/executor/replayExecutor.js</code><code>src/executor/steps.js</code><code>src/storage/recordStore.js</code></div>
       <div class="interview"><div class="eyebrow">Say it in an interview</div><p>"Healing can hide regressions, so a heal never decides the verdict. The agent's outcome is provisional; the judge overwrites it from evidence. With <code>--no-heal</code> a broken step is just a failure, which is what CI wants."</p></div>
+    </section>
+
+    <!-- 04b -->
+    <section class="ch" id="login">
+      <div class="ch-head"><div class="eyebrow">Chapter 04b · built Fri 30 Oct</div><h2>Apps behind a login</h2></div>
+      <p>Real apps need a login. The run logs in <b>once</b>, before anything else, with plain Playwright, and every test starts with that session. The AI never sees the password.</p>
+      <div class="demo">
+        <div class="demo-bar"><span class="label">Animated · one login, shared by every test</span><div class="btns"><button class="b primary" id="loginPlay">Play</button></div></div>
+        <div class="screens four" id="loginRow">
+          <div class="scr"><b>.env</b><span class="mono">AIE2E_USERNAME · AIE2E_PASSWORD</span><span class="res"></span></div>
+          <div class="scr"><b>Log in once</b><span class="mono">/login → fill → submit</span><span class="res"></span></div>
+          <div class="scr"><b>Session</b><span class="mono">cookies + localStorage</span><span class="res"></span></div>
+          <div class="scr"><b>Crawler + tests</b><span class="mono">start logged in</span><span class="res"></span></div>
+        </div>
+        <p class="caption" id="loginCap" aria-live="polite">Press Play.</p>
+      </div>
+      <ul>
+        <li><b>Finds the form itself:</b> username and password fields, including "email, Next, then password". Unusual logins give exact steps with <code>{{username}}</code> and <code>{{password}}</code> placeholders.</li>
+        <li><b>Proves it worked:</b> expected text, an expected URL, or by default "the password field is gone". A failed login stops the run with the reason and a screenshot, instead of failing every test the same confusing way.</li>
+        <li><b>Why not a shared browser profile?</b> Chrome locks a profile to one browser, and tests run in parallel. Instead cookies are added to each test's browser and localStorage is restored by a script that runs before the app's own code.</li>
+        <li><b>The agent is told not to log out:</b> every test shares the session, so one logout would break the others.</li>
+      </ul>
+      <div class="files"><code>src/auth/login.js</code><code>src/app/startRun.js</code><code>src/browser/session.js</code><code>tests/integration/login.test.js</code></div>
+      <div class="interview"><div class="eyebrow">Say it in an interview</div><p>"Credentials only live in the environment. The login is deterministic Playwright, not the agent, and there's a test that greps the report for the password to prove it never leaks."</p></div>
     </section>
 
     <!-- 05 -->
@@ -473,6 +537,7 @@ footer { color: var(--muted); font-size: 0.85rem; border-top: 1px solid var(--li
           <tr><td>Accessibility</td><td><code>axe-core</code> run in the page</td><td>Missing alt text, contrast, nested interactive</td></tr>
           <tr><td>Theme conformance</td><td>Chapter 08, on every screen</td><td>Hard-coded colours, dark-mode leaks</td></tr>
           <tr><td>Consistency</td><td>Chapter 08, across the run</td><td>The same button in two shades of blue</td></tr>
+          <tr><td>Visual regression</td><td>Chapter 08b, against approved screenshots</td><td>Layout shifts nothing else notices</td></tr>
         </tbody>
       </table></div>
       <div class="files"><code>src/browser/collectors.js</code><code>src/browser/session.js · collectEvidence</code><code>src/config/config.js · quality</code></div>
@@ -528,6 +593,30 @@ footer { color: var(--muted); font-size: 0.85rem; border-top: 1px solid var(--li
       <div class="interview"><div class="eyebrow">Say it in an interview</div><p>"The source of truth is the production build itself, not Figma. I don't guess whether a colour is hard-coded from its value; I ask the browser which declaration produced it. So the report says <code>.newsletter button { background: #2f6fe4 }</code>, nearest token <code>--color-primary</code>."</p></div>
     </section>
 
+    <!-- 08b -->
+    <section class="ch" id="visual">
+      <div class="ch-head"><div class="eyebrow">Chapter 08b · built Fri 30 Oct</div><h2>Visual regression</h2></div>
+      <p>Some bugs change nothing a check can read: no text, no colour token, no behaviour. A squeezed grid, a shifted icon, a missing border. For those, the tool keeps <b>approved screenshots</b> (baselines) and compares every new run with them, pixel by pixel.</p>
+      <ul>
+        <li><b>What is captured:</b> the final screen, the final screen in every theme, and each replayed step. Separate from the screenshots people look at: animations finished, cursor hidden, toasts and other live regions hidden, <code>data-aie2e-mask</code> areas painted over.</li>
+        <li><b>Where baselines come from:</b> a test's first passing run, just like recordings. After that, a change is reviewed: <b>Approve</b> makes it the new baseline, <b>Reject</b> keeps the old one.</li>
+        <li><b>Gate:</b> <code>--visual warn</code> (default: shown for review) or <code>fail</code> (a difference fails the test, for CI). <code>--update-baselines</code> accepts everything from passing tests.</li>
+      </ul>
+      <div class="demo">
+        <div class="demo-bar"><span class="label">Live · a real pixel diff between two drawn screens</span>
+          <div class="btns"><button class="b" id="vBug" aria-pressed="true">Grid bug: on</button><button class="b" id="vMask" aria-pressed="false">Mask timestamp: off</button></div></div>
+        <div class="vgrid">
+          <figure><canvas id="vBase" width="320" height="200" aria-label="Approved baseline"></canvas><figcaption>Approved baseline</figcaption></figure>
+          <figure><canvas id="vCur" width="320" height="200" aria-label="This run"></canvas><figcaption>This run</figcaption></figure>
+          <figure><canvas id="vDiff" width="320" height="200" aria-label="Difference"></canvas><figcaption>Difference (red)</figcaption></figure>
+        </div>
+        <p class="caption" id="vCap" aria-live="polite"></p>
+      </div>
+      <p class="why"><b>Three things real runs taught:</b> pixelmatch's default tolerance (0.1) called a 16px→4px grid gap "unchanged" (a light card on white is a tiny colour difference), so the default is 0.02. Identical screenshots are byte-identical, so most comparisons skip decoding entirely (13 s → 3 s per run). And toasts made 1 run in 5 flaky until live regions were hidden: 245 of 245 comparisons stable after.</p>
+      <div class="files"><code>src/visual/compare.js</code><code>src/visual/baselines.js</code><code>src/visual/check.js</code><code>src/browser/session.js · visualCapture</code><code>ui/src/components/TestDetail.jsx · VisualPanel</code><code>tests/integration/visual.test.js</code></div>
+      <div class="interview"><div class="eyebrow">Say it in an interview</div><p>"Visual diffs are only useful if they're stable, so I measured that: the evaluation reruns the clean app and counts how many screenshot comparisons drift. Masks handle content that changes by design, live regions are hidden because toasts are timing, not design, and nothing becomes a baseline unless the judge passed the run."</p></div>
+    </section>
+
     <!-- 09 -->
     <section class="ch" id="hints">
       <div class="ch-head"><div class="eyebrow">Chapter 09 · optional contract</div><h2>App hints</h2></div>
@@ -538,16 +627,17 @@ footer { color: var(--muted); font-size: 0.85rem; border-top: 1px solid var(--li
 &lt;div <span class="k">data-aie2e-hint</span>=<span class="s">"Hover a slide to see delete"</span>&gt;    <span class="c">// free text for the planner and agent</span>
 &lt;button <span class="k">data-aie2e-reveal</span>=<span class="s">"hover"</span>&gt;Delete&lt;/button&gt;    <span class="c">// marks hover-only controls</span>
 &lt;div <span class="k">data-aie2e-ignore-theme</span>&gt;…&lt;/div&gt;                 <span class="c">// e.g. a user's own image or brand logo</span>
-&lt;button <span class="k">data-aie2e-component</span>=<span class="s">"PrimaryButton"</span>&gt;   <span class="c">// must look the same on every screen</span></pre>
+&lt;button <span class="k">data-aie2e-component</span>=<span class="s">"PrimaryButton"</span>&gt;   <span class="c">// must look the same on every screen</span>
+&lt;span <span class="k">data-aie2e-mask</span>&gt;Updated 10:41&lt;/span&gt;            <span class="c">// painted over in visual comparisons</span></pre>
       <p class="why"><b>Recording with hints:</b> when the agent clicks, the harness looks for a unique test id on the element (or a close ancestor), then a non-generated <code>#id</code>. The recording stores that selector <i>plus</i> the XPath as a fallback, and replay uses whichever appears first. Apps with test ids also give the agent two extra tools: list test ids (hidden ones too) and act on one exactly.</p>
       <div class="files"><code>src/browser/hints.js</code><code>docs/APP_HINTS.md</code></div>
     </section>
 
     <!-- 10 -->
     <section class="ch" id="eval">
-      <div class="ch-head"><div class="eyebrow">Chapter 10 · proof it works</div><h2>Evaluation: a shop with 11 known bugs</h2></div>
+      <div class="ch-head"><div class="eyebrow">Chapter 10 · proof it works</div><h2>Evaluation: a shop with 12 known bugs</h2></div>
       <p><code>examples/buggy-shop</code> is a tiny shop where each bug can be switched on by name. <code>npm run eval</code> runs the clean shop several times (false positives? flakiness?), then each bug <b>alone</b>, so a detection is attributed exactly.</p>
-      <div class="facts"><span class="pill pass">11/11 bugs detected</span><span class="pill pass">0 false positives (3 × 7 clean tests)</span><span class="pill pass">0 flaky</span><span class="pill det">committed suite · 0 tokens</span></div>
+      <div class="facts"><span class="pill pass">12/12 bugs detected</span><span class="pill pass">0 false positives (3 × 7 clean tests)</span><span class="pill pass">0 flaky</span><span class="pill det">committed suite · 0 tokens</span></div>
       <div class="scroll-x"><table>
         <thead><tr><th>Seeded bug</th><th>Kind</th><th>Caught by</th></tr></thead>
         <tbody>
@@ -562,6 +652,7 @@ footer { color: var(--muted); font-size: 0.85rem; border-top: 1px solid var(--li
           <tr><td>Newsletter card stays white in dark mode</td><td>theme</td><td>theme: leak</td></tr>
           <tr><td>Cards use a 7px radius not on the scale</td><td>theme</td><td>theme: off-scale radius</td></tr>
           <tr><td>Checkout button a slightly darker blue (derived from the token)</td><td>consistency</td><td>near-duplicate button, ΔE 5.3</td></tr>
+          <tr><td>Product grid gap 16px → 4px (nothing else changes)</td><td>visual</td><td>screenshots differ from the baseline</td></tr>
         </tbody>
       </table></div>
       <p class="why"><b>Be honest about what this proves:</b> it measures the judge and the replay path on a known app. <code>npm run eval -- --mode explore --heal</code> measures the full AI path (planner + agent), which costs tokens and varies run to run.</p>
@@ -600,7 +691,9 @@ footer { color: var(--muted); font-size: 0.85rem; border-top: 1px solid var(--li
           <tr><td>Colour science</td><td>culori</td><td>CIEDE2000 colour difference, parsing every CSS colour format.</td></tr>
           <tr><td>Server</td><td>Fastify</td><td>Small, fast, good SSE story.</td></tr>
           <tr><td>UI</td><td>React 19, Tailwind v4, Radix UI</td><td>Accessible primitives, theme tokens as CSS variables.</td></tr>
-          <tr><td>Tests</td><td>Vitest</td><td>85 tests: unit plus real-browser integration.</td></tr>
+          <tr><td>Visual diffs</td><td>pixelmatch 7.2 + pngjs</td><td>The small, standard pixel-diff engine (also behind Playwright's own screenshot assertions). 8.0 was three weeks old, so pinned to 7.2.
+</td></tr>
+          <tr><td>Tests</td><td>Vitest</td><td>Unit plus real-browser integration, including the UI itself.</td></tr>
         </tbody>
       </table></div>
       <p class="why"><b>Language:</b> JavaScript (ESM) with JSDoc types checked by <code>tsc</code>. You get type safety with no build step.</p>
@@ -624,6 +717,9 @@ footer { color: var(--muted); font-size: 0.85rem; border-top: 1px solid var(--li
           <tr><td>The judge caught a bug in my own demo shop (scripts ran before helpers)</td><td>Fixed in the app, not the tester</td></tr>
           <tr><td><code>.first()</code> picked a hidden copy of the text, so a visible "Order placed" failed</td><td>Visible-only text and selector checks</td></tr>
           <tr><td>A theme bug lived in a dialog the test closed again</td><td>Audit every screen, share screens across tests</td></tr>
+          <tr><td>A 16px→4px grid change was "unchanged" at pixelmatch's default tolerance</td><td>Strict default (0.02) for same-machine baselines</td></tr>
+          <tr><td>A leftover toast made 1 in 5 visual runs flaky</td><td>Hide live regions in comparison screenshots</td></tr>
+          <tr><td>Hand-written login steps used CSS; recorded steps default to XPath</td><td>Login steps treat non-XPath selectors as CSS</td></tr>
         </tbody>
       </table></div>
     </section>
@@ -633,9 +729,9 @@ footer { color: var(--muted); font-size: 0.85rem; border-top: 1px solid var(--li
       <div class="ch-head"><div class="eyebrow">Chapter 14 · plan to Mon 2 Nov</div><h2>What's next</h2></div>
       <div class="days">
         <div class="day done"><b>Thu</b><span>Agent loop, judge, planner, replay/heal, crawler, quality evidence, live view, UI, LangGraph, suites, evaluation, theme conformance v1. <i>Done.</i></span></div>
-        <div class="day now"><b>Fri</b><span><s>Theme audit on every screen</s>, <s>cross-page consistency</s>, <s>visible-only text checks</s>: done. Left: first real run on the AI Presentation Builder in light and dark, fix what it teaches us, rehearse the demo story.</span></div>
-        <div class="day"><b>Sat</b><span>Visual baselines per theme (pixel diff, <code>data-aie2e-mask</code>, approve flow; AI triage if time); test case manager in the UI; login flows (credentials + saved session).</span></div>
-        <div class="day"><b>Sun</b><span>Typed attribute contract (<code>.d.ts</code> for JSX); GitHub Action; a run on TodoMVC; README.</span></div>
+        <div class="day"><b>Fri</b><span><s>Theme audit on every screen</s>, <s>cross-page consistency</s>, <s>visible-only text checks</s>: done. Left: first real run on the AI Presentation Builder in light and dark, fix what it teaches us, rehearse the demo story.</span></div>
+        <div class="day done"><b>Sat</b><span><s>Visual baselines</s>, <s>test suites in the UI</s>, <s>login flows</s>: all done Friday morning. AI triage of visual diffs only if time.</span></div>
+        <div class="day now"><b>Sun</b><span>Typed attribute contract (<code>.d.ts</code> for JSX); GitHub Action; a run on TodoMVC; README.</span></div>
         <div class="day"><b>Mon</b><span>Final evaluation runs, demo GIF. Nothing new.</span></div>
       </div>
       <p class="why"><b>Cut order if behind:</b> Figma/reference-site comparison → Playwright spec export → MCP server → AI diff triage. <b>Never cut:</b> strict judge, record/replay/heal, live view, theme conformance v1, evaluation, honest limits.</p>
@@ -658,6 +754,8 @@ footer { color: var(--muted); font-size: 0.85rem; border-top: 1px solid var(--li
         <dt>Reducer</dt><dd>How parallel branches merge into shared state; here, appending results.</dd>
         <dt>CDP</dt><dd>Chrome DevTools Protocol. Used for the screencast and for finding which CSS rule set a value.</dd>
         <dt>CSSOM</dt><dd>The browser's object model of loaded stylesheets; where themes are discovered.</dd>
+        <dt>Baseline</dt><dd>(visual) An approved screenshot later runs are compared with. Not the same as the start-page baseline above.</dd>
+        <dt>Mask</dt><dd><code>data-aie2e-mask</code>: an area painted over before comparing, for content that changes by design.</dd>
         <dt>CIEDE2000 / JND</dt><dd>A perceptual colour-difference formula; ΔE₀₀ ≤ 2.3 is about the smallest difference people notice.</dd>
       </dl>
     </section>
@@ -889,6 +987,66 @@ footer { color: var(--muted); font-size: 0.85rem; border-top: 1px solid var(--li
       cards[i].classList.remove('on'); if (i > 0) cards[i].classList.add(cls); else cards[i].classList.add('ok');
       cards[i].querySelector('.res').textContent = res || 'clean';
       await wait(500);
+    }
+  };
+
+  /* ---------- 08b visual diff (real pixels) ---------- */
+  const vState = { bug: true, mask: false };
+  const drawScreen = (cv, { gap, time, mask }) => {
+    const c = cv.getContext('2d');
+    c.fillStyle = '#f7f7f8'; c.fillRect(0, 0, cv.width, cv.height);
+    c.fillStyle = '#ffffff'; c.fillRect(0, 0, cv.width, 30);
+    c.fillStyle = '#1d1d1f'; c.font = '600 13px system-ui, sans-serif'; c.fillText('Shop', 14, 20);
+    c.fillStyle = '#5f6368'; c.font = '11px system-ui, sans-serif'; c.fillText(`Updated ${time}`, 14, 52);
+    if (mask) { c.fillStyle = '#8a8f98'; c.fillRect(12, 41, 110, 15); }
+    const w = (cv.width - 28 - gap * 2) / 3;
+    ['#d97706', '#2563eb', '#059669'].forEach((col, i) => {
+      const x = 14 + i * (w + gap);
+      c.fillStyle = '#ffffff'; c.fillRect(x, 66, w, 118);
+      c.strokeStyle = '#e4e4e7'; c.strokeRect(x + 0.5, 66.5, w - 1, 117);
+      c.fillStyle = col; c.fillRect(x + 8, 74, w - 16, 60);
+      c.fillStyle = '#2563eb'; c.fillRect(x + 8, 152, 56, 20);
+    });
+  };
+  const yiq = (r, g, b) => [r * 0.29889531 + g * 0.58662247 + b * 0.11448223, r * 0.59597799 - g * 0.2741761 - b * 0.32180189, r * 0.21147017 - g * 0.52261711 + b * 0.31114694];
+  const renderV = () => {
+    const A = $('#vBase'), B = $('#vCur'), D = $('#vDiff');
+    drawScreen(A, { gap: 16, time: '10:41:07', mask: vState.mask });
+    drawScreen(B, { gap: vState.bug ? 4 : 16, time: '10:43:52', mask: vState.mask });
+    const a = A.getContext('2d').getImageData(0, 0, A.width, A.height).data;
+    const b = B.getContext('2d').getImageData(0, 0, B.width, B.height).data;
+    const dc = D.getContext('2d'); const out = dc.createImageData(D.width, D.height);
+    const max = 35215 * 0.02 * 0.02; let n = 0;
+    for (let i = 0; i < a.length; i += 4) {
+      const [y1, i1, q1] = yiq(a[i], a[i + 1], a[i + 2]); const [y2, i2, q2] = yiq(b[i], b[i + 1], b[i + 2]);
+      const d = 0.5053 * (y1 - y2) ** 2 + 0.299 * (i1 - i2) ** 2 + 0.1957 * (q1 - q2) ** 2;
+      if (d > max) { n++; out.data.set([230, 40, 60, 255], i); }
+      else { const g = 255 - (255 - (0.299 * a[i] + 0.587 * a[i + 1] + 0.114 * a[i + 2])) * 0.25; out.data.set([g, g, g, 255], i); }
+    }
+    dc.putImageData(out, 0, 0);
+    const ratio = n / (a.length / 4);
+    const pctS = (ratio * 100).toFixed(2);
+    $('#vCap').textContent = `${n} of ${a.length / 4} pixels differ (${pctS}%). Limit 0.1% → ${ratio > 0.001 ? 'CHANGED: review it, approve or reject.' : 'unchanged.'}${!vState.mask ? ' The timestamp changes every run: mask it.' : ''}`;
+  };
+  $('#vBug').onclick = (e) => { vState.bug = !vState.bug; e.currentTarget.textContent = `Grid bug: ${vState.bug ? 'on' : 'off'}`; e.currentTarget.setAttribute('aria-pressed', String(vState.bug)); renderV(); };
+  $('#vMask').onclick = (e) => { vState.mask = !vState.mask; e.currentTarget.textContent = `Mask timestamp: ${vState.mask ? 'on' : 'off'}`; e.currentTarget.setAttribute('aria-pressed', String(vState.mask)); renderV(); };
+  renderV();
+
+  /* ---------- 04b login ---------- */
+  const LOGIN = [
+    ['ok', 'read at login only', 'Credentials come only from the environment: never from a suite, the report or the AI.'],
+    ['ok', 'Playwright, no AI', 'One deterministic login before the crawl: the form is found automatically, then the result is verified.'],
+    ['ok', 'kept in memory', 'The browser session (cookies + localStorage) is captured once.'],
+    ['ok', '3 tests · 1 login', 'The crawler and every test start logged in. The agent is told not to log out.'],
+  ];
+  $('#loginPlay').onclick = async () => {
+    const cards = $$('#loginRow .scr');
+    cards.forEach((c) => { c.className = 'scr'; c.querySelector('.res').textContent = ''; });
+    for (let i = 0; i < LOGIN.length; i++) {
+      cards[i].classList.add('on'); $('#loginCap').textContent = LOGIN[i][2];
+      await wait(850);
+      cards[i].classList.remove('on'); cards[i].classList.add(LOGIN[i][0]);
+      cards[i].querySelector('.res').textContent = LOGIN[i][1];
     }
   };
 

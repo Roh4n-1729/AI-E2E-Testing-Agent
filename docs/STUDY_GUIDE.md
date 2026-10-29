@@ -8,7 +8,7 @@ BOTH this file and `docs/study-guide.html` (with an animation or interactive dem
 next", and republish the artifact. Keep each chapter in the same shape: what it is → why it exists → how it works →
 where in the code → one line to say in an interview.
 
-_Last updated: Fri 30 Oct 2026, after theme audits on every screen and cross-page consistency._
+_Last updated: Fri 30 Oct 2026, after visual regression, test suites in the UI and login flows._
 
 ---
 
@@ -53,6 +53,18 @@ green/red/amber = pass/fail/warning.
   path (sample content) unless the test is about creating it; only ground-truth URLs, endpoints and test ids.
 - Code: `src/planner/llmPlanner.js`, `suitePlanner.js`, `cachedPlanner.js`.
 
+## 03b Your own tests: suites (added Fri 30 Oct)
+
+- The planner is optional. The **Test suites** page lets people write tests:
+  - a title, a start page and a goal in plain English;
+  - checks picked from the list of everything the judge supports.
+- It saves the same JSON file `--suite` runs in CI (`<outDir>/suites` or `AIE2E_SUITES_DIR` in the repo).
+- No goal = a page-load check. A goal = the agent does it once and the passing run is recorded. Recorded steps
+  replay with no AI; clear them when the test should do something else.
+- **Save as suite** on any finished run keeps its tests and recorded steps. Saving validates and lists problems by
+  path instead of writing a broken file.
+- Code: `ui/src/screens/Suites.jsx`, `src/server/suites.js`, `src/planner/suitePlanner.js`.
+
 ## 04 Run: agent, replay, heal (the key idea)
 
 - No recording → the Stagehand agent drives the browser, and every step is traced with a screenshot.
@@ -65,6 +77,24 @@ green/red/amber = pass/fail/warning.
 - A heal never decides the verdict: the agent's outcome is provisional and the judge overwrites it.
 - Code: `src/executor/cachingExecutor.js`, `agentExecutor.js`, `replayExecutor.js`, `steps.js`, `src/storage/recordStore.js`.
 - Interview: "Healing can hide regressions, so the judge, not the healer, labels the result."
+
+## 04b Apps behind a login (added Fri 30 Oct)
+
+- **Once per run, before anything else, plain Playwright (no AI):**
+  - log in;
+  - capture the session (cookies + localStorage, `storageState`);
+  - start the crawler and every test with it.
+- **Credentials** only come from `.env` (`AIE2E_USERNAME`, `AIE2E_PASSWORD`). They are never in suites or reports,
+  and never sent to the AI. A test greps the report for the password.
+- **Finds the form itself,** including "email, Next, then password". Unusual logins use `auth.steps` with
+  `{{username}}`/`{{password}}`.
+- **Success** is checked by text, URL, or by default "password field gone". A failed login stops the run with a
+  screenshot.
+- **Why not a shared profile:** Chrome locks a profile to one browser and tests run in parallel. Cookies are added
+  per test browser, and localStorage is restored by an init script before the app's code runs.
+- The agent is told it is logged in and must not log out, because the tests share the session.
+- Entry points: `--login-url` (+ success text/URL), the New run form, or a suite's `auth`.
+- Code: `src/auth/login.js`, `src/app/startRun.js`, `src/browser/session.js`.
 
 ## 05 Settle (timing)
 
@@ -175,6 +205,32 @@ Code: `src/theme/discover.js`, `src/theme/audit.js`, `src/theme/states.js`, `src
 Interview: "I don't guess from the value; I ask the browser which declaration produced it. And because a value can be
 on-theme on each screen and still drift, I also compare the same component across screens."
 
+## 08b Visual regression (added Fri 30 Oct)
+
+- **Why:** some bugs change nothing a check can read (a squeezed grid, a shifted icon). Approved screenshots
+  (baselines) are compared with every new run, pixel by pixel.
+- **Captures** (`BrowserSession.visualCapture`) are separate from the screenshots people look at:
+  - animations finished and the caret hidden;
+  - the harness cursor hidden;
+  - `data-aie2e-mask` areas painted over;
+  - live regions (toasts, status, alerts) hidden.
+    The final screen is captured once plus once per theme, and each replayed step too (named index + hash of the
+    step, so a healed step starts a new baseline).
+- **Compare** (`src/visual/compare.js`): pixelmatch, anti-aliasing ignored, tolerance 0.02. It writes a red diff
+  image and records the share of pixels changed and the box around the change. Byte-identical files skip decoding.
+- **Baselines** (`src/visual/baselines.js`): `<dir>/<host>/<test>/<checkpoint>.png` plus `baselines.json`.
+  - Created by a test's first passing run, like recordings.
+  - A changed test definition starts new ones.
+  - Point `AIE2E_BASELINES_DIR` into the repo to review them in pull requests.
+- **Gate:** `--visual warn|fail|off`; `--update-baselines`. Review happens in the Visual tab (baseline / this run /
+  difference, Approve or Reject) or via `POST /api/runs/:id/visual`.
+- **Lessons:**
+  - pixelmatch's default 0.1 missed a 16px→4px grid gap (a light card on white);
+  - writing a diff for every screenshot cost 13 s per run (now 3 s);
+  - a leftover toast made 1 run in 5 flaky until live regions were hidden. After that, 245/245 comparisons were
+    stable.
+- Interview: "Visual diffs are only useful if they're stable, so the evaluation measures that too."
+
 ## 09 App hints (optional contract)
 
 - Supported attributes:
@@ -185,16 +241,18 @@ on-theme on each screen and still drift, I also compare the same component acros
   - `data-aie2e-reveal="hover"`: marks hover-only controls.
   - `data-aie2e-ignore-theme`: opts an element out of the theme audit.
   - `data-aie2e-component="PrimaryButton"`: names a component, which must look the same on every screen.
+  - `data-aie2e-mask`: painted over in visual comparisons (timestamps, AI-written text).
 - Apps with test ids give the agent two more tools: `appTestIds` (lists them, hidden ones too) and `useTestId` (acts
   on one exactly).
 - Code: `src/browser/hints.js`, docs `docs/APP_HINTS.md`.
 
 ## 10 Evaluation
 
-- `examples/buggy-shop` has 11 bugs you can switch on by name: functional, error, accessibility, performance, three
-  theme bugs and one consistency bug (`button-drift`).
+- `examples/buggy-shop` has 12 bugs you can switch on by name: functional, error, accessibility, performance, three
+  theme bugs, one consistency bug (`button-drift`) and one visual-only bug (`cramped-grid`).
 - `npm run eval` runs the clean app N times, then each bug on its own, so every detection is attributed exactly.
-- Result (committed suite, 0 tokens): **11/11 detected · 0 false positives (3 × 7) · 0 flaky.**
+- Result (committed suite, 0 tokens): **12/12 detected · 0 false positives (3 × 7) · 0 flaky**, plus visual
+  stability (screenshot comparisons that drift across the repeated clean runs).
 - This measures the judge and the replay path. `npm run eval -- --mode explore --heal` measures the full AI path.
 - Code: `scripts/evaluate.js`, `docs/EVALUATION.md`.
 
@@ -218,8 +276,9 @@ on-theme on each screen and still drift, I also compare the same component acros
 - **LangGraph JS 1.5.3:** orchestration.
 - **Vercel AI SDK + zod:** structured LLM calls.
 - **axe-core, web-vitals, culori:** accessibility, Web Vitals and colour difference.
+- **pixelmatch 7.2 + pngjs:** visual diffs. Pinned to 7.2 because 8.0 was three weeks old.
 - **Fastify, React 19, Tailwind v4, Radix UI:** server and UI.
-- **Vitest:** 85 tests, unit plus real-browser integration.
+- **Vitest:** unit plus real-browser integration tests, including the web UI itself.
 - **Language:** JavaScript ESM with JSDoc types checked by `tsc`, so there is no build step.
 
 ## 13 Lessons from real runs
@@ -238,6 +297,9 @@ Full log: `docs/IMPROVEMENTS.md`.
 | The judge caught a script-order bug in the demo shop    | fixed in the app, not the tester |
 | `.first()` picked a hidden copy of the text             | visible-only text checks         |
 | A theme bug lived in a dialog the test closed again     | audit every screen               |
+| A 16px→4px grid change looked "unchanged"               | strict pixel tolerance (0.02)    |
+| A leftover toast made visual runs flaky                 | hide live regions in captures    |
+| Hand-written login steps used CSS, replay assumed XPath | login steps default to CSS       |
 
 ## 14 What's next (deadline Mon 2 Nov)
 
@@ -245,10 +307,8 @@ Full log: `docs/IMPROVEMENTS.md`.
   - ~~theme audit on every screen~~, ~~cross-page consistency~~, ~~visible-only text checks~~: done;
   - first real run on the AI Presentation Builder in light and dark, and fixes from it;
   - rehearse the demo story on the real app.
-- **Sat:**
-  - visual baselines per theme: pixel diff, `data-aie2e-mask`, approve flow, AI triage if time;
-  - a test case manager in the UI;
-  - login flows.
+- **Sat:** ~~visual baselines~~, ~~test suites in the UI~~, ~~login flows~~: all done Friday morning. AI triage of
+  visual diffs only if time.
 - **Sun:** typed attribute contract (`.d.ts`), the GitHub Action, a TodoMVC run, the README.
 - **Mon:** final evaluation runs and the demo GIF. Nothing new.
 - **Cut order:** Figma/reference-site comparison → Playwright spec export → MCP server → AI diff triage.
@@ -257,7 +317,8 @@ Full log: `docs/IMPROVEMENTS.md`.
 
 - **Expectation:** a machine-checkable end-state statement.
 - **Vacuous check:** already true at the start, so it proves nothing.
-- **Baseline:** the page snapshot taken before the agent acts.
+- **Baseline:** the page snapshot taken before the agent acts. (Visual baseline: an approved screenshot, chapter 08b.)
+- **Mask:** `data-aie2e-mask`, an area painted over before visual comparison.
 - **Settle:** waiting for quiet: URL, text, aria-busy and in-flight requests.
 - **Recording:** JSON steps replayed with no LLM.
 - **Fingerprint:** a hash of the test definition.

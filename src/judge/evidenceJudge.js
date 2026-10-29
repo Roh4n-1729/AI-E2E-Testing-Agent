@@ -1,5 +1,7 @@
+import path from 'node:path';
 import { readFile } from 'node:fs/promises';
 import { z } from 'zod';
+import { compareCaptures, pct } from '../visual/check.js';
 
 /**
  * @import { BrowserSession } from '../browser/session.js'
@@ -35,6 +37,7 @@ const HARD_KINDS = new Set([
 
 /** Checks that guard against regressions rather than prove the goal was reached. */
 const GUARD_KINDS = new Set([
+  'visual-baseline',
   'no-console-errors',
   'no-network-failures',
   'web-vitals',
@@ -79,11 +82,14 @@ export class EvidenceJudge {
    * @param {Config['judge']} cfg
    * @param {LlmClient} [llm]  Needed only for `visual` expectations.
    * @param {Config['quality']} [quality]  Quality gate; default = off (judge only what the test asks).
+   * @param {{ store: import('../visual/baselines.js').BaselineStore, cfg: Config['visual'] }} [visual]
+   *   Visual regression: captures are compared with the approved baselines; default = no comparison.
    */
-  constructor(cfg, llm, quality) {
+  constructor(cfg, llm, quality, visual) {
     this.cfg = cfg;
     this.llm = llm;
     this.quality = quality;
+    this.visual = visual;
     // Browsers log failed sub-resources as console errors; ignored network URLs are ignored here too.
     this.consoleIgnore = [
       ...cfg.ignoreConsolePatterns,
@@ -97,6 +103,19 @@ export class EvidenceJudge {
    */
   async judge(test, session, outcome) {
     const evidence = await session.collectEvidence('final').catch(() => emptyEvidence(session));
+    if (this.visual && evidence.visual?.captures.length) {
+      const v = this.visual;
+      const ratio = test.expectations.find((e) => e.kind === 'visual-baseline');
+      evidence.visual.results = await compareCaptures({
+        test,
+        captures: evidence.visual.captures,
+        store: v.store,
+        maxDiffRatio: ratio?.kind === 'visual-baseline' ? ratio.maxDiffRatio : v.cfg.maxDiffRatio,
+        threshold: v.cfg.threshold,
+        abs: (rel) => path.join(session.artifacts.runDir, rel),
+        rel: (abs) => path.relative(session.artifacts.runDir, abs).split(path.sep).join('/'),
+      }).catch(() => undefined);
+    }
 
     /** @type {CheckResult[]} */
     const checks = [];
@@ -146,6 +165,24 @@ export class EvidenceJudge {
       const slow = evidence.requestStats?.slowestApi;
       if (slow && slow.durationMs > q.slowApiMs)
         warnings.push(`Slow API call: ${slow.url} took ${(slow.durationMs / 1000).toFixed(1)}s`);
+    }
+
+    // Visual regression has its own gate: an intended redesign is a change to approve, not a bug.
+    const vgate = this.visual?.cfg.gate ?? 'off';
+    if (
+      vgate !== 'off' &&
+      !this.visual?.cfg.update && // --update-baselines: the differences are being accepted
+      evidence.visual?.results?.some((r) => r.status !== 'new') &&
+      !test.expectations.some((e) => e.kind === 'visual-baseline')
+    ) {
+      const c = await this.#check(
+        { kind: 'visual-baseline', maxDiffRatio: this.visual?.cfg.maxDiffRatio ?? 0.001 },
+        session,
+        evidence,
+      );
+      c.advisory = vgate === 'warn';
+      checks.push(c);
+      if (!c.passed && c.advisory) warnings.push(c.detail);
     }
 
     // An expectation that already held on the start page proves nothing about what the agent did.
@@ -396,6 +433,29 @@ export class EvidenceJudge {
           problems.size
             ? `Theme conformance: ${[...problems].map(([p, l]) => `${p}${where(l)}`).join('; ')}`
             : `Theme conformance: ${summary || 'n/a'} on-theme over ${screens}, no leaks`,
+        );
+      }
+      case 'visual-baseline': {
+        const res = evidence.visual?.results ?? [];
+        const compared = res.filter((r) => r.status !== 'new');
+        if (!compared.length)
+          return result(
+            true,
+            'Visual: no approved baselines yet (this run creates them if it passes)',
+          );
+        const bad = compared.filter((r) => r.status === 'changed' || r.status === 'size');
+        const err = compared.filter((r) => r.status === 'error');
+        return result(
+          bad.length === 0,
+          bad.length
+            ? `Visual: ${bad.length} of ${compared.length} screenshot(s) differ from the approved baseline: ${bad
+                .slice(0, 4)
+                .map(
+                  (r) =>
+                    `${r.label} (${r.status === 'size' ? (r.note ?? 'size changed') : `${pct(r.diffRatio)} of pixels`})`,
+                )
+                .join(', ')}`
+            : `Visual: ${compared.length - err.length} screenshot(s) match the approved baseline${err.length ? ` (${err.length} could not be compared)` : ''}`,
         );
       }
       case 'no-a11y-violations': {

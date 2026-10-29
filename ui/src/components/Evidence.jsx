@@ -67,6 +67,7 @@ function labelFor(s) {
   if (s.label.startsWith('step-')) return `After replay step ${s.label.slice(5)}`;
   if (s.label.startsWith('theme:')) return `Theme "${s.label.slice(6)}"`;
   if (s.label.startsWith('crop:')) return s.label.slice(5);
+  if (s.label.startsWith('visual:')) return s.label.slice(7);
   return 'During the run';
 }
 

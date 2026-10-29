@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { ExpectationSchema, RecordedStepSchema, TestCaseSchema } from '../core/types.js';
 import { testFingerprint } from '../storage/recordStore.js';
 import { slugify } from '../util/misc.js';
+import { AuthSchema } from '../auth/login.js';
 
 /**
  * @import { Planner, RecordStore } from '../core/ports.js'
@@ -18,6 +19,10 @@ import { slugify } from '../util/misc.js';
  */
 export const SuiteSchema = z.object({
   description: z.string().optional(),
+  /** the app this suite usually runs against (the UI's default); the CLI's URL argument wins */
+  url: z.url({ protocol: /^https?$/ }).optional(),
+  /** log in before the tests (credentials come from .env, never from this file) */
+  auth: AuthSchema.optional(),
   tests: z
     .array(
       z.object({

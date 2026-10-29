@@ -19,6 +19,9 @@ const DEFAULTS = {
   replan: false,
   headed: false,
   quality: 'warn',
+  visual: 'warn',
+  loginUrl: '',
+  loginSuccess: '',
 };
 
 const MODES = [
@@ -110,6 +113,10 @@ export function NewRun({ health }) {
         replan: form.replan,
         headed: form.headed,
         quality: form.quality,
+        visual: form.visual,
+        auth: form.loginUrl.trim()
+          ? { loginUrl: form.loginUrl.trim(), successText: form.loginSuccess.trim() || undefined }
+          : undefined,
       });
       go(`#/runs/${runId}`);
     } catch (err) {
@@ -238,8 +245,9 @@ export function NewRun({ health }) {
         >
           Run settings
           <span className="font-normal text-muted">
-            {form.concurrency} in parallel · quality {form.quality} · replay{' '}
+            {form.concurrency} in parallel · quality {form.quality} · visual {form.visual} · replay{' '}
             {form.cache ? 'on' : 'off'}
+            {form.loginUrl.trim() ? ' · logs in first' : ''}
           </span>
           <ChevronDown
             size={15}
@@ -283,6 +291,55 @@ export function NewRun({ health }) {
                     { value: 'fail', label: 'Fail', hint: 'A clear problem fails the test' },
                     { value: 'off', label: 'Off', hint: 'Functional checks only' },
                   ]}
+                />
+              </Field>
+            </div>
+            <Field id="visual" label="Visual comparison">
+              <Select
+                id="visual"
+                label="Visual comparison"
+                value={form.visual}
+                onValueChange={(v) => set({ visual: v })}
+                options={[
+                  {
+                    value: 'warn',
+                    label: 'Warn',
+                    hint: 'Show screenshots that differ from the approved ones',
+                  },
+                  {
+                    value: 'fail',
+                    label: 'Fail',
+                    hint: 'A screenshot that differs fails the test',
+                  },
+                  { value: 'off', label: 'Off', hint: 'No screenshot comparison' },
+                ]}
+              />
+            </Field>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <Field
+                id="login"
+                label="Log in first (optional)"
+                hint={`Login page. Username and password come from AIE2E_USERNAME and AIE2E_PASSWORD in .env${health && !health.loginCreds ? ' (not set yet)' : ''}.`}
+              >
+                <input
+                  id="login"
+                  className={`${inputCls} font-mono text-[13px]`}
+                  placeholder="/login"
+                  value={form.loginUrl}
+                  onChange={(e) => set({ loginUrl: e.target.value })}
+                />
+              </Field>
+              <Field
+                id="loginok"
+                label="Text that shows the login worked"
+                hint="Optional. Default: the password field is gone."
+              >
+                <input
+                  id="loginok"
+                  className={inputCls}
+                  placeholder="e.g. Welcome back"
+                  value={form.loginSuccess}
+                  onChange={(e) => set({ loginSuccess: e.target.value })}
                 />
               </Field>
             </div>

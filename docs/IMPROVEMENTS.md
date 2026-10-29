@@ -6,6 +6,124 @@ teaches us something: it is the honest history of how the judge got stricter.
 
 ---
 
+## 2026-10-30 (late morning): test suites in the UI, login flows
+
+### Test suites written in the UI
+
+- **Why:** users need to author their own tests and flows, not only accept what the AI plans. A suite is the same
+  JSON file `--suite` and `aie2e export` already use, so what you write in the UI also runs in CI.
+- **Server** (`src/server/suites.js`): files `<outDir>/suites/<name>.suite.json`, or a folder in the repo
+  (`AIE2E_SUITES_DIR`). List, read, save, delete. Saving validates against the suite schema and returns the
+  problems by path (e.g. `tests.0.title`) instead of saving a broken file. `POST /api/suites/from-run/:id` turns
+  a finished run into a suite with its recorded steps. Names are slugs, so path tricks are refused.
+- **UI** (Test suites page):
+  - per test: title, start page and a goal in plain English (empty = page-load check);
+  - checks picked from a list of every check the judge supports, each with only its own fields;
+  - recorded steps are shown and can be cleared, so the agent records them again;
+  - reorder, duplicate, an "Edit as JSON" mode, and Run suite;
+  - "Save as suite" on any finished run.
+- **Run again** of a UI suite run re-runs the suite by name. A run that used a suite file from the command line
+  says so instead of silently planning.
+
+### Login flows
+
+- **Design:** log in once per run, before anything else, with plain Playwright (no AI). Credentials come only
+  from `.env` (`AIE2E_USERNAME`/`AIE2E_PASSWORD` or names you choose). They are never stored in suites or reports
+  and never sent to the AI. The resulting session (cookies + localStorage, Playwright's `storageState`) is given
+  to the crawler and every test.
+- **Login detection:**
+  - by default it finds the username and password fields, including "email, Next, then password";
+  - for unusual logins, `auth.steps` with `{{username}}`/`{{password}}` placeholders;
+  - success is checked by text, URL, or by default "the password field is gone and the URL changed".
+- **Stagehand owns the browser it launches,** so `newContext({ storageState })` is not an option for test
+  sessions. Cookies are added to the context, and localStorage is restored by an init script before any page
+  script runs. A shared profile directory was rejected: Chrome locks a profile to one browser, and tests run in
+  parallel.
+- **The agent is told it is logged in and must not log out:** tests share one session, so one test logging out
+  could log out the others.
+- A failed login stops the run with the reason and a screenshot (`login-failed.png`), instead of failing every
+  test with the same confusing error.
+- Entry points: `--login-url` (+ `--login-success-text`/`--login-success-url`), the New run form, or a suite's
+  `auth`. The run page and the report say "logged in as …".
+
+### Found while building it
+
+- Hand-written login steps use CSS (`button[type=submit]`), but recorded steps default to XPath, so the step
+  timed out. Login steps now treat anything not explicitly XPath as CSS.
+
+### Verified
+
+- `tests/integration/login.test.js`:
+  - a form login; the session carries the HttpOnly cookie and localStorage into a new test browser;
+  - a two-step login and scripted steps;
+  - a wrong password gives `Login as ada@example.com failed: the login form is still there` plus a screenshot;
+  - missing credentials point to `.env`;
+  - a suite with `auth` passes its logged-in test, and the password appears nowhere in report.json or
+    report.html.
+- `tests/suites.test.js` (API) and a real-browser UI test: write a suite, save it, check the file, run it, see it
+  pass.
+
+---
+
+## 2026-10-30 (morning): visual regression against approved baselines
+
+### What was built
+
+- **Deterministic captures** (`BrowserSession.visualCapture`), taken separately from the step screenshots people
+  look at:
+  - animations finished and the caret hidden;
+  - the harness's own cursor hidden;
+  - `data-aie2e-mask` areas painted over;
+  - live regions (toasts, status, alerts) hidden.
+    The final screen is captured once per theme the build ships. Each replayed step is captured too, named by index
+    plus a hash of what it does, so a healed step gets a new baseline instead of a false difference.
+- **Comparison:** pixelmatch (ISC, pinned 7.2.0; 8.0 was three weeks old) and pngjs, with anti-aliasing ignored. A
+  diff image with the differing pixels in red, the share of pixels changed, and the bounding box of the change. The
+  baseline is copied into the run folder, so a report always shows what it was compared with.
+- **Baselines** (`src/visual/baselines.js`) are stored in `<dir>/<host>/<test>/<checkpoint>.png` plus
+  `baselines.json` (who approved what, when). A test's first passing run creates them, like recordings: only
+  judge-approved runs count. A changed test definition starts new ones. `AIE2E_BASELINES_DIR` can point into
+  the repo, so baselines are reviewed in pull requests.
+- **Gate** `--visual off|warn|fail` (default warn: an intended redesign is a change to approve, not a bug), and
+  `--update-baselines`.
+- **Review:**
+  - a Visual tab per test: baseline, this run and the difference, with Approve as baseline and Reject;
+  - `POST /api/runs/:id/visual`, with decisions saved next to the run;
+  - a "visual change" marker in the test list and the summary;
+  - a section in the HTML report.
+
+### Found while building it
+
+- **pixelmatch's default tolerance (0.1) missed a real layout change.** A grid gap squeezed from 16px to 4px was
+  "unchanged", because a light card on a white page differs by a YIQ delta that needs a threshold below ~0.03. One
+  machine renders the same page byte-identically, and anti-aliased edges are ignored anyway, so the default is now
+  0.02. Raise it for baselines shared across machines.
+- **Comparisons cost ~13 s per 7-test run** (PNG decode, plus a diff image written for every screenshot). Now
+  byte-identical files are "unchanged" with no decoding at all (the size is read from the PNG header), and a diff
+  image is only written when something changed. Overhead is ~3 s per run.
+- **Toasts made 1 in 5 runs flaky.** The previous step's "Added T-shirt to cart" toast was still stacked behind
+  "Added Notebook" when the steps ran faster. Masking would not fix it (two toasts paint a different box than
+  one), so live regions are hidden in comparison captures (`visual.hideLiveRegions`, on by default). Their text is
+  still evidence. After the fix: 245 of 245 comparisons stable over 7 repeated runs.
+- **Existing bug:** a second attempt of a test (the agent re-checking a failed replay) got a fresh artifacts
+  object and overwrote the first attempt's screenshots. `RunArtifacts.forTest` now returns one instance per test.
+
+### Verified
+
+- `tests/integration/visual.test.js`:
+  - the first run creates baselines for final, light and dark;
+  - a second run is unchanged although a masked counter changes and the cursor moves;
+  - a squeezed grid is "changed" in all three, with the diff image and a change box below the masked area;
+  - gate fail fails the test.
+- `tests/visualReview.test.js`: approve copies into the baselines and records the decision; reject keeps the
+  baseline; unknown screenshots and bad run ids are refused.
+- CLI end to end: clean (35 baselines created), cramped grid (17 changed), `--update-baselines` (17 re-approved),
+  then unchanged.
+- Seeded bug `cramped-grid` (visual only) is detected. The evaluation now also reports visual stability across the
+  repeated clean runs.
+
+---
+
 ## 2026-10-30 (early morning): every screen, cross-page consistency, visible-only text checks
 
 ### 1. The theme audit now covers every screen a test reaches, not only the last one

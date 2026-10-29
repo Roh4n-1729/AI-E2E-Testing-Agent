@@ -146,6 +146,12 @@ const stablePass = testIds.filter((id) =>
 );
 const cleanWarnings = new Set(clean.flatMap((r) => [...warningsOf(r.report)]));
 const cleanConsistency = new Set(clean.flatMap((r) => [...consistencyOf(r.report)]));
+// Visual stability: the first clean run creates the baselines; every later clean run must match them.
+const visualCompared = clean
+  .slice(1)
+  .flatMap((r) => r.report.results.flatMap((x) => x.evidence.visual?.results ?? []))
+  .filter((v) => v.status !== 'new');
+const visualUnstable = visualCompared.filter((v) => v.status === 'changed' || v.status === 'size');
 
 const detections = bugRuns.map((b) => {
   const st = statusById(b.report);
@@ -189,6 +195,10 @@ const result = {
   tests: testIds.length,
   flaky: flaky.map((id) => titles.get(id)),
   falsePositives: falsePositives.map((id) => titles.get(id)),
+  visualStability: {
+    compared: visualCompared.length,
+    unstable: visualUnstable.map((v) => v.label),
+  },
   detections,
 };
 await writeFile(path.join(outDir, 'evaluation.json'), JSON.stringify(result, null, 2));
@@ -207,6 +217,12 @@ const md = [
         `**${detected}/${detections.length} seeded bugs detected · ${falsePositives.length} false positive${falsePositives.length === 1 ? '' : 's'} on the clean app (${clean.length} run${clean.length === 1 ? '' : 's'} × ${testIds.length} tests) · ${flaky.length} flaky test${flaky.length === 1 ? '' : 's'}.**`,
         '',
         'Method: the clean app runs first; then each bug is switched on alone. A bug counts as detected when a test that passes on the clean app fails, or a new quality warning appears.',
+        '',
+        ...(visualCompared.length
+          ? [
+              `Visual stability: ${visualUnstable.length} of ${visualCompared.length} screenshot comparisons differed from the baselines across the repeated clean runs${visualUnstable.length ? ` (${[...new Set(visualUnstable.map((v) => v.label))].join(', ')})` : ''}.`,
+            ]
+          : []),
         '',
         '| Seeded bug | Kind | Detected | Evidence |',
         '| --- | --- | --- | --- |',

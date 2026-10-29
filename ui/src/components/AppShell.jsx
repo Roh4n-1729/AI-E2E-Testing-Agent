@@ -1,10 +1,21 @@
-import { Activity, BookOpen, Film, History, Monitor, Moon, Play, Sun } from 'lucide-react';
+import {
+  Activity,
+  BookOpen,
+  Film,
+  History,
+  ListChecks,
+  Monitor,
+  Moon,
+  Play,
+  Sun,
+} from 'lucide-react';
 import { useTheme } from '../lib/theme.js';
 import { Tooltip } from './ui.jsx';
 
 const NAV = [
   { name: 'new', href: '#/new', label: 'New run', icon: Play },
   { name: 'runs', href: '#/runs', label: 'Runs', icon: History },
+  { name: 'suites', href: '#/suites', label: 'Test suites', icon: ListChecks },
   { name: 'recordings', href: '#/recordings', label: 'Recordings', icon: Film },
   { name: 'hints', href: '#/hints', label: 'App hints', icon: BookOpen },
 ];

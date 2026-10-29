@@ -1,4 +1,4 @@
-# Roadmap: real-time AI testing + theme conformance (updated Fri 30 Oct, 03:00)
+# Roadmap: real-time AI testing + theme conformance (updated Fri 30 Oct, 06:00)
 
 ## Vision (Rohan, 29 Oct)
 
@@ -16,10 +16,10 @@
 
 | Pillar                            | Status  | Done                                                                                                                                                       | Missing                                                               |
 | --------------------------------- | ------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------- |
-| Real-time AI testing on real apps | ~75%    | real browser and backend, agent + replay + heal, strict evidence judge, API/download/toast/vitals/a11y evidence, settle on aria-busy and in-flight API     | login flows, test data setup/cleanup                                  |
-| User-authored tests and flows     | ~40%    | single goal in the UI, JSON suites (CLI), export run → suite                                                                                               | in-UI test case manager                                               |
+| Real-time AI testing on real apps | ~85%    | real browser and backend, agent + replay + heal, strict evidence judge, API/download/toast/vitals/a11y evidence, settle, login flows                       | test data setup/cleanup                                               |
+| User-authored tests and flows     | ~90%    | UI test suite editor (goal + checks + recorded steps), JSON mode, run, save run as suite; CLI suites, export                                               | tags/filters                                                          |
 | Theme conformance                 | v1.1 ✅ | CSSOM discovery, class/attr/media switching, CDP declaration lookup, CIEDE2000 match, leaks, per-theme contrast, Theme tab + report, 3 seeded bugs in eval | DTCG override (optional); first real run on the Presentation Builder  |
-| Visual testing                    | ~25%    | per-step screenshots, timeline-based AI visual checks                                                                                                      | baselines, pixel diff + masks, AI diff triage, approve flow           |
+| Visual testing                    | ~85%    | baselines per step and per theme, pixel diff, masks, live regions hidden, approve/reject in UI and API, gate warn/fail                                     | AI diff triage (cut first)                                            |
 | Client attribute contract         | ~50%    | data-testid family, aria-busy, data-aie2e-hint, data-aie2e-reveal                                                                                          | data-aie2e-mask, data-aie2e-component, data-aie2e-theme, TS/JSX types |
 
 ## Design: theme conformance (source of truth = the production build)
@@ -87,9 +87,9 @@ Loose ends from Thu (Rohan, on his machine):
 
 **Sat**
 
-- [ ] Visual baselines per test step and per theme: pixel diff, `data-aie2e-mask`, approve/reject in the UI
-- [ ] Test case manager in the UI (add/edit tests and flows, save as a suite)
-- [ ] Login flows: credentials step + saved session (`storageState`)
+- [x] Visual baselines per test step and per theme: pixel diff, `data-aie2e-mask`, approve/reject in the UI (12/12 in eval, 245/245 stable)
+- [x] Test case manager in the UI (add/edit tests and flows, save as a suite, run, save a run as a suite)
+- [x] Login flows: credentials from .env, form/two-step/scripted login, saved session shared with crawler and tests
 - [ ] AI triage of visual diffs (cut if behind)
 - [ ] Compare two runs in the UI (in KICKOFF, never scheduled; cut if behind)
 

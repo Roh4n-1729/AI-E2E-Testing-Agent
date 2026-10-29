@@ -73,6 +73,40 @@ describe.skipIf(!hasChromium || !built)('web UI (real browser; needs `npm run ui
     await page.close();
   });
 
+  it('writes a test suite in the UI, saves it as a file and runs it', async () => {
+    const page = await browser.newPage();
+    const errors = /** @type {string[]} */ ([]);
+    page.on('pageerror', (e) => errors.push(e.message));
+    await page.goto(`${ui}/#/suites`);
+    await page.getByText('No suites yet').waitFor();
+    await page.getByRole('button', { name: 'New suite' }).first().click();
+    await page.getByLabel('Suite name').fill('shop-smoke');
+    await page.getByPlaceholder('https://staging.your-app.com').fill(target.base);
+    await page.getByLabel('Test 1 title').fill('Shop page shows its heading');
+    await page.getByPlaceholder('/', { exact: true }).fill('/shop');
+    await page.getByRole('button', { name: '+ Add a check' }).click();
+    await page.getByPlaceholder('Text, e.g. Order placed').fill('Shop');
+    await page.getByRole('button', { name: 'Save' }).click();
+    await page.waitForURL(/#\/suites\/shop-smoke$/);
+    await page.getByText('Saved', { exact: false }).first().waitFor();
+
+    // the file is the same format the CLI runs
+    const saved = await (await page.request.get(`${ui}/api/suites/shop-smoke`)).json();
+    expect(saved.suite.tests[0]).toMatchObject({
+      title: 'Shop page shows its heading',
+      startUrl: '/shop',
+      expectations: [{ kind: 'text-visible', text: 'Shop' }],
+    });
+
+    await page.getByRole('button', { name: 'Run suite' }).click();
+    await page.waitForURL(/#\/runs\//);
+    await page.getByRole('link', { name: /HTML report/ }).waitFor({ timeout: 45_000 });
+    await page.getByRole('heading', { name: 'Shop page shows its heading' }).waitFor();
+    await page.getByText('Passed on').first().waitFor();
+    expect(errors).toEqual([]);
+    await page.close();
+  });
+
   it('shows a helpful empty state for recordings', async () => {
     const page = await browser.newPage();
     await page.goto(`${ui}/#/recordings`);

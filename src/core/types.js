@@ -52,6 +52,14 @@ export const ExpectationSchema = z.discriminatedUnion('kind', [
     /** false = any value set by a CSS rule without a theme variable is a problem, whatever the score */
     allowHardCoded: z.boolean().default(false),
   }),
+  /**
+   * Screenshots look like their approved baselines (the final screen, each replayed step, each theme).
+   * Areas marked data-aie2e-mask are blanked first. Auto-added under the visual gate.
+   */
+  z.object({
+    kind: z.literal('visual-baseline'),
+    maxDiffRatio: z.number().min(0).max(1).default(0.001),
+  }),
   /** axe-core found no accessibility violations at or above `minImpact` on the final page. */
   z.object({
     kind: z.literal('no-a11y-violations'),
@@ -191,7 +199,36 @@ export const RecordingSchema = z.object({
  * @property {A11yResult} [a11y]
  * @property {ThemeAudit} [theme]  theme conformance of the final state, in every theme the build ships
  * @property {ThemeState[]} [themeStates]  every distinct screen the test reached that was audited, final included
+ * @property {VisualEvidence} [visual]  screenshots for visual regression and how they compare with the baselines
  */
+/**
+ * @typedef {object} VisualCapture  A deterministic screenshot for comparison: no cursor, animations
+ *   finished, data-aie2e-mask areas painted over.
+ * @property {string} checkpoint  stable name: final, theme-dark, step-3-a1b2c3
+ * @property {string} label  for people: "final", "final · dark", "after step 3"
+ * @property {string} path  relative to the run dir
+ * @property {string} url
+ * @property {string} [theme]
+ */
+/**
+ * @typedef {object} VisualResult
+ * @property {string} checkpoint
+ * @property {string} label
+ * @property {string} [theme]
+ * @property {'new' | 'unchanged' | 'changed' | 'size' | 'error'} status
+ *   new = no approved baseline yet (saved when the test passes); size = the screenshot size changed
+ * @property {string} current
+ * @property {string} [baseline]  copy of the approved baseline, relative to the run dir
+ * @property {string} [diff]  red = differing pixels
+ * @property {number} [diffRatio]
+ * @property {number} [diffPixels]
+ * @property {{ x: number, y: number, width: number, height: number }} [box]
+ * @property {string} [approvedAt]
+ * @property {string} [approvedRun]
+ * @property {boolean} [saved]  this screenshot became the baseline in this run
+ * @property {string} [note]
+ */
+/** @typedef {{ captures: VisualCapture[], results?: VisualResult[] }} VisualEvidence */
 /**
  * @typedef {object} Baseline  Harness snapshot of the start page BEFORE the agent acts.
  * @property {string} url
@@ -261,6 +298,8 @@ export const RecordingSchema = z.object({
  * @property {number} inputTokens  browser-agent tokens
  * @property {number} outputTokens
  * @property {{ inputTokens: number, outputTokens: number }} [overhead]  planner + judge (visual checks) tokens
+ * @property {number} [visualChanges]  tests with at least one screenshot that differs from its baseline
+ * @property {number} [visualNew]  screenshots that became a baseline in this run
  */
 /**
  * @typedef {object} RunReport
@@ -271,6 +310,7 @@ export const RecordingSchema = z.object({
  * @property {RunSummary} summary
  * @property {TestResult[]} results
  * @property {Consistency} [consistency]  how consistently the same kinds of element look across screens
+ * @property {{ loginUrl: string, username: string, landedOn: string }} [auth]  the run logged in first (never the password)
  */
 /**
  * @typedef {object} ConsistencyStyle

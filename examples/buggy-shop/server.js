@@ -69,7 +69,8 @@ table{width:100%;border-collapse:collapse;background:var(--color-surface)}td,th{
 ${bugs.has('hardcoded-color') ? '.newsletter button{background:#2f6fe4}' : ''}
 ${bugs.has('dark-leak') ? '.newsletter{background:#ffffff}' : ''}
 ${bugs.has('off-scale-radius') ? '.product{border-radius:7px}' : ''}
-${bugs.has('button-drift') ? '#f button{background:color-mix(in srgb, var(--color-primary) 88%, black)}' : ''}`;
+${bugs.has('button-drift') ? '#f button{background:color-mix(in srgb, var(--color-primary) 88%, black)}' : ''}
+${bugs.has('cramped-grid') ? '.grid{gap:4px}' : ''}`;
 
 /** @param {string} color */
 const swatch = (color) =>

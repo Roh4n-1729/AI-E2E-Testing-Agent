@@ -22,6 +22,8 @@ import { FileRecordStore } from '../storage/recordStore.js';
 import { createLogger } from '../util/logger.js';
 import { newRunId } from '../util/misc.js';
 import { ThemeStates } from '../theme/states.js';
+import { BaselineStore } from '../visual/baselines.js';
+import { AuthSchema, performLogin } from '../auth/login.js';
 
 /**
  * @typedef {object} RunOptions  Everything a run needs; the CLI and the UI server both build this.
@@ -44,8 +46,12 @@ import { ThemeStates } from '../theme/states.js';
  * @property {boolean} [rerecord]
  * @property {boolean} [replan]
  * @property {string} [suite]            path to a committed test suite (JSON); replaces planning
+ * @property {string} [suiteName]        the UI's name for that suite (shown, and used by "Run again")
+ * @property {import('../auth/login.js').Auth} [auth]  log in first (a suite's own "auth" is used otherwise)
  * @property {boolean} [heal]             false = a broken replay is a plain failure, never handed to the agent
  * @property {'off' | 'warn' | 'fail'} [quality]  Web Vitals / accessibility gate (default: warn = advisory)
+ * @property {'off' | 'warn' | 'fail'} [visual]  screenshot comparison with approved baselines (default: warn)
+ * @property {boolean} [updateBaselines]  accept every screenshot of a passing test as its new baseline
  * @property {string} [runId]              pre-generated id (the server needs it before the run starts)
  */
 
@@ -80,6 +86,10 @@ export async function startRun(o, { events = new RunEvents(), signal } = {}) {
     logLevel: o.verbose ? 'debug' : undefined,
     crawl: o.maxPages ? { maxPages: o.maxPages, maxDepth: 2 } : undefined,
     quality: o.quality ? { gate: o.quality } : undefined,
+    visual:
+      o.visual || o.updateBaselines
+        ? { gate: o.visual, update: o.updateBaselines || undefined }
+        : undefined,
   });
   const logger = createLogger(config.logLevel, '', (e) =>
     events.emit('log', { level: e.level, scope: e.scope, message: e.message }),
@@ -98,7 +108,31 @@ export async function startRun(o, { events = new RunEvents(), signal } = {}) {
   const llm = lazyLlm(config.plannerModel ?? config.model, meter);
   const judgeLlm = lazyLlm(config.judgeModel ?? config.model, meter);
   const suite = o.suite ? await loadSuite(o.suite) : undefined;
+  const baselines = new BaselineStore(
+    config.visual.dir ?? path.join(config.outDir, 'baselines'),
+    o.url,
+  );
   const suitePlanner = suite ? new SuitePlanner(suite) : undefined;
+
+  // Log in once, before anything else: the crawler and every test start with that session. A failed
+  // login stops the run here, with a screenshot, instead of failing every test for the same reason.
+  const auth = o.auth ?? suite?.auth;
+  /** @type {Awaited<ReturnType<typeof performLogin>> | undefined} */
+  let login;
+  if (auth) {
+    events.emit('log', {
+      level: 'info',
+      scope: 'login',
+      message: `Logging in at ${auth.loginUrl}`,
+    });
+    login = await performLogin({
+      appUrl: o.url,
+      auth: AuthSchema.parse(auth),
+      cfg: config,
+      logger,
+      screenshot: path.join(artifacts.runDir, 'login-failed.png'),
+    });
+  }
   const useAiPlanner = !suite && !o.goal && o.plan !== false;
   const cache = o.cache !== false;
   const heal = o.heal !== false;
@@ -116,9 +150,12 @@ export async function startRun(o, { events = new RunEvents(), signal } = {}) {
         )
       : new StaticPlanner();
   const crawler =
-    useAiPlanner && o.crawl !== false ? new BfsCrawler(config, logger) : new NoopCrawler();
+    useAiPlanner && o.crawl !== false
+      ? new BfsCrawler(config, logger, { storageState: login?.state })
+      : new NoopCrawler();
 
   const agent = new AgentExecutor(config);
+  agent.loggedIn = !!login;
   const fileStore = new FileRecordStore(path.join(config.outDir, 'recordings'));
   const recordStore = suitePlanner
     ? new SeededRecordStore(fileStore, suitePlanner.seeds)
@@ -128,6 +165,13 @@ export async function startRun(o, { events = new RunEvents(), signal } = {}) {
     logger,
     events,
     overheadUsage: () => ({ ...overhead }),
+    auth: login
+      ? {
+          loginUrl: new URL(auth?.loginUrl ?? '/', o.url).toString(),
+          username: login.username,
+          landedOn: login.landedOn,
+        }
+      : undefined,
     crawler,
     planner,
     reporter: new CompositeReporter([
@@ -151,8 +195,13 @@ export async function startRun(o, { events = new RunEvents(), signal } = {}) {
         : agent,
       recordStore: cache ? recordStore : undefined,
       fallbackExecutor: cache && heal ? agent : undefined,
-      judge: new EvidenceJudge(config.judge, judgeLlm, config.quality),
+      judge: new EvidenceJudge(config.judge, judgeLlm, config.quality, {
+        store: baselines,
+        cfg: config.visual,
+      }),
+      baselines,
       themeStates: new ThemeStates({ perTest: config.quality.themeStates }),
+      storageState: login?.state,
     }),
   });
 

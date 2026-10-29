@@ -44,7 +44,9 @@
     "culori": "^4.0.2",
     "dotenv": "^17.0.0",
     "fastify": "^5.12.7",
+    "pixelmatch": "7.2.0",
     "playwright": "1.64.1",
+    "pngjs": "7.0.0",
     "web-vitals": "^5.3.0",
     "zod": "^4.1.0"
   },
@@ -52,6 +54,7 @@
     "@eslint/js": "^9.0.0",
     "@tailwindcss/vite": "^4.3.3",
     "@types/node": "^22.0.0",
+    "@types/pngjs": "6.0.5",
     "@vitejs/plugin-react": "^5.2.0",
     "eslint": "^9.0.0",
     "eslint-plugin-react": "^7.37.5",

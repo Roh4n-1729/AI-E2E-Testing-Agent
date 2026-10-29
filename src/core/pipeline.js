@@ -49,6 +49,7 @@ const PipelineState = Annotation.Root({
  * @property {Logger} logger
  * @property {import('../events/runEvents.js').RunEvents} [events]
  * @property {() => { inputTokens: number, outputTokens: number }} [overheadUsage]  planner + judge tokens so far
+ * @property {RunReport['auth']} [auth]  the login the run did first, if any
  */
 
 /** @param {TestResult[]} results @returns {RunSummary} */
@@ -62,6 +63,13 @@ export function summarize(results) {
     claimMismatches: results.filter((r) => r.claimMismatch).length,
     inputTokens: results.reduce((n, r) => n + (r.llmUsage?.inputTokens ?? 0), 0),
     outputTokens: results.reduce((n, r) => n + (r.llmUsage?.outputTokens ?? 0), 0),
+    visualChanges: results.filter((r) =>
+      r.evidence.visual?.results?.some((v) => v.status === 'changed' || v.status === 'size'),
+    ).length,
+    visualNew: results.reduce(
+      (n, r) => n + (r.evidence.visual?.results?.filter((v) => v.saved).length ?? 0),
+      0,
+    ),
   };
 }
 
@@ -136,6 +144,7 @@ export function buildPipeline(deps) {
         targetUrl: s.target.url,
         summary: { ...summarize(results), overhead: deps.overheadUsage?.() },
         results,
+        ...(deps.auth ? { auth: deps.auth } : {}),
       };
       if (results.some((r) => r.evidence.themeStates?.length)) {
         report.consistency = analyseConsistency(results);

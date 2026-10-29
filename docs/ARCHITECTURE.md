@@ -161,6 +161,28 @@ START → crawl → plan ──Send(test)──▶ runTest (× N, `concurrency` 
   component inventory (`ThemeResult.inventory`). It produces `report.consistency`: near-duplicate looks and
   `data-aie2e-component` variants. Advisory; rendered in the run summary (UI) and the HTML report.
 
+## 4f. Visual regression (30 Oct)
+
+- Capture: `BrowserSession.visualCapture(checkpoint)` takes a masked, cursor-free, animation-finished viewport
+  screenshot into `<test>/visual/`. Replay captures after every step (`stepCheckpoint` = index + hash). The
+  final screen is captured once plus once per theme (`collectEvidence`). Result: `evidence.visual.captures`.
+- Compare: `EvidenceJudge` (given a `BaselineStore`) runs `compareCaptures`. Each capture gets a status:
+  new / unchanged / changed / size / error. The diff and a baseline copy are written next to the capture. Under
+  the visual gate the judge adds a `visual-baseline` check (advisory in warn mode).
+- Persist: `TestRunner` saves "new" captures of passing tests as baselines (and everything with
+  `--update-baselines`). The server's `POST /api/runs/:id/visual` approves or rejects one screenshot later.
+- `summary.visualChanges` / `visualNew` feed the UI and report.
+
+## 4g. Suites in the UI and login (30 Oct)
+
+- `src/server/suites.js` (`SuiteStore`): suite JSON files; the `/api/suites` routes; `from-run` uses
+  `suiteFromRun`. `POST /api/runs { suite: name }` resolves the file. The UI screen is `ui/src/screens/Suites.jsx`.
+- `src/auth/login.js`: `AuthSchema` (in suites, run options, CLI and server), `performLogin` (Playwright, once per
+  run in `startRun`, before the pipeline), `applyStorageState` (cookies + localStorage init script for the
+  Stagehand-owned context in `BrowserSession.open`). The crawler gets the state via `newContext({ storageState })`.
+  `AgentExecutor.loggedIn` adds "do not log out" to the instruction. `report.auth` records the username, never
+  the password.
+
 ## 5. Data model
 
 ![data model](diagrams/04-data-model.png)

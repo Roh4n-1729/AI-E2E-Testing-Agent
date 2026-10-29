@@ -41,6 +41,17 @@ program
     '--quality <gate>',
     'Web Vitals + accessibility: off | warn (default, advisory) | fail (a breach fails the test)',
   )
+  .option(
+    '--visual <gate>',
+    'screenshots vs approved baselines: off | warn (default, for review) | fail (a difference fails the test)',
+  )
+  .option('--update-baselines', 'accept the screenshots of every passing test as the new baselines')
+  .option(
+    '--login-url <url>',
+    'log in here first (username/password from AIE2E_USERNAME / AIE2E_PASSWORD)',
+  )
+  .option('--login-success-text <text>', 'with --login-url: text that proves the login worked')
+  .option('--login-success-url <part>', 'with --login-url: URL part that proves the login worked')
   .option('--headed', 'show the browser')
   .option('--max-steps <n>', 'max agent steps per test', Number)
   .option('-m, --model <provider/model>', 'LLM model')
@@ -67,6 +78,17 @@ program
       rerecord: !!o.rerecord,
       replan: !!o.replan,
       quality: o.quality,
+      visual: o.visual,
+      auth: o.loginUrl
+        ? {
+            loginUrl: o.loginUrl,
+            successText: o.loginSuccessText,
+            successUrl: o.loginSuccessUrl,
+            usernameEnv: 'AIE2E_USERNAME',
+            passwordEnv: 'AIE2E_PASSWORD',
+          }
+        : undefined,
+      updateBaselines: !!o.updateBaselines,
       suite: o.suite,
       heal: o.heal,
     });

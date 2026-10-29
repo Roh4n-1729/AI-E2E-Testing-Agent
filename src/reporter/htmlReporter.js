@@ -208,6 +208,47 @@ function renderTheme(r, g) {
   return `<h3>Theme conformance (${tokens} theme variables · ${audited.length} screen${audited.length === 1 ? '' : 's'})</h3>${blocks.join('')}`;
 }
 
+/**
+ * Screenshots vs approved baselines: changed ones first, with baseline / this run / difference.
+ * @param {TestResult} r @param {string} g
+ */
+function renderVisual(r, g) {
+  const res = r.evidence.visual?.results ?? [];
+  if (!res.length) return '';
+  const order = { changed: 0, size: 0, error: 1, new: 2, unchanged: 3 };
+  const label = {
+    changed: ['b-bad', 'changed'],
+    size: ['b-bad', 'size changed'],
+    new: ['', 'new baseline'],
+    unchanged: ['b-ok', 'matches'],
+    error: ['b-warn', 'not compared'],
+  };
+  const pct = (/** @type {number | undefined} */ x) =>
+    x === undefined ? '' : `${x >= 0.1 ? (x * 100).toFixed(0) : (x * 100).toFixed(2)}%`;
+  const rows = [...res]
+    .sort((a, b) => order[a.status] - order[b.status])
+    .map((v) => {
+      const [cls, txt] = label[v.status];
+      const imgs =
+        v.status === 'unchanged'
+          ? ''
+          : `<div class="chips" style="margin-top:6px">${[
+              ['baseline', v.baseline],
+              ['this run', v.current],
+              ['difference', v.diff],
+            ]
+              .filter(([, p]) => p)
+              .map(
+                ([c, p]) =>
+                  `<div>${thumb(g, /** @type {string} */ (p), `${v.label}: ${c}`, 'width:180px;height:112px')}<div class="small faint">${c}</div></div>`,
+              )
+              .join('')}</div>`;
+      return `<li style="margin-bottom:8px"><b>${h(v.label)}</b> <span class="badge ${cls}">${txt}</span>${v.diffRatio !== undefined && v.status !== 'unchanged' ? ` <span class="small mono muted">${pct(v.diffRatio)} of pixels</span>` : ''}${v.saved ? ' <span class="small pass">saved as the baseline</span>' : ''}${v.note ? ` <span class="small muted">${h(v.note)}</span>` : ''}${imgs}</li>`;
+    })
+    .join('');
+  return `<h3>Visual comparison (${res.length} screenshot${res.length === 1 ? '' : 's'})</h3><ul style="list-style:none;padding:0">${rows}</ul>`;
+}
+
 /** @param {string} url */
 function route(url) {
   try {
@@ -299,6 +340,7 @@ ${
 }
 ${r.evidence.requestStats ? `<p class="small muted">${r.evidence.requestStats.total} requests · ${Math.round(r.evidence.requestStats.transferredBytes / 1024)} KB transferred · ${r.evidence.requestStats.failed} failed</p>` : ''}
 ${renderTheme(r, g)}
+${renderVisual(r, g)}
 ${
   vit.size
     ? `<h3>Core Web Vitals</h3><div class="chips">${['LCP', 'INP', 'CLS', 'FCP', 'TTFB']
@@ -347,10 +389,10 @@ export function renderReport(report) {
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>E2E report · ${h(report.targetUrl)}</title><style>${CSS}</style></head><body><main>
 <header class="top"><div style="min-width:0"><div class="small muted">AI E2E Agent report</div><h1>${h(report.targetUrl.replace(/^https?:\/\//, ''))}</h1>
-<div class="small muted">Run <span class="mono">${h(report.runId)}</span> · finished ${h(report.finishedAt)}</div></div>
+<div class="small muted">Run <span class="mono">${h(report.runId)}</span> · finished ${h(report.finishedAt)}${report.auth ? ` · logged in as ${h(report.auth.username)} at ${h(report.auth.loginUrl)}` : ''}</div></div>
 <button class="toggle" type="button">Light / dark</button></header>
 <section class="summary"><div class="nums"><div class="big"><b>${s.passed}<span style="font-size:inherit;color:var(--faint)">/${s.total}</span></b><span>tests passed</span></div>
-${num('failed', s.failed, s.failed ? 'fail' : '')}${num('errors', s.errored, s.errored ? 'warn' : '')}${num('healed', s.healed)}${num('claim ≠ evidence', s.claimMismatches, s.claimMismatches ? 'fail' : '')}${num('agent tokens', tok(s.inputTokens + s.outputTokens))}${over ? num('planner + judge tokens', tok(over)) : ''}${Number.isFinite(ms) ? num('duration', dur(ms)) : ''}</div>
+${num('failed', s.failed, s.failed ? 'fail' : '')}${num('errors', s.errored, s.errored ? 'warn' : '')}${num('healed', s.healed)}${s.visualChanges ? num('visual changes', s.visualChanges, 'warn') : ''}${num('claim ≠ evidence', s.claimMismatches, s.claimMismatches ? 'fail' : '')}${num('agent tokens', tok(s.inputTokens + s.outputTokens))}${over ? num('planner + judge tokens', tok(over)) : ''}${Number.isFinite(ms) ? num('duration', dur(ms)) : ''}</div>
 <div class="bar"><i style="width:${pct(s.passed)};background:var(--ok)"></i><i style="width:${pct(s.failed)};background:var(--bad)"></i><i style="width:${pct(s.errored)};background:var(--warn)"></i></div></section>
 ${renderConsistency(report)}
 ${report.results.map(renderTest).join('\n')}

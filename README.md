@@ -30,6 +30,12 @@ run test:   recording? ──yes──▶ replay with Playwright (no LLM) ──
   and Chrome reports the exact CSS rule behind each hard-coded value. Leaks such as a white card in dark mode are
   caught too, and buttons, links, inputs and headings are compared across screens to catch drift (a slightly
   different blue on one page).
+- **Visual regression.** Deterministic screenshots of the final screen, each theme and each replayed step are compared
+  pixel by pixel with approved baselines. The first passing run creates them; changes are approved or rejected in the
+  UI. Mark changing content with `data-aie2e-mask`.
+- **Your own tests, and apps behind a login.** Write suites in the UI (a goal in plain English plus checks), save
+  any run as a suite, and run the same JSON in CI. Runs can log in first: credentials stay in `.env`, the session
+  is shared by every test, and the AI never sees the password.
 - **Watch it live.** A local web UI streams the browser (CDP screencast) with a visible cursor, then shows
   each test as a step timeline with screenshots, checks, network, quality and the agent's own claim.
 
@@ -59,6 +65,13 @@ npm start -- run https://your-app.test --no-plan
 # a committed suite (tests with recorded steps replay with no LLM); --no-heal makes it CI-strict
 npm start -- run http://localhost:4300 --suite examples/buggy-shop/suite.json --no-heal
 
+# visual regression: warn (default) | fail; accept the current screenshots as the new baselines
+npm start -- run http://localhost:4300 --suite examples/buggy-shop/suite.json --visual fail
+npm start -- run http://localhost:4300 --suite examples/buggy-shop/suite.json --update-baselines
+
+# an app behind a login (username/password from AIE2E_USERNAME / AIE2E_PASSWORD in .env)
+npm start -- run https://staging.your-app.com --login-url /login --login-success-text "Welcome back"
+
 # turn any run into a suite you can commit
 npm start -- export <runId> -o my-app.suite.json
 ```
@@ -68,11 +81,11 @@ Exit codes: `0` all passed, `1` a test failed, `2` an error occurred. Reports: `
 
 ## Evaluation
 
-`examples/buggy-shop` is a small shop with 11 switchable, known bugs (functional, error, accessibility, performance,
-theme and consistency). `npm run eval` runs the clean app
+`examples/buggy-shop` is a small shop with 12 switchable, known bugs (functional, error, accessibility, performance,
+theme, consistency and visual). `npm run eval` runs the clean app
 several times and then each bug on its own:
 
-> **11/11 seeded bugs detected (incl. 3 theme bugs and 1 consistency bug) · 0 false positives over 3 × 7 clean tests · 0 flaky tests** (committed suite,
+> **12/12 seeded bugs detected (incl. 3 theme, 1 consistency and 1 visual-only bug) · 0 false positives over 3 × 7 clean tests · 0 flaky tests** (committed suite,
 > no LLM). Details and the per-bug table: [docs/EVALUATION.md](docs/EVALUATION.md).
 > `npm run eval -- --mode explore --heal` measures the full AI path (planner + agent).
 
@@ -88,13 +101,14 @@ selectors, the harness waits for busy states, and the agent finds hover-only or 
 ## Stack
 
 Node 22, JavaScript (ESM) + JSDoc types checked by `tsc`. Stagehand 3.7 (AI browser agent), Playwright 1.64,
-LangGraph JS (orchestration), Vercel AI SDK + zod (structured LLM calls), axe-core, web-vitals, Fastify (local
+LangGraph JS (orchestration), Vercel AI SDK + zod (structured LLM calls), axe-core, web-vitals, culori, pixelmatch + pngjs (visual diffs), Fastify (local
 server + SSE), React 19 + Tailwind v4 + Radix UI (web UI), Vitest. Why each one:
 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#libraries-all-open-source).
 
 ## Honest limits
 
-- No login flows yet (public pages, demo modes and sample data only).
+- Login is username + password (one form, two steps, or scripted steps). No OTP/2FA or SSO consent screens
+  unless you script them; one shared session per run.
 - UI testing only: no API or backend test generation.
 - Runs locally or in CI, not as a hosted service. No run video; each step's screenshot is kept instead.
 - The visual judge is an LLM. It sees screenshots from the whole run, but deterministic checks (text, URL, test id, API

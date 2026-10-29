@@ -1,5 +1,5 @@
 import { existsSync } from 'node:fs';
-import { mkdir, readdir, readFile, rm } from 'node:fs/promises';
+import { mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import fastifyStatic from '@fastify/static';
 import Fastify from 'fastify';
@@ -8,6 +8,12 @@ import { llmRequirement } from '../app/startRun.js';
 import { resolveChromePath } from '../browser/chrome.js';
 import { loadConfig } from '../config/config.js';
 import { RunManager } from './runManager.js';
+import { BaselineStore } from '../visual/baselines.js';
+import { SUITE_NAME, SuiteStore } from './suites.js';
+import { FileRecordStore } from '../storage/recordStore.js';
+import { suiteFromRun } from '../planner/suitePlanner.js';
+import { testFingerprint } from '../storage/recordStore.js';
+import { AuthSchema } from '../auth/login.js';
 
 /** Request body for POST /api/runs. Bounds keep a stray click from launching dozens of browsers. */
 const StartBody = z.object({
@@ -28,6 +34,12 @@ const StartBody = z.object({
   rerecord: z.boolean().optional(),
   replan: z.boolean().optional(),
   quality: z.enum(['off', 'warn', 'fail']).optional(),
+  visual: z.enum(['off', 'warn', 'fail']).optional(),
+  heal: z.boolean().optional(),
+  /** log in first; credentials come from the server's .env, never from the request */
+  auth: AuthSchema.omit({ steps: true }).optional(),
+  /** a suite saved in the UI (its name); replaces planning */
+  suite: z.string().regex(SUITE_NAME).optional(),
 });
 
 const LOCAL_HOSTS = /^(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/;
@@ -65,6 +77,8 @@ export async function createServer({ outDir, uiDir, manager, logger = false }) {
       chromeOk: !!chrome && existsSync(chrome),
       outDir: root,
       active: runs.active?.runId ?? null,
+      // whether a login can run (the values themselves never leave the server)
+      loginCreds: !!process.env.AIE2E_USERNAME && !!process.env.AIE2E_PASSWORD,
     };
   });
 
@@ -86,6 +100,12 @@ export async function createServer({ outDir, uiDir, manager, logger = false }) {
       return reply
         .code(409)
         .send({ error: 'A run is already in progress', runId: runs.active.runId });
+    if (parsed.data.suite) {
+      const file = suites.file(parsed.data.suite);
+      if (!existsSync(file)) return reply.code(404).send({ error: 'No such suite' });
+      const record = runs.start({ ...parsed.data, suite: file, suiteName: parsed.data.suite });
+      return reply.code(202).send({ runId: record.runId });
+    }
     const record = runs.start(parsed.data);
     return reply.code(202).send({ runId: record.runId });
   });
@@ -104,7 +124,99 @@ export async function createServer({ outDir, uiDir, manager, logger = false }) {
       error: live?.error,
       options: live?.options ?? (await runs.readOptions(id)),
       report,
+      review: await readReview(id),
     };
+  });
+
+  // ---- test suites authored in the UI (same JSON as --suite / aie2e export) -----------------------
+  const suites = new SuiteStore(process.env.AIE2E_SUITES_DIR || path.join(root, 'suites'));
+  /** @param {any} req */
+  const suiteName = (req) => /** @type {{ name: string }} */ (req.params).name;
+  app.get('/api/suites', async () => suites.list());
+  app.get('/api/suites/:name', async (req, reply) => {
+    const name = suiteName(req);
+    if (!SUITE_NAME.test(name)) return reply.code(400).send({ error: 'Bad suite name' });
+    try {
+      return { name, suite: await suites.get(name) };
+    } catch {
+      return reply.code(404).send({ error: 'No such suite' });
+    }
+  });
+  app.put('/api/suites/:name', async (req, reply) => {
+    const name = suiteName(req);
+    if (!SUITE_NAME.test(name))
+      return reply
+        .code(400)
+        .send({ error: 'Use lowercase letters, digits and dashes for the name' });
+    const res = await suites.save(name, req.body);
+    if (!res.ok) return reply.code(400).send({ error: res.issues.join('; '), issues: res.issues });
+    return { name, suite: res.suite };
+  });
+  app.delete('/api/suites/:name', async (req, reply) => {
+    const name = suiteName(req);
+    if (!SUITE_NAME.test(name)) return reply.code(400).send({ error: 'Bad suite name' });
+    await suites.remove(name);
+    return { deleted: true };
+  });
+  // a run's tests plus their recorded steps, ready to edit and replay
+  app.post('/api/suites/from-run/:id', async (req, reply) => {
+    const { id } = /** @type {{ id: string }} */ (req.params);
+    if (!/^[\w-]+$/.test(id)) return reply.code(400).send({ error: 'Bad run id' });
+    const report = runs.get(id)?.report ?? (await runs.readReport(id));
+    if (!report) return reply.code(404).send({ error: 'Run not found' });
+    const store = new FileRecordStore(path.join(root, 'recordings'));
+    const suite = { ...(await suiteFromRun(report, (t) => store.load(t))), url: report.targetUrl };
+    const host = new URL(report.targetUrl).host.replace(/[^a-z0-9]+/gi, '-').toLowerCase();
+    const name = `${host}-${id.slice(-4)}`.replace(/^-+/, '').slice(0, 60);
+    const res = await suites.save(name, suite);
+    if (!res.ok) return reply.code(400).send({ error: res.issues.join('; ') });
+    return { name, suite: res.suite };
+  });
+
+  // ---- visual review: approve a screenshot as the new baseline, or reject the change -------------
+  /** @param {string} id */
+  const reviewFile = (id) => path.join(root, 'runs', id, 'visual-review.json');
+  /** @param {string} id @returns {Promise<Record<string, { action: string, at: string }>>} */
+  const readReview = async (id) => {
+    try {
+      return JSON.parse(await readFile(reviewFile(id), 'utf8'));
+    } catch {
+      return {};
+    }
+  };
+  const ReviewBody = z.object({
+    testId: z.string().min(1),
+    checkpoint: z.string().min(1),
+    action: z.enum(['approve', 'reject']),
+  });
+  app.post('/api/runs/:id/visual', async (req, reply) => {
+    const { id } = /** @type {{ id: string }} */ (req.params);
+    if (!/^[\w-]+$/.test(id)) return reply.code(400).send({ error: 'Bad run id' });
+    const body = ReviewBody.safeParse(req.body);
+    if (!body.success)
+      return reply.code(400).send({ error: 'testId, checkpoint and action are required' });
+    const { testId, checkpoint, action } = body.data;
+    const report = runs.get(id)?.report ?? (await runs.readReport(id));
+    const result = report?.results.find((r) => r.test.id === testId);
+    const shot = result?.evidence.visual?.results?.find((v) => v.checkpoint === checkpoint);
+    if (!report || !result || !shot)
+      return reply.code(404).send({ error: 'No such screenshot in this run' });
+    if (action === 'approve') {
+      const cfg = loadConfig({ outDir: root });
+      const store = new BaselineStore(
+        cfg.visual.dir ?? path.join(root, 'baselines'),
+        report.targetUrl,
+      );
+      await store.save(testId, checkpoint, path.join(root, 'runs', id, shot.current), {
+        runId: id,
+        fingerprint: testFingerprint(result.test),
+        how: 'approved',
+      });
+    }
+    const review = await readReview(id);
+    review[`${testId}|${checkpoint}`] = { action, at: new Date().toISOString() };
+    await writeFile(reviewFile(id), JSON.stringify(review, null, 2));
+    return { review };
   });
 
   app.post('/api/runs/:id/stop', async (req, reply) => {

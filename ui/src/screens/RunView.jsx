@@ -3,6 +3,7 @@ import {
   Braces,
   ExternalLink,
   FileText,
+  ListChecks,
   RotateCcw,
   Square,
   XCircle,
@@ -67,6 +68,9 @@ function Summary({ summary, durationMs }) {
         <Num label="failed" value={summary.failed} tone={summary.failed ? 'text-bad' : ''} />
         <Num label="errors" value={summary.errored} tone={summary.errored ? 'text-warn' : ''} />
         <Num label="healed" value={summary.healed} />
+        {summary.visualChanges > 0 && (
+          <Num label="visual changes" value={summary.visualChanges} tone="text-warn" />
+        )}
         <Num
           label="claim ≠ evidence"
           value={summary.claimMismatches}
@@ -152,6 +156,7 @@ function TestList({ items, selected, onSelect }) {
                   <span className="mt-0.5 flex items-center gap-2 text-[12px] text-muted">
                     {st.label}
                     {t.mode && <span>· {MODE[t.mode]?.label ?? t.mode}</span>}
+                    {t.visualChanged && <span className="text-warn">· visual change</span>}
                     {t.durationMs != null && (
                       <span className="font-mono">· {fmtDuration(t.durationMs)}</span>
                     )}
@@ -243,7 +248,7 @@ function Live({ runId, onDone }) {
   );
 }
 
-function Results({ runId, report }) {
+function Results({ runId, report, review, onReview }) {
   const items = useMemo(
     () =>
       report.results.map((r) => ({
@@ -253,6 +258,9 @@ function Results({ runId, report }) {
         mode: r.mode,
         durationMs: r.durationMs,
         claimMismatch: r.claimMismatch,
+        visualChanged: r.evidence.visual?.results?.some(
+          (v) => v.status === 'changed' || v.status === 'size',
+        ),
       })),
     [report],
   );
@@ -269,7 +277,15 @@ function Results({ runId, report }) {
           <TestList items={items} selected={selected} onSelect={setSelected} />
         </div>
         <div className="min-w-0">
-          {result && <TestDetail key={result.test.id} result={result} runId={runId} />}
+          {result && (
+            <TestDetail
+              key={result.test.id}
+              result={result}
+              runId={runId}
+              review={review}
+              onReview={onReview}
+            />
+          )}
         </div>
       </div>
     </div>
@@ -313,7 +329,11 @@ export function RunView({ id }) {
   const running = info.status === 'running';
   const rerun = async () => {
     try {
-      const { runId } = await api.startRun(info.options);
+      // a UI suite is stored by path; the API takes its name
+      const { suite, suiteName, ...rest } = info.options;
+      if (suite && !suiteName)
+        throw new Error('This run used a suite file from the command line: run it again there.');
+      const { runId } = await api.startRun(suiteName ? { ...rest, suite: suiteName } : rest);
       toast.success('Run started');
       go(`#/runs/${runId}`);
     } catch (e) {
@@ -364,6 +384,19 @@ export function RunView({ id }) {
                 </>
               )}{' '}
               · <span className="font-mono">{id}</span>
+              {info.options?.suiteName && (
+                <>
+                  {' '}
+                  · suite{' '}
+                  <a
+                    className="font-mono hover:text-text"
+                    href={`#/suites/${info.options.suiteName}`}
+                  >
+                    {info.options.suiteName}
+                  </a>
+                </>
+              )}
+              {info.report?.auth && <> · logged in as {info.report.auth.username}</>}
             </p>
           </div>
           {!running && (
@@ -377,6 +410,20 @@ export function RunView({ id }) {
                   <LinkButton href={fileUrl(id, 'report.json')} target="_blank" rel="noreferrer">
                     <Braces size={14} aria-hidden /> JSON
                   </LinkButton>
+                  <Button
+                    variant="secondary"
+                    onClick={async () => {
+                      try {
+                        const { name } = await api.suiteFromRun(id);
+                        toast.success('Saved as a suite: edit the tests, then run them any time');
+                        go(`#/suites/${name}`);
+                      } catch (e) {
+                        toast.error(e.message);
+                      }
+                    }}
+                  >
+                    <ListChecks size={14} aria-hidden /> Save as suite
+                  </Button>
                 </>
               )}
               {info.options && (
@@ -392,7 +439,24 @@ export function RunView({ id }) {
       {running ? (
         <Live runId={id} onDone={refetch} />
       ) : info.report ? (
-        <Results runId={id} report={info.report} />
+        <Results
+          runId={id}
+          report={info.report}
+          review={info.review ?? {}}
+          onReview={async (body) => {
+            try {
+              const { review } = await api.reviewVisual(id, body);
+              setInfo((cur) => (cur ? { ...cur, review } : cur));
+              toast.success(
+                body.action === 'approve'
+                  ? 'Approved: this screenshot is the new baseline'
+                  : 'Rejected: the old baseline stays',
+              );
+            } catch (e) {
+              toast.error(e.message);
+            }
+          }}
+        />
       ) : (
         <EmptyState
           icon={info.status === 'stopped' ? Square : XCircle}

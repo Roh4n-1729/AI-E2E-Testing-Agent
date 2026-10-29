@@ -31,7 +31,7 @@ import { Badge, Button, SectionTitle, Tab, TabList, TabPanel, Tabs } from './ui.
 const SOURCE_DOT = { agent: 'bg-ai', replay: 'bg-user', harness: 'bg-faint' };
 
 /** Everything known about one finished test, built only from the report. */
-export function TestDetail({ result, runId }) {
+export function TestDetail({ result, runId, review = {}, onReview }) {
   const { test, verdict, evidence } = result;
   // every screen the test reached that was theme-audited (older reports: the final state only)
   const themeStates = (
@@ -67,6 +67,16 @@ export function TestDetail({ result, runId }) {
       ]),
     ),
   ];
+  const visual = evidence.visual?.results ?? [];
+  for (const v of visual)
+    for (const [kind, p] of [
+      ['current', v.current],
+      ['approved baseline', v.baseline],
+      ['difference', v.diff],
+    ])
+      if (p)
+        shots.push({ path: p, label: `visual:${v.label} · ${kind}`, source: 'harness', url: '' });
+  const visualChanged = visual.filter((v) => v.status === 'changed' || v.status === 'size').length;
   const themeIssues = themeStates.reduce(
     (n, st) => n + st.audit.themes.reduce((m, t) => m + t.findings.length + t.leaks.length, 0),
     0,
@@ -152,6 +162,11 @@ export function TestDetail({ result, runId }) {
                 Theme
               </Tab>
             )}
+            {visual.length > 0 && (
+              <Tab value="visual" count={visualChanged || undefined}>
+                Visual
+              </Tab>
+            )}
             <Tab value="quality" count={qualityIssues || undefined}>
               Quality
             </Tab>
@@ -168,6 +183,17 @@ export function TestDetail({ result, runId }) {
           </TabPanel>
           <TabPanel value="theme" className="pt-4">
             {themeStates.length > 0 && <ThemePanel states={themeStates} runId={runId} />}
+          </TabPanel>
+          <TabPanel value="visual" className="pt-4">
+            {visual.length > 0 && (
+              <VisualPanel
+                results={visual}
+                runId={runId}
+                testId={test.id}
+                review={review}
+                onReview={onReview}
+              />
+            )}
           </TabPanel>
           <TabPanel value="quality" className="pt-4">
             <Quality evidence={evidence} />
@@ -235,8 +261,9 @@ function Verdict({ verdict }) {
       </ul>
       {verdict.warnings.length > 0 && (
         <p className="mt-3 text-[12px] text-warn">
-          {verdict.warnings.length} warning{verdict.warnings.length > 1 ? 's' : ''}: see the Checks,
-          Theme and Quality tabs.
+          {verdict.warnings.length} warning{verdict.warnings.length > 1 ? 's' : ''}:{' '}
+          {verdict.warnings.slice(0, 2).join(' · ')}
+          {verdict.warnings.length > 2 && ' …'}
         </p>
       )}
     </div>
@@ -727,6 +754,112 @@ function ThemePanel({ states, runId }) {
             </div>
           ),
       )}
+    </div>
+  );
+}
+
+const VSTATUS = {
+  unchanged: ['ok', 'Matches baseline'],
+  changed: ['bad', 'Changed'],
+  size: ['bad', 'Size changed'],
+  new: ['neutral', 'New baseline'],
+  error: ['warn', 'Not compared'],
+};
+const pct = (r) =>
+  r === undefined ? '' : `${r >= 0.1 ? (r * 100).toFixed(0) : (r * 100).toFixed(2)}%`;
+
+/** Screenshots compared with their approved baselines; changes can be approved or rejected here. */
+function VisualPanel({ results, runId, testId, review, onReview }) {
+  const changed = results.filter((r) => r.status === 'changed' || r.status === 'size');
+  const rest = results.filter((r) => !changed.includes(r));
+  const [busy, setBusy] = useState('');
+  const act = async (r, action) => {
+    setBusy(`${r.checkpoint}|${action}`);
+    try {
+      await onReview?.({ testId, checkpoint: r.checkpoint, action });
+    } finally {
+      setBusy('');
+    }
+  };
+  const Row = ({ r }) => {
+    const [tone, label] = VSTATUS[r.status] ?? VSTATUS.error;
+    const decided = review[`${testId}|${r.checkpoint}`];
+    const reviewable =
+      r.status === 'changed' || r.status === 'size' || (r.status === 'new' && !r.saved);
+    return (
+      <li className="space-y-3 px-4 py-4">
+        <div className="flex flex-wrap items-center gap-2 text-[13px]">
+          <span className="font-medium capitalize">{r.label}</span>
+          <Badge tone={tone}>{label}</Badge>
+          {r.diffRatio !== undefined && r.status !== 'unchanged' && (
+            <span className="font-mono text-[12px] text-muted">{pct(r.diffRatio)} of pixels</span>
+          )}
+          {r.box && (
+            <span className="font-mono text-[12px] text-muted">
+              area {r.box.width}×{r.box.height} at {r.box.x},{r.box.y}
+            </span>
+          )}
+          {r.saved && <span className="text-[12px] text-ok">saved as the baseline</span>}
+          {r.note && <span className="text-[12px] text-muted">{r.note}</span>}
+          {reviewable && onReview && (
+            <span className="ml-auto flex items-center gap-2">
+              {decided ? (
+                <Badge tone={decided.action === 'approve' ? 'ok' : 'bad'}>
+                  {decided.action === 'approve' ? 'Approved as baseline' : 'Rejected'}
+                </Badge>
+              ) : null}
+              <Button
+                size="sm"
+                variant="secondary"
+                disabled={!!busy}
+                onClick={() => act(r, 'reject')}
+              >
+                Reject
+              </Button>
+              <Button size="sm" disabled={!!busy} onClick={() => act(r, 'approve')}>
+                {busy === `${r.checkpoint}|approve` ? 'Saving…' : 'Approve as baseline'}
+              </Button>
+            </span>
+          )}
+        </div>
+        {r.status !== 'unchanged' && (
+          <div className="grid gap-3 sm:grid-cols-3">
+            {[
+              ['Approved baseline', r.baseline],
+              ['This run', r.current],
+              ['Difference (red)', r.diff],
+            ].map(([cap, p]) =>
+              p ? (
+                <figure key={cap} className="space-y-1">
+                  <Shot
+                    runId={runId}
+                    path={p}
+                    alt={`${r.label}: ${cap}`}
+                    className="aspect-[16/10] w-full"
+                  />
+                  <figcaption className="text-[11px] text-muted">{cap}</figcaption>
+                </figure>
+              ) : null,
+            )}
+          </div>
+        )}
+      </li>
+    );
+  };
+  return (
+    <div className="space-y-4">
+      <p className="max-w-3xl text-[13px] text-muted">
+        Deterministic screenshots (animations finished, cursor hidden,{' '}
+        <code className="font-mono text-[12px]">data-aie2e-mask</code> areas blanked) compared pixel
+        by pixel with the approved baselines: the final screen, each theme, and each replayed step.
+        Approve a change to make it the new baseline; reject it to keep the old one and treat the
+        change as a bug.
+      </p>
+      <ul className="divide-y divide-line rounded-xl border border-line bg-panel">
+        {[...changed, ...rest].map((r) => (
+          <Row key={r.checkpoint} r={r} />
+        ))}
+      </ul>
     </div>
   );
 }
