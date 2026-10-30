@@ -1,5 +1,5 @@
 import path from 'node:path';
-import { apiKeyEnvFor, loadConfig } from '../config/config.js';
+import { agentModelWarning, apiKeyEnvFor, loadConfig } from '../config/config.js';
 import { BfsCrawler } from '../crawler/bfsCrawler.js';
 import { NoopCrawler } from '../crawler/noopCrawler.js';
 import { buildPipeline } from '../core/pipeline.js';
@@ -34,6 +34,7 @@ import { captureReference } from '../theme/reference.js';
  * @property {string} [expectUrl]
  * @property {string[]} [expectText]
  * @property {string} [model]
+ * @property {'economy' | 'balanced' | 'best'} [preset]  models by role (explicit models win)
  * @property {boolean} [headed]            show a real browser window
  * @property {number} [maxSteps]
  * @property {number} [maxTests]
@@ -64,7 +65,7 @@ import { captureReference } from '../theme/reference.js';
  * @param {RunOptions} o
  */
 export function llmRequirement(o) {
-  const model = o.model ?? loadConfig().model;
+  const model = o.model ?? loadConfig({ preset: o.preset }).model;
   // The AI planner needs a model; so does an agent run for an explicit goal.
   // A suite may run entirely from its recorded steps; if a test needs the agent, that test reports it.
   const needed = o.suite ? false : (!o.goal && o.plan !== false) || !!o.goal;
@@ -81,6 +82,7 @@ export function llmRequirement(o) {
 export async function startRun(o, { events = new RunEvents(), signal } = {}) {
   const config = loadConfig({
     model: o.model,
+    preset: o.preset,
     headless: o.headed ? false : undefined,
     maxSteps: o.maxSteps,
     maxTests: o.maxTests,
@@ -101,6 +103,8 @@ export async function startRun(o, { events = new RunEvents(), signal } = {}) {
   const logger = createLogger(config.logLevel, '', (e) =>
     events.emit('log', { level: e.level, scope: e.scope, message: e.message }),
   );
+  const agentWarning = agentModelWarning(config.model);
+  if (agentWarning) logger.warn(agentWarning);
   const runId = o.runId ?? newRunId();
   const artifacts = new RunArtifacts(config.outDir, runId);
   await artifacts.init();
@@ -241,6 +245,7 @@ export async function startRun(o, { events = new RunEvents(), signal } = {}) {
       model: config.model,
       plannerModel: config.plannerModel ?? config.model,
       judgeModel: config.judgeModel ?? config.model,
+      preset: config.preset,
       concurrency: config.concurrency,
       headless: config.headless,
       quality: config.quality.gate,

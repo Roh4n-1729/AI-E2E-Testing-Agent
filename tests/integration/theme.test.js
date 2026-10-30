@@ -83,7 +83,7 @@ describe.skipIf(!hasChromium)('theme conformance (real browser)', () => {
       );
       const check = verdict.checks.find((c) => c.expectation.kind === 'theme-conformance');
       expect(check?.passed).toBe(false);
-      expect(check?.detail).toContain('surface(s) ignore the theme');
+      expect(check?.detail).toContain('surface ignores the theme');
       expect(verdict.status).toBe('fail');
     } finally {
       await s.close();
@@ -163,7 +163,7 @@ describe.skipIf(!hasChromium)('theme conformance on every screen a test reaches'
         { mode: 'deterministic', steps: [], heals: [] },
       );
       expect(verdict.status).toBe('fail');
-      expect(verdict.reason).toContain('[after step 1]');
+      expect(verdict.reason).toMatch(/\[[^\]]*after step 1\]/);
       expect(verdict.reason).toContain('#d'); // the dialog, with the rule that hard-codes its white
     } finally {
       await s.close();

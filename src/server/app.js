@@ -6,7 +6,7 @@ import Fastify from 'fastify';
 import { z } from 'zod';
 import { llmRequirement } from '../app/startRun.js';
 import { resolveChromePath } from '../browser/chrome.js';
-import { loadConfig } from '../config/config.js';
+import { MODEL_PRESETS, agentModelWarning, loadConfig } from '../config/config.js';
 import { RunManager } from './runManager.js';
 import { BaselineStore } from '../visual/baselines.js';
 import { SUITE_NAME, SuiteStore } from './suites.js';
@@ -23,6 +23,7 @@ const StartBody = z.object({
   expectUrl: z.string().max(500).optional(),
   expectText: z.array(z.string().max(500)).max(10).optional(),
   model: z.string().max(100).optional(),
+  preset: z.enum(['economy', 'balanced', 'best']).optional(),
   headed: z.boolean().optional(),
   concurrency: z.number().int().min(1).max(4).optional(),
   maxTests: z.number().int().min(1).max(8).optional(),
@@ -73,6 +74,9 @@ export async function createServer({ outDir, uiDir, manager, logger = false }) {
       model: config.model,
       plannerModel: config.plannerModel ?? config.model,
       judgeModel: config.judgeModel ?? config.model,
+      preset: config.preset ?? null,
+      presets: MODEL_PRESETS,
+      agentWarning: agentModelWarning(config.model) ?? null,
       keyVar: need.keyVar ?? null,
       keyPresent: need.keyPresent,
       chrome,

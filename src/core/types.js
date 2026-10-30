@@ -253,7 +253,11 @@ export const RecordingSchema = z.object({
 
 // ---------- Execution ----------
 /** @typedef {'agent' | 'replay' | 'healed' | 'deterministic'} ExecutionMode */
-/** @typedef {{ success: boolean, message: string }} AgentClaim */
+/**
+ * What the agent SAID happened. `status`, `observed` and `valuesUsed` come from its structured final report
+ * (absent in older reports).
+ * @typedef {{ success: boolean, message: string, status?: 'done' | 'blocked' | 'app-error', observed?: string[], valuesUsed?: string[] }} AgentClaim
+ */
 /**
  * @typedef {object} HealEvent
  * @property {string} testId

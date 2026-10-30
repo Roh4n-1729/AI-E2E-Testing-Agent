@@ -48,6 +48,10 @@ inputs:
     description: Text that proves the login worked.
     required: false
     default: ''
+  preset:
+    description: 'Models by role when tests need the AI: economy | balanced | best (empty = the action defaults).'
+    required: false
+    default: ''
   concurrency:
     description: Tests in parallel.
     required: false
@@ -94,6 +98,7 @@ runs:
         IN_LOGIN_URL: ${{ inputs.login-url }}
         IN_LOGIN_TEXT: ${{ inputs.login-success-text }}
         IN_CONCURRENCY: ${{ inputs.concurrency }}
+        IN_PRESET: ${{ inputs.preset }}
         OUT_DIR: ${{ runner.temp }}/aie2e
         CLI: ${{ github.action_path }}/src/cli/main.js
       run: |
@@ -104,6 +109,7 @@ runs:
         [ -n "$IN_THEME_FROM" ] && args+=(--theme-from "$IN_THEME_FROM")
         [ -n "$IN_LOGIN_URL" ] && args+=(--login-url "$IN_LOGIN_URL")
         [ -n "$IN_LOGIN_TEXT" ] && args+=(--login-success-text "$IN_LOGIN_TEXT")
+        [ -n "$IN_PRESET" ] && args+=(--preset "$IN_PRESET")
         [ -n "$IN_BASELINES" ] && export AIE2E_BASELINES_DIR="$GITHUB_WORKSPACE/$IN_BASELINES"
         status=0
         node "$CLI" "${args[@]}" || status=$?

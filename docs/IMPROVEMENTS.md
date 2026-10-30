@@ -6,6 +6,50 @@ teaches us something: it is the honest history of how the judge got stricter.
 
 ---
 
+## 2026-10-30 (Friday, 15:45): P1 of plan v2: tools between the agent, the harness and the judge; model presets
+
+In the Asset Sense run the agent clicked "Explore Now", went back and clicked it again, then claimed success on
+a server error page. It could not see what the harness saw. Now:
+
+- **`harnessStatus` tool (agent, read-only):** current URL, an error screen if the page shows one ("Application
+  error: a server-side exception"), console errors explained in plain English, failed requests. The instruction
+  tells the agent to check it when the page looks wrong and to stop with status `app-error` instead of retrying.
+  It is an observation (never recorded as a replay step) and cannot change the verdict.
+- **Structured final report:** Stagehand's `output` schema; the agent ends with `{ status: done | blocked |
+app-error, summary, observed[], valuesUsed[] }`. `success` now also needs `status: done`. Shown next to the
+  verdict; never used for it. Older reports keep working.
+- **The visual judge reads the page too:** the URL, title and visible text go with the screenshots, in the same
+  single call, and the judge quotes the words it relied on. A tool loop was not needed for one yes/no question.
+- **Model presets** (`AIE2E_PRESET`, `--preset`, the New run form, the Action's `preset` input): economy (haiku
+  everywhere), balanced (haiku agent, sonnet-5-5 planner and judge), best (sonnet-4-6 agent, opus-5-5 planner and
+  judge). Explicit models win. No default preset until the 5.5 ids are confirmed with a real key. `doctor`, the UI
+  and every run warn when the browser-agent model is one Stagehand 3.7.3 cannot drive (the 5.5 family).
+- **Planner:** controls are named by label and section, never by position ("the third Explore Now button").
+
+Tests: `tests/agentClaim.test.js`, `tests/integration/harnessStatus.test.js` (a Next.js-style crash page),
+presets in `tests/config.test.js`.
+
+---
+
+## 2026-10-30 (Friday, 14:30): P0 of plan v2, from the Asset Sense run
+
+Rohan ran the tool on his Asset Sense app (Next.js + Tailwind). Three problems in what the report showed:
+
+- **10 "themes" where the app has 2.** Tailwind utility classes (`.bg-slate-100`, `.bg-white`, `.bg-violet-600` …) set
+  `--tw-*` variables that the base rule also sets, which our "re-defines a base token" rule took for a theme. Now:
+  framework variables (`--tw-*`) are never design tokens; utility-looking class names are never themes; an unnamed
+  class needs at least two base tokens to count (a named one, `.dark` or `[data-theme]`, needs one). Test with the
+  Asset Sense pattern (`tests/theme.test.js`).
+- **The same problem repeated per theme and per screen.** The theme check now reports each problem once with
+  where it was seen: `hard-coded background #730000 @ 43% in .header .button bypasses the theme (+1 similar)
+[light, dark · start, after step 10]`.
+- **Raw, cut-off error text** ("Minified React error #425 … or use t"). `src/util/explain.js` turns common errors
+  into plain English (React hydration and hook errors, Next.js crash screens, chunk-load failures, HTTP errors,
+  JavaScript crashes) and never cuts an unknown message mid-word. React #425 in Asset Sense is a real hydration
+  mismatch: text rendered on the server differs from the browser (often dates, times or locale formatting).
+
+---
+
 ## 2026-10-30 (Friday, 13:15): second full-AI evaluation: the planner needs a reviewer
 
 With the 12:30 fixes the evaluation reported **2/6 detected, 3 tests failing on the clean app**. Every failure was

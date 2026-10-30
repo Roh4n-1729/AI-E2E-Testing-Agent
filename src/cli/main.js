@@ -8,7 +8,7 @@ import { execFile } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { startRun } from '../app/startRun.js';
-import { apiKeyEnvFor, loadConfig } from '../config/config.js';
+import { agentModelWarning, apiKeyEnvFor, loadConfig } from '../config/config.js';
 
 const program = new Command()
   .name('aie2e')
@@ -58,12 +58,14 @@ program
   .option('--login-success-url <part>', 'with --login-url: URL part that proves the login worked')
   .option('--headed', 'show the browser')
   .option('--max-steps <n>', 'max agent steps per test', Number)
-  .option('-m, --model <provider/model>', 'LLM model')
+  .option('-m, --model <provider/model>', 'browser-agent model (overrides the preset)')
+  .option('--preset <name>', 'models by role: economy | balanced | best (AIE2E_PRESET)')
   .option('-o, --out <dir>', 'output directory')
   .option('-v, --verbose', 'debug logging')
   .action(async (/** @type {string} */ url, /** @type {Record<string, any>} */ o) => {
     const { report } = await startRun({
       url,
+      preset: o.preset,
       description: o.description,
       goal: o.goal,
       expectUrl: o.expectUrl,
@@ -166,6 +168,17 @@ program
       `API key for ${config.model}`,
       keyVar ? !!process.env[keyVar] : true,
       keyVar ?? 'unknown provider: only anthropic/, openai/, google/ are supported',
+    ]);
+    const warning = agentModelWarning(config.model);
+    rows.push([
+      'Browser-agent model works with Stagehand 3.7.3',
+      !warning,
+      warning ?? config.model,
+    ]);
+    rows.push([
+      'Planner / judge models',
+      true,
+      `${config.plannerModel ?? config.model} / ${config.judgeModel ?? config.model}${config.preset ? ` (preset ${config.preset})` : ''}`,
     ]);
     for (const [name, ok, detail] of rows)
       console.log(`${ok ? 'OK  ' : 'FAIL'}  ${name}  (${detail})`);

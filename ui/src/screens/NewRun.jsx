@@ -20,10 +20,14 @@ const DEFAULTS = {
   headed: false,
   quality: 'warn',
   visual: 'warn',
+  preset: 'env',
   loginUrl: '',
   loginSuccess: '',
   themeFrom: '',
 };
+
+/** "anthropic/claude-sonnet-4-6" -> "sonnet-4-6" */
+const short = (m = '') => m.replace(/^[a-z]+\//, '').replace(/^claude-/, '');
 
 const MODES = [
   {
@@ -115,6 +119,7 @@ export function NewRun({ health }) {
         headed: form.headed,
         quality: form.quality,
         visual: form.visual,
+        preset: form.preset === 'env' ? undefined : form.preset,
         themeFrom: /^https?:\/\/\S+$/.test(form.themeFrom.trim())
           ? form.themeFrom.trim()
           : undefined,
@@ -139,7 +144,7 @@ export function NewRun({ health }) {
         </p>
       </div>
 
-      {(noChrome || keyMissing) && (
+      {(noChrome || keyMissing || (needsAi && health?.agentWarning)) && (
         <div
           role="alert"
           className="flex gap-2.5 rounded-xl border border-warn/30 bg-warn-bg/60 p-3 text-[13px]"
@@ -157,6 +162,7 @@ export function NewRun({ health }) {
                 it to <Kbd>.env</Kbd> and restart, or choose Smoke check.
               </p>
             )}
+            {needsAi && health?.agentWarning && <p>{health.agentWarning}</p>}
           </div>
         </div>
       )}
@@ -310,6 +316,34 @@ export function NewRun({ health }) {
                 placeholder="https://design.your-company.com"
                 value={form.themeFrom}
                 onChange={(e) => set({ themeFrom: e.target.value })}
+              />
+            </Field>
+            <Field
+              id="preset"
+              label="Models"
+              hint="The browser agent makes many calls per test, the planner and judge only a few: strong models go where calls are few."
+            >
+              <Select
+                id="preset"
+                label="Models"
+                value={form.preset}
+                onValueChange={(v) => set({ preset: v })}
+                options={[
+                  {
+                    value: 'env',
+                    label: 'From .env',
+                    hint: health
+                      ? `agent ${short(health.model)} · planner ${short(health.plannerModel)} · judge ${short(health.judgeModel)}`
+                      : 'AIE2E_MODEL, AIE2E_PLANNER_MODEL, AIE2E_JUDGE_MODEL',
+                  },
+                  ...['economy', 'balanced', 'best'].map((id) => ({
+                    value: id,
+                    label: id[0].toUpperCase() + id.slice(1),
+                    hint: health?.presets?.[id]
+                      ? `agent ${short(health.presets[id].model)} · planner ${short(health.presets[id].plannerModel)} · judge ${short(health.presets[id].judgeModel)}`
+                      : '',
+                  })),
+                ]}
               />
             </Field>
             <Field id="visual" label="Visual comparison">

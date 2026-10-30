@@ -93,3 +93,31 @@ describe('known third-party noise', () => {
     expect(loadConfig({}, {}).judge.ignoreNetworkPatterns).toEqual(['favicon\\.ico']);
   });
 });
+
+describe('model presets', () => {
+  it('fills the roles nobody set; explicit models and env always win', async () => {
+    const { agentModelWarning } = await import('../src/config/config.js');
+    const best = loadConfig({ preset: 'best' }, {});
+    expect([best.model, best.plannerModel, best.judgeModel]).toEqual([
+      'anthropic/claude-sonnet-4-6',
+      'anthropic/claude-opus-5-5',
+      'anthropic/claude-opus-5-5',
+    ]);
+    const mixed = loadConfig(
+      {},
+      { AIE2E_PRESET: 'balanced', AIE2E_MODEL: 'anthropic/claude-opus-4-8' },
+    );
+    expect([mixed.model, mixed.plannerModel]).toEqual([
+      'anthropic/claude-opus-4-8',
+      'anthropic/claude-sonnet-5-5',
+    ]);
+    const none = loadConfig({}, {});
+    expect([none.preset, none.plannerModel]).toEqual([undefined, undefined]);
+    // the browser agent cannot use the 5.5 family on Stagehand 3.7.3; the presets never put it there
+    for (const p of ['economy', 'balanced', 'best'])
+      expect(
+        agentModelWarning(loadConfig({ preset: /** @type {any} */ (p) }, {}).model),
+      ).toBeUndefined();
+    expect(agentModelWarning('anthropic/claude-haiku-5-5')).toContain('Stagehand 3.7.3');
+  });
+});
