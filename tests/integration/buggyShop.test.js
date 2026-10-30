@@ -42,3 +42,28 @@ describe.skipIf(!hasChromium)('seeded-bug shop (committed suite, no LLM)', () =>
     expect(failed[0]?.verdict.reason).toContain('₹598');
   }, 120_000);
 });
+
+describe.skipIf(!hasChromium)('baselines are only approved by runs that may approve them', () => {
+  it('a run with frozen baselines (a seeded-bug run in the evaluation) saves none; a normal run does', async () => {
+    process.env.AIE2E_LOG_LEVEL = 'silent';
+    const { existsSync, readdirSync } = await import('node:fs');
+    const outDir = mkdtempSync(path.join(os.tmpdir(), 'aie2e-freeze-'));
+    const url = await shop('dead-button');
+    const opts = {
+      url,
+      suite: 'examples/buggy-shop/suite.json',
+      heal: false,
+      quality: /** @type {const} */ ('off'),
+      concurrency: 4,
+      outDir,
+    };
+    const frozen = await startRun({ ...opts, freezeBaselines: true });
+    expect(frozen.report.summary.passed).toBeGreaterThan(0);
+    expect(existsSync(path.join(outDir, 'baselines'))).toBe(false);
+
+    await startRun(opts);
+    expect(readdirSync(path.join(outDir, 'baselines'), { recursive: true }).length).toBeGreaterThan(
+      0,
+    );
+  }, 120_000);
+});

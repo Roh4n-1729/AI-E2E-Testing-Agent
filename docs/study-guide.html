@@ -741,6 +741,11 @@ footer { color: var(--muted); font-size: 0.85rem; border-top: 1px solid var(--li
           <tr><td>A 16px→4px grid change was "unchanged" at pixelmatch's default tolerance</td><td>Strict default (0.02) for same-machine baselines</td></tr>
           <tr><td>A leftover toast made 1 in 5 visual runs flaky</td><td>Hide live regions in comparison screenshots</td></tr>
           <tr><td>Hand-written login steps used CSS; recorded steps default to XPath</td><td>Login steps treat non-XPath selectors as CSS</td></tr>
+          <tr><td>First GitHub CI run: every agent test errored (Chrome's sandbox blocked on Linux runners)</td><td>The agent's Chrome runs like Playwright's on Linux</td></tr>
+          <tr><td>Fonts and an error reporter failed every Sauce Demo test</td><td>Suites declare third-party noise in <code>ignore</code></td></tr>
+          <tr><td>First full-AI eval: a bug run approved its own screenshots as the baseline</td><td>Only clean runs approve baselines</td></tr>
+          <tr><td>"Don't invent data" vs a planned "fill the form" with no values</td><td>The planner writes test values into the goal</td></tr>
+          <tr><td>AI tests checked "checkout opened", not "both items are in the cart"</td><td>The planner checks the effect of every action</td></tr>
         </tbody>
       </table></div>
     </section>

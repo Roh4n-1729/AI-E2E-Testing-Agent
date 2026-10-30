@@ -6,6 +6,46 @@ teaches us something: it is the honest history of how the judge got stricter.
 
 ---
 
+## 2026-10-30 (Friday, 12:30): the first full-AI evaluation, read line by line
+
+Rohan ran `npm run eval -- --mode explore --heal --runs 1` on six seeded bugs (planner + agent with
+`claude-haiku-4-5`, about 1.17M tokens in total). The report said **5/6 detected, 1 false positive**. Reading the
+evidence behind every line, the honest result was **3/6, 1 false positive**, and all three problems were ours:
+
+### 1. A seeded bug became the approved screenshot (two false detections)
+
+The first clean run is done by the agent, so the replayed steps' screenshots did not exist yet. The first replay
+of "Add multiple products and proceed to checkout" happened in the `dead-button` run, where the Notebook stays
+out of the cart, and that test still passed, so its screenshots were approved as the baseline. Every later run
+"differed" from a buggy baseline (after step 4, 5.71% of pixels), and the evaluation credited that warning as
+detecting `wrong-total` and `no-validation`.
+
+Fix: runs with a seeded bug never approve screenshots (`freezeBaselines`, config `visual.saveNew`), and explore
+mode always does two clean runs (the first records, the second approves the replay screenshots). Test:
+`tests/integration/buggyShop.test.js`.
+
+### 2. Our own prompts contradicted each other (the false positive)
+
+The planner wrote "fill in the Name, Email and Address fields" with no values; the agent's instruction said "do
+not invent data you were not given". The agent honestly stopped and said so, and the judge failed the test,
+which is the strict judge working. Fix: the planner writes the test values into the goal, and the agent uses
+obviously fake test data when none is given (never passwords or card numbers) and says what it used.
+
+### 3. AI-planned checks were too weak (one bug missed)
+
+"Add the Coffee Mug and Notebook, then check out" only checked that checkout opened, so the dead Notebook button
+went unnoticed; no planned test checked the total or submitted an empty email. Fix: the planner must check the
+effect of every action (both product names or the matching count in the cart; the number an action changes).
+
+### What it confirms
+
+Genuine detections: `fake-subscribe` (the 500 behind "Subscribed"), `console-error` (three tests), `dark-leak`
+(theme audit with the CSS rule). Replay and healing worked on real AI recordings, the agent never claimed a
+success it did not have (0 claim mismatches), and later runs cost 28k to 112k tokens instead of 395k because
+they replayed. The reviewed suite still catches 12/12: AI-planned tests are a draft to review, not a finished suite.
+
+---
+
 ## 2026-10-30 (Friday, late morning): Sauce Demo, and declared third-party noise
 
 ### Why

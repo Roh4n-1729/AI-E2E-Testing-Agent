@@ -154,6 +154,7 @@ export class TestRunner {
         for (const r of evidence.visual.results) {
           const update = config.visual.update && (r.status === 'changed' || r.status === 'size');
           if (r.status !== 'new' && !update) continue;
+          if (r.status === 'new' && !config.visual.saveNew) continue;
           await this.deps.baselines.save(
             test.id,
             r.checkpoint,

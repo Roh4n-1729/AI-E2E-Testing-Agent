@@ -335,6 +335,9 @@ Full log: `docs/IMPROVEMENTS.md`.
 | "Other todo still visible" passed a broken Clear button  | expectations check the effect    |
 | First GitHub CI run: every agent test errored            | Linux Chrome without its sandbox |
 | Fonts and an error reporter failed every Sauce Demo test | suite-declared `ignore` noise    |
+| A bug run approved its own screenshots as the baseline   | only clean runs approve          |
+| "Don't invent data" vs "fill the form" with no values    | planner writes test values       |
+| AI tests checked "checkout opened", not "both items in"  | check the effect of each action  |
 
 ## 14 What's next (deadline Mon 2 Nov)
 

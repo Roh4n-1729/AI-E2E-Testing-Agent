@@ -71,6 +71,12 @@ export const ConfigSchema = z.object({
       /** accept every screenshot of a passing test as the new baseline (--update-baselines) */
       update: z.boolean().default(false),
       /**
+       * Save screenshots that have no baseline yet as the baseline when the test passes (default). The
+       * evaluation turns this off for runs with a seeded bug: a test can pass with the bug in it, and its
+       * screenshots must never become the approved look.
+       */
+      saveNew: z.boolean().default(true),
+      /**
        * Hide live regions (toasts, status lines, alerts: role=status|alert|log|timer, aria-live) in the
        * comparison screenshots. They come and go with timing, not design; their text is still evidence
        * (transient messages). Turn off for apps that put whole sections in a live region.

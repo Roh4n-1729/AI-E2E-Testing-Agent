@@ -50,7 +50,9 @@ const SYSTEM = `You are a senior QA engineer designing end-to-end tests for a we
 Rules:
 - Propose distinct, valuable USER FLOWS (navigation, search, forms, content visible after an action), not page-load checks.
 - Every goal must be achievable by an agent that starts at the start URL and clicks/types like a real user.
-- Ground everything in the crawl summary. Never invent pages, button labels, credentials or data.
+- Ground everything in the crawl summary. Never invent pages, button labels or credentials.
+- When a goal fills in a form, write the exact test values into the goal (e.g. name "Ada Lovelace", email "ada@example.com", address "1 Test Street"): the agent types only what it is given. Use obviously fake data, never real people, passwords or card numbers.
+- Check the EFFECT of every action in the goal, not only that the last page opened: if a test adds two products, expect both product names on the cart page (or the cart count that matches); if the page shows a number the action changes (count, total, quantity), check that number. A goal with three actions and one check on the final URL proves almost nothing.
 - Do NOT plan destructive or irreversible actions (deleting, paying, sending messages, logging out) and do not plan flows that need a login you were not given.
 - Each test needs 1 to 3 expectations about the END state, and at least one MUST be false on the start page and true only after the goal succeeds (the judge discards expectations that already hold at the start, and a test with none of those is reported as inconclusive).
   - Never use generic words that are already on the page (button labels, the app name, "slide", "edit", "export").

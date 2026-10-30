@@ -294,7 +294,9 @@ function buildInstruction(test, resume, hints = [], loggedIn = false) {
   const lines = [
     `You are testing a web application starting at ${test.startUrl}.`,
     `Goal: ${test.goal}`,
-    'Act like a real user. Do not invent data you were not given. If the goal cannot be',
+    'Act like a real user. Use the values the goal gives you. If a form field must be filled and the goal',
+    'gives no value, use obviously fake test data (e.g. "Test User", "test@example.com", "1 Test Street")',
+    'and say which values you used; never make up passwords, card numbers or other secrets. If the goal cannot be',
     'achieved, stop and say so plainly: your report will be checked against independent',
     'evidence from the browser, so an inaccurate claim of success will be caught.',
     'Some controls are hidden until the pointer moves or hovers (toolbars in full-screen or presentation',

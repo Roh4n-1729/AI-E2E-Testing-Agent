@@ -54,6 +54,7 @@ import { captureReference } from '../theme/reference.js';
  * @property {'off' | 'warn' | 'fail'} [quality]  Web Vitals / accessibility gate (default: warn = advisory)
  * @property {'off' | 'warn' | 'fail'} [visual]  screenshot comparison with approved baselines (default: warn)
  * @property {boolean} [updateBaselines]  accept every screenshot of a passing test as its new baseline
+ * @property {boolean} [freezeBaselines]  never save new baselines in this run (the evaluation's seeded-bug runs)
  * @property {string} [runId]              pre-generated id (the server needs it before the run starts)
  */
 
@@ -89,8 +90,12 @@ export async function startRun(o, { events = new RunEvents(), signal } = {}) {
     crawl: o.maxPages ? { maxPages: o.maxPages, maxDepth: 2 } : undefined,
     quality: o.quality ? { gate: o.quality } : undefined,
     visual:
-      o.visual || o.updateBaselines
-        ? { gate: o.visual, update: o.updateBaselines || undefined }
+      o.visual || o.updateBaselines || o.freezeBaselines
+        ? {
+            gate: o.visual,
+            update: o.updateBaselines || undefined,
+            saveNew: o.freezeBaselines ? false : undefined,
+          }
         : undefined,
   });
   const logger = createLogger(config.logLevel, '', (e) =>

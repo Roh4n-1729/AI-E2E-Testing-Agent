@@ -93,7 +93,9 @@ npm run eval -- --mode explore --heal --runs 1 --bugs dead-button,wrong-total,fa
 
 **Claude**
 
-- [ ] Fixes from the AI run and CI run #2 (first priority when they arrive)
+- [x] Fixes from the first AI run: baselines only from clean runs, planner test data + effect checks, agent
+      fake-data rule (honest result of that run: 3/6, 1 false positive; see IMPROVEMENTS)
+- [ ] Re-run the AI evaluation with the fixes (Rohan), then the numbers go into README and EVALUATION_AI.md
 - [x] Demo script `docs/DEMO.md` (Sauce Demo for the AI part: 0 tokens for the app itself)
 - [x] README pass: quick start for 3 demo apps, evaluation, honest limits, library licences, Flowtrace link
 - [ ] README: add the AI-path numbers and "green in CI" once they are in

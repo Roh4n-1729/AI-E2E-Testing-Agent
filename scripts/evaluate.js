@@ -43,7 +43,11 @@ process.env.AIE2E_LOG_LEVEL ??= 'warn';
 /** @typedef {import('../src/core/types.js').RunReport} RunReport */
 /** @typedef {{ label: string, bug?: string, report: RunReport, ms: number }} EvalRun */
 
-/** @param {string} label @param {string} url @param {string} [bug] @returns {Promise<EvalRun>} */
+/**
+ * @param {string} label @param {string} url @param {string} [bug] @returns {Promise<EvalRun>}
+ * A run with a seeded bug never approves screenshots: a test can pass with the bug in it, and the bug's
+ * look must not become the baseline that later runs are compared with.
+ */
 async function run(label, url, bug) {
   process.stdout.write(`  ${label.padEnd(28)} `);
   const t0 = Date.now();
@@ -54,6 +58,7 @@ async function run(label, url, bug) {
     quality: 'warn',
     heal: args.heal,
     model: args.model,
+    freezeBaselines: !!bug,
     ...(args.url
       ? {}
       : args.mode === 'suite'
@@ -109,7 +114,15 @@ const port = Number(args.port);
 const clean = [];
 /** @type {EvalRun[]} */
 const bugRuns = [];
-const nRuns = Math.max(1, Number(args.runs));
+// Explore mode: the first clean run records with the agent, so the replayed steps' screenshots only exist
+// from the second clean run on. Without it, the first bug run would be the first replay, and its screenshots
+// would be the ones every later run is compared with.
+const minRuns = args.mode === 'explore' && !args.url ? 2 : 1;
+const nRuns = Math.max(minRuns, Number(args.runs));
+if (nRuns > Number(args.runs))
+  console.log(
+    `Explore mode: ${nRuns} clean runs (the first records, the second approves the replay screenshots)`,
+  );
 
 if (args.url) {
   console.log(`Evaluating ${args.url}: ${nRuns} runs`);
