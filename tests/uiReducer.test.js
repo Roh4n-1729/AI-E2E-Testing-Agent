@@ -62,4 +62,15 @@ describe('live-run reducer (the UI is a pure function of the event stream)', () 
     s = reduce(s, { type: 'run.error', data: { message: 'boom' } });
     expect(s).toMatchObject({ finished: true, error: 'boom' });
   });
+
+  it('keeps what the crawler found and what the plan review fixed, for the live view', () => {
+    const s = play(start, [
+      ['phase', { phase: 'login', status: 'done', detail: 'as standard_user' }],
+      ['site.ready', { pages: [{ url: 'https://a.test/', title: 'Home' }] }],
+      ['plan.review', { found: ['"Shop" is already on the start page'], remaining: [] }],
+    ]);
+    expect(s.phases.login).toEqual({ status: 'done', detail: 'as standard_user' });
+    expect(s.site).toHaveLength(1);
+    expect(s.review.found).toHaveLength(1);
+  });
 });

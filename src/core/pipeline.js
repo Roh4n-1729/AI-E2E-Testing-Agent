@@ -100,6 +100,9 @@ export function buildPipeline(deps) {
       logger.info(`Crawling ${s.target.url}`);
       phase('crawl', 'running');
       const siteMap = await crawler.crawl(s.target);
+      events.emit('site.ready', {
+        pages: siteMap.pages.slice(0, 40).map((p) => ({ url: p.url, title: p.title })),
+      });
       phase('crawl', 'done', `${siteMap.pages.length} page(s)`);
       return { siteMap };
     })
@@ -144,6 +147,12 @@ export function buildPipeline(deps) {
         targetUrl: s.target.url,
         summary: { ...summarize(results), overhead: deps.overheadUsage?.() },
         results,
+        models: {
+          agent: config.model,
+          planner: config.plannerModel ?? config.model,
+          judge: config.judgeModel ?? config.model,
+          ...(config.preset ? { preset: config.preset } : {}),
+        },
         ...(deps.auth ? { auth: deps.auth } : {}),
       };
       if (results.some((r) => r.evidence.themeStates?.length)) {

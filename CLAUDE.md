@@ -43,13 +43,14 @@ containers work with no flags; `AIE2E_CHROME_SANDBOX=true` keeps it.
 
 ## Where things go
 
-| Change                     | Place                                                                                               |
-| -------------------------- | --------------------------------------------------------------------------------------------------- |
-| New expectation kind       | `core/types.js` schema → `judge/evidenceJudge.js` case → `ui/src/screens/Suites.jsx` `KINDS` → test |
-| New evidence from the page | `browser/collectors.js` or `browser/session.js#collectEvidence`                                     |
-| New recorded step method   | `executor/replayExecutor.js#runStep` + `executor/steps.js`                                          |
-| New config option          | `config/config.js` (schema + env var) + `.env.example`                                              |
-| New CLI flag               | `cli/main.js` → `app/startRun.js` options; mirror in `server/app.js` `StartBody` and `action.yml`   |
+| Change                     | Place                                                                                                    |
+| -------------------------- | -------------------------------------------------------------------------------------------------------- |
+| New expectation kind       | `core/types.js` schema → `judge/evidenceJudge.js` case → `ui/src/screens/Suites.jsx` `KINDS` → test      |
+| New evidence from the page | `browser/collectors.js` or `browser/session.js#collectEvidence`                                          |
+| New recorded step method   | `executor/replayExecutor.js#runStep` + `executor/steps.js`                                               |
+| New config option          | `config/config.js` (schema + env var) + `.env.example`                                                   |
+| Plain-English report text  | `reporter/insights.js` (pure; used by the UI, `report.html` and the run list) + `tests/insights.test.js` |
+| New CLI flag               | `cli/main.js` → `app/startRun.js` options; mirror in `server/app.js` `StartBody` and `action.yml`        |
 
 ## Docs to keep current
 

@@ -551,6 +551,13 @@ function ExpectationRow({ exp, onChange, onKind, onRemove }) {
           />
         ),
       )}
+      <input
+        aria-label="In plain words (shown in reports)"
+        className={`${inputCls} h-9 min-w-[200px] flex-1`}
+        placeholder="In plain words, e.g. The cart shows 2 products"
+        value={exp.label ?? ''}
+        onChange={(e) => onChange({ label: e.target.value })}
+      />
       <IconButton label="Remove check" onClick={onRemove} icon={X} />
     </div>
   );
@@ -640,7 +647,7 @@ function ConfirmDelete({ name, onConfirm }) {
  */
 function tidy(suite) {
   const keep = (e) => {
-    const allowed = new Set(['kind', ...(KINDS[e.kind]?.fields ?? []).map(([f]) => f)]);
+    const allowed = new Set(['kind', 'label', ...(KINDS[e.kind]?.fields ?? []).map(([f]) => f)]);
     return Object.fromEntries(
       Object.entries(e).filter(([k, v]) => allowed.has(k) && v !== '' && v !== undefined),
     );

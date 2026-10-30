@@ -108,7 +108,7 @@ Built as planned except the judge: page text is given as context in the same sin
 - Planner: goals must name elements unambiguously (label + section), never "the third button".
 - Gate: AI evaluation on the shop and one Sauce Demo AI run, compared with today's numbers.
 
-### P2 · UI v2: refined views for everyone (Sat, the main block)
+### P2 · UI v2: refined views for everyone (Sat, the main block) · **done Fri 17:00**
 
 **Design first (1 h):** mockups of the four screens below as a Design artifact for Rohan to approve before any
 code. Direction: calm, data-dense like Linear or Vercel, one accent colour, real screenshots large, plain language
@@ -137,6 +137,11 @@ first and raw detail one click away.
 
 Gate: UI tests updated plus the new dogfood suite; Rohan reviews in the browser; demo rehearsal on the new UI.
 
+**Done Fri 17:00** (see IMPROVEMENTS): summary, journey, live run, run list, sidebar models, report.html parity,
+labels on checks, `reporter/insights.js`. Not built: the filmstrip toggle and crawl thumbnails (the crawler takes no
+screenshots; adding them costs a screenshot per page for little gain). Remaining gate: Rohan's review in the
+browser and a demo rehearsal on the new screens.
+
 ### P3 · Stagehand v4 spike (Sat, time-boxed 3 h, branch only)
 
 Our own agent loop: AI SDK `generateText` with tools (`act`, `observe`, `extract` from Stagehand v4, plus
@@ -158,6 +163,10 @@ and a Vercel link lets anyone explore real results before or after the call.
 | ------------- | ---------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **Showcase**  | Vercel, static, free         | The real UI v2 in **demo mode**: it reads recorded runs (shop evaluation, TodoMVC, every Sauce Demo user, an AI run with planning, healing and the plan review). Every screen, screenshot and finding is clickable; nothing can fail. Study guide and docs included. |
 | **Live demo** | Rohan's laptop, screen share | The full tool following `docs/DEMO.md`: the AI agent live on Sauce Demo, replay at 0 tokens, a heal, the strict judge, a theme finding.                                                                                                                              |
+
+**Later, at the very end (kept, not cut):** a guarded live server (Docker image on a host such as Railway) so the
+tool can be tried without the laptop: bundled demo apps only by default, replays without a key, visitors' own
+key for AI runs, one run at a time. Needs a host account; built only after everything above is done.
 
 Not exposing the laptop to the internet (a tunnel): the local server refuses non-local hosts on purpose (DNS
 rebinding guard) and holds the API key; screen sharing needs neither.

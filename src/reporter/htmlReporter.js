@@ -1,4 +1,5 @@
 import { escapeHtml as h } from '../util/misc.js';
+import { runInsights, testInsight } from './insights.js';
 
 /**
  * @import { Reporter } from '../core/ports.js'
@@ -54,6 +55,14 @@ dialog::backdrop{background:rgb(8 11 18 / .9)}
 .lb{display:flex;flex-direction:column;height:100%}.lb header{display:flex;gap:12px;align-items:center;padding:12px 16px;font-size:13px}
 .lb .stage{flex:1;display:flex;align-items:center;justify-content:center;min-height:0;padding:0 56px}.lb img{max-width:100%;max-height:100%;border-radius:6px}
 .lb button{background:rgb(255 255 255 / .1);color:#fff;border:0;border-radius:8px;padding:8px 12px;font:inherit;cursor:pointer}.lb .nav{position:absolute;top:50%;transform:translateY(-50%)}
+.vcard{margin:20px 0 12px;background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:20px 22px}
+.pill{display:inline-flex;align-items:center;gap:6px;border-radius:99px;padding:3px 10px;font-weight:600;font-size:13px}
+.lead{font-size:20px;line-height:1.4;font-weight:500;letter-spacing:-.01em;margin:12px 0 0;max-width:900px}
+.findings{display:grid;gap:10px;margin:8px 0 20px}.finding{display:flex;gap:16px;flex-wrap:wrap;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px}
+.finding .t{width:200px;aspect-ratio:16/10;flex:none}.finding h4{margin:4px 0 2px;font-size:15px}.finding p{margin:0;color:var(--muted)}
+.sev{font-size:11px;font-weight:600;border-radius:6px;padding:2px 7px}.sev-high{background:var(--badbg);color:var(--bad)}.sev-medium{background:var(--warnbg);color:var(--warn)}.sev-review{background:color-mix(in srgb,var(--user) 12%,transparent);color:var(--user)}.sev-low{background:var(--subtle);color:var(--muted)}
+.outcome{flex-basis:100%;margin-left:18px;color:var(--muted);font-size:13px}
+.flow{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:12px 0 0;font-size:12px}.flow span{border:1px solid var(--line);border-radius:8px;padding:3px 8px}.flow .ok{border-color:color-mix(in srgb,var(--ok) 35%,transparent);background:var(--okbg)}.flow .stuck{border:2px solid var(--bad);background:var(--badbg);font-weight:600}.flow .unreached{border-style:dashed;color:var(--faint)}
 @media print{.toggle,dialog{display:none}.test{break-inside:avoid}}
 `;
 
@@ -285,6 +294,7 @@ ${rows ? `<table><tr><th>Theme</th><th>Element</th><th>What differs</th><th>Wher
 /** @param {TestResult} r */
 function renderTest(r) {
   const v = r.verdict;
+  const insight = testInsight(r);
   const [label, cls, color] = STATUS[v.status] ?? STATUS.error;
   const [mLabel, mCls] = MODE[r.mode] ?? ['?', ''];
   const shots = r.evidence.screenshots ?? [];
@@ -314,13 +324,15 @@ function renderTest(r) {
     .map((n) => `<li>${h(n.method)} ${h(n.url)} → ${h(n.status ?? n.failure ?? '?')}</li>`)
     .join('');
 
-  return `<details class="test"${v.status === 'pass' ? '' : ' open'}>
+  return `<details class="test" id="t-${h(r.test.id)}"${v.status === 'pass' ? '' : ' open'}>
 <summary><span class="dot" style="background:${color}"></span><span class="title">${h(r.test.title)}</span>
 <span class="badge ${cls}">${label}</span><span class="badge ${mCls}">${mLabel}</span>
 ${r.heals.length ? `<span class="badge b-warn">${r.heals.length} heal(s)</span>` : ''}
 ${r.claimMismatch ? '<span class="badge b-bad">agent claim ≠ evidence</span>' : ''}
-<span class="small muted mono">${dur(r.durationMs)}${r.llmUsage ? ` · ${tok(r.llmUsage.inputTokens + r.llmUsage.outputTokens)} tokens` : ''}</span></summary>
+<span class="small muted mono">${dur(r.durationMs)}${r.llmUsage ? ` · ${tok(r.llmUsage.inputTokens + r.llmUsage.outputTokens)} tokens` : ''}</span>
+<span class="outcome">${h(insight.outcome)} · ${h(insight.how)}</span></summary>
 <div class="body">
+${insight.pages.length ? `<div class="flow" aria-label="Pages this test went through">${insight.pages.map((p) => `<span class="${p.status}">${h(p.name)}${p.status === 'stuck' ? ' · stuck here' : p.status === 'unreached' ? ' · not reached' : ''}</span>`).join('<b class="faint">→</b>')}</div>` : ''}
 ${r.test.goal ? `<p class="muted" style="margin:12px 0 0">${h(r.test.goal)}</p>` : ''}
 <div class="grid"><div>
 <div class="verdict v-${v.status}"><b>${v.status === 'pass' ? 'Passed on independent evidence' : 'Why it did not pass'}</b>${v.status !== 'pass' ? `<div style="margin-top:4px">${h(v.reason)}</div>` : ''}
@@ -372,6 +384,37 @@ ${net ? `<h3>Failed requests</h3><ul class="small mono">${net}</ul>` : ''}
 </div></details>`;
 }
 
+const SEV = { high: 'High', medium: 'Medium', review: 'Review', low: 'Low' };
+const CAT = /** @type {Record<string, string>} */ ({
+  functional: 'Functional',
+  errors: 'App errors',
+  visual: 'Visual',
+  accessibility: 'Accessibility',
+  theme: 'Theme',
+  performance: 'Speed',
+  agent: 'AI honesty',
+  maintenance: 'Maintenance',
+});
+
+/** The plain-English verdict and the problems found: the same words as the web UI. @param {RunReport} report */
+function renderVerdict(report) {
+  const ins = runInsights(report);
+  const tone = { ok: 'b-ok', bad: 'b-bad', warn: 'b-warn' }[ins.tone];
+  const titles = Object.fromEntries(report.results.map((r) => [r.test.id, r.test.title]));
+  const findings = ins.findings
+    .map(
+      (
+        f,
+      ) => `<article class="finding">${f.image ? `<span class="t">${thumb('findings', f.image, f.title, 'width:200px;aspect-ratio:16/10')}</span>` : ''}
+<div style="flex:1;min-width:240px"><div class="small"><span class="sev sev-${f.severity}">${SEV[f.severity]}</span> <span class="muted">${h(CAT[f.category] ?? f.category)}${f.area ? ` · ${h(f.area)}` : ''}</span></div>
+<h4>${h(f.title)}</h4><p>${h(f.detail)}</p><div class="small muted" style="margin-top:6px">Seen in ${f.testIds.map((id) => `<a href="#t-${h(id)}">${h(titles[id] ?? id)}</a>`).join(', ')}</div></div></article>`,
+    )
+    .join('');
+  return `<section class="vcard"><span class="pill ${tone}">${h(ins.headline)}</span> <span class="small muted">Judged from the page, the network and screenshots, never from the AI's own report</span>
+<p class="lead">${h(ins.sentence)}</p></section>
+${ins.findings.length ? `<h2 style="margin-top:20px">What is wrong</h2><div class="findings">${findings}</div>` : ''}`;
+}
+
 /**
  * Pure function: report in, self-contained HTML string out (screenshots are relative links,
  * so keep report.html next to its test folders).
@@ -392,10 +435,12 @@ export function renderReport(report) {
 <header class="top"><div style="min-width:0"><div class="small muted">AI E2E Agent report</div><h1>${h(report.targetUrl.replace(/^https?:\/\//, ''))}</h1>
 <div class="small muted">Run <span class="mono">${h(report.runId)}</span> · finished ${h(report.finishedAt)}${report.auth ? ` · logged in as ${h(report.auth.username)} at ${h(report.auth.loginUrl)}` : ''}</div></div>
 <button class="toggle" type="button">Light / dark</button></header>
+${renderVerdict(report)}
 <section class="summary"><div class="nums"><div class="big"><b>${s.passed}<span style="font-size:inherit;color:var(--faint)">/${s.total}</span></b><span>tests passed</span></div>
 ${num('failed', s.failed, s.failed ? 'fail' : '')}${num('errors', s.errored, s.errored ? 'warn' : '')}${num('healed', s.healed)}${s.visualChanges ? num('visual changes', s.visualChanges, 'warn') : ''}${num('claim ≠ evidence', s.claimMismatches, s.claimMismatches ? 'fail' : '')}${num('agent tokens', tok(s.inputTokens + s.outputTokens))}${over ? num('planner + judge tokens', tok(over)) : ''}${Number.isFinite(ms) ? num('duration', dur(ms)) : ''}</div>
 <div class="bar"><i style="width:${pct(s.passed)};background:var(--ok)"></i><i style="width:${pct(s.failed)};background:var(--bad)"></i><i style="width:${pct(s.errored)};background:var(--warn)"></i></div></section>
 ${renderConsistency(report)}
+<h2 style="margin-top:24px">Tests</h2>
 ${report.results.map(renderTest).join('\n')}
 <p class="small faint">Pass or fail is decided only from evidence the harness collected (page, URL, network, downloads, screenshots). What the agent said is shown for comparison and never used for the verdict.</p>
 </main>

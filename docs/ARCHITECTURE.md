@@ -205,6 +205,21 @@ screenshots). Generator → deterministic critic → one revision: bounded cost,
 Suites from third-party apps declare their noise (`ignore: { network, console }`), and seeded-bug runs in the
 evaluation never approve screenshots (`visual.saveNew: false`), so a bug can never become the baseline.
 
+## 4j. Reading a run: insights and UI v2 (30 Oct)
+
+```
+report.json ──▶ reporter/insights.js (pure, no LLM) ──▶ web UI summary + journey
+                 headline, findings, per-test outcome     report.html verdict + findings
+                 and page flow, checks in words           run list headline
+```
+
+`runInsights(report)` derives everything a non-developer reads from the judge's own checks: a headline, findings
+grouped by what they mean (tests stuck on the same page are one finding; console and network errors are grouped by
+message across tests; visual changes, AI-claim disagreements and heals are "review" or "low", never hidden), and
+per test the pages it went through (from the trace URLs, plus the expected pages it never reached), the step that
+broke and any error the page itself shows. Checks are said by their `label` when they have one (D28). Nothing in
+it can change a verdict (D27). The UI shows the summary first and keeps the developer tabs one click away (D29).
+
 ## 5. Data model
 
 ![data model](diagrams/04-data-model.png)

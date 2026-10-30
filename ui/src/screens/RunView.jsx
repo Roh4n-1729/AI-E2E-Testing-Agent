@@ -11,7 +11,13 @@ import {
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { toast } from 'sonner';
 import { api, fileUrl } from '../api.js';
-import { LivePanel, PhaseStepper } from '../components/LiveRun.jsx';
+import {
+  CrawledPages,
+  LivePanel,
+  PlanReview,
+  PlannedTests,
+  ProgressStrip,
+} from '../components/LiveRun.jsx';
 import { TestDetail } from '../components/TestDetail.jsx';
 import {
   Badge,
@@ -26,6 +32,9 @@ import { go } from '../hooks/useHashRoute.js';
 import { useRunStream } from '../hooks/useRunStream.js';
 import { MODE, STATUS, fmtDuration, fmtTokens, fmtWhen, shortUrl } from '../lib/format.js';
 import { Consistency } from '../components/Consistency.jsx';
+import { RunSummary } from '../components/RunSummary.jsx';
+import { runInsights } from '../../../src/reporter/insights.js';
+import { TestJourney } from './TestJourney.jsx';
 
 const FILTERS = [
   ['all', 'All', () => true],
@@ -176,7 +185,7 @@ function TestList({ items, selected, onSelect }) {
   );
 }
 
-function Live({ runId, onDone }) {
+function Live({ runId, onDone, fromSuite }) {
   const { state, frames, connected } = useRunStream(runId);
   const [picked, setPicked] = useState(null);
   const [stopping, setStopping] = useState(false);
@@ -186,18 +195,18 @@ function Live({ runId, onDone }) {
   const tests = state.order.map((id) => state.tests[id]);
   const running = tests.find((t) => t.status === 'running');
   const selected = state.tests[picked] ?? running ?? tests[0];
-  const items = tests.map((t) => ({
-    id: t.id,
-    title: t.title,
-    status: t.status,
-    mode: t.result?.mode,
-    durationMs: t.result?.durationMs,
-    claimMismatch: t.result?.claimMismatch,
-  }));
   return (
-    <div className="space-y-5">
+    <div className="flex flex-col gap-5">
       <div className="flex flex-wrap items-center gap-3">
-        <PhaseStepper phases={state.phases} />
+        <span className="inline-flex items-center gap-1.5 rounded-full bg-ai/10 px-2.5 py-1 text-[13px] font-semibold text-ai">
+          <span className="pulse size-2 rounded-full bg-ai" aria-hidden /> AI is testing
+        </span>
+        {state.config && (
+          <span className="text-[13px] text-muted">
+            {state.config.preset ? `${state.config.preset} models · ` : ''}agent{' '}
+            {String(state.config.model).replace(/^[a-z]+\//, '')}
+          </span>
+        )}
         <div className="ml-auto flex items-center gap-2">
           {!connected && !state.finished && <Badge tone="warn">reconnecting…</Badge>}
           <Button
@@ -213,29 +222,38 @@ function Live({ runId, onDone }) {
           </Button>
         </div>
       </div>
+      <ProgressStrip state={state} />
       {state.error && (
         <p role="alert" className="rounded-lg bg-bad-bg px-3 py-2 text-[13px] text-bad">
           {state.error}
         </p>
       )}
-      {tests.length === 0 ? (
-        <div className="grid gap-6 lg:grid-cols-[300px_minmax(0,1fr)]">
-          <div className="space-y-2">
-            {[0, 1, 2].map((i) => (
-              <Skeleton key={i} className="h-14" />
-            ))}
-          </div>
-          <div className="space-y-3">
-            <p className="text-[13px] text-muted">Exploring the app and planning tests…</p>
+      <div className="grid items-start gap-6 xl:grid-cols-[minmax(0,1fr)_380px]">
+        {selected ? (
+          <LivePanel test={selected} frame={frames[selected.id]} />
+        ) : (
+          <div className="flex flex-col gap-3">
+            <p className="text-[14px] text-muted">
+              {state.phases.login?.status === 'running'
+                ? 'Logging in…'
+                : state.phases.plan?.status === 'running'
+                  ? 'Planning the tests…'
+                  : 'Exploring the app…'}
+            </p>
             <Skeleton className="aspect-[16/10] w-full" />
           </div>
-        </div>
-      ) : (
-        <div className="grid gap-6 lg:grid-cols-[300px_minmax(0,1fr)]">
-          <TestList items={items} selected={selected?.id} onSelect={setPicked} />
-          <LivePanel test={selected} frame={selected ? frames[selected.id] : null} />
-        </div>
-      )}
+        )}
+        <aside aria-label="Plan" className="pin-xl flex min-w-0 flex-col gap-3.5 xl:pr-1">
+          <PlannedTests
+            tests={tests}
+            selected={selected?.id}
+            onSelect={setPicked}
+            planned={!fromSuite && !!state.phases.plan}
+          />
+          <PlanReview review={state.review} />
+          {!fromSuite && <CrawledPages pages={state.site} />}
+        </aside>
+      </div>
       {state.logs.length > 0 && (
         <details className="text-[12px]">
           <summary className="cursor-pointer text-muted">Log ({state.logs.length})</summary>
@@ -272,8 +290,8 @@ function Results({ runId, report, review, onReview }) {
     <div className="space-y-6">
       <Summary summary={report.summary} durationMs={duration} />
       {report.consistency?.states > 0 && <Consistency consistency={report.consistency} />}
-      <div className="grid gap-6 lg:grid-cols-[300px_minmax(0,1fr)]">
-        <div className="lg:sticky lg:top-6 lg:self-start">
+      <div className="grid items-start gap-6 lg:grid-cols-[300px_minmax(0,1fr)]">
+        <div className="pin-lg lg:self-start lg:pr-1">
           <TestList items={items} selected={selected} onSelect={setSelected} />
         </div>
         <div className="min-w-0">
@@ -292,9 +310,33 @@ function Results({ runId, report, review, onReview }) {
   );
 }
 
-export function RunView({ id }) {
+const VIEW_KEY = 'aie2e.runView';
+const readView = () => {
+  try {
+    return localStorage.getItem(VIEW_KEY) === 'developer' ? 'developer' : 'summary';
+  } catch {
+    return 'summary';
+  }
+};
+
+/** "Swag Labs" from the pages' own title when every test agrees on it, else the host. */
+function appName(info) {
+  const titles = new Set(
+    (info.report?.results ?? []).map((r) => r.evidence.title?.trim()).filter(Boolean),
+  );
+  if (titles.size === 1) return [...titles][0];
+  const target = info.report?.targetUrl ?? info.options?.url;
+  try {
+    return new URL(target).host;
+  } catch {
+    return shortUrl(target);
+  }
+}
+
+export function RunView({ id, test, visual }) {
   const [info, setInfo] = useState(null);
   const [error, setError] = useState(null);
+  const [view, setView] = useState(readView);
   const refetch = useCallback(() => {
     api
       .run(id)
@@ -306,6 +348,15 @@ export function RunView({ id }) {
     setError(null);
     refetch();
   }, [refetch]);
+  const insights = useMemo(() => (info?.report ? runInsights(info.report) : null), [info?.report]);
+  const switchView = (v) => {
+    setView(v);
+    try {
+      localStorage.setItem(VIEW_KEY, v);
+    } catch {
+      /* private mode: the choice lasts for this page only */
+    }
+  };
 
   if (error)
     return (
@@ -321,12 +372,49 @@ export function RunView({ id }) {
     return (
       <div className="space-y-4">
         <Skeleton className="h-8 w-80" />
-        <Skeleton className="h-24 w-full" />
+        <Skeleton className="h-36 w-full" />
+        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+          {[0, 1, 2, 3].map((i) => (
+            <Skeleton key={i} className="h-20" />
+          ))}
+        </div>
       </div>
     );
 
   const target = info.report?.targetUrl ?? info.options?.url;
   const running = info.status === 'running';
+  const app = appName(info);
+  const who = info.report?.auth?.username;
+  const runTitle = who ? `${app}, ${who}` : app;
+  const onReview = async (body) => {
+    try {
+      const { review } = await api.reviewVisual(id, body);
+      setInfo((cur) => (cur ? { ...cur, review } : cur));
+      toast.success(
+        body.action === 'approve'
+          ? 'Approved: this screenshot is the new baseline'
+          : 'Kept the old baseline: this change counts as a bug',
+      );
+    } catch (e) {
+      toast.error(e.message);
+    }
+  };
+
+  if (test && info.report && insights)
+    return (
+      <TestJourney
+        runId={id}
+        info={info}
+        report={info.report}
+        insights={insights}
+        testId={test}
+        focusVisual={visual}
+        review={info.review ?? {}}
+        onReview={onReview}
+        runTitle={runTitle}
+      />
+    );
+
   const rerun = async () => {
     try {
       // a UI suite is stored by path; the API takes its name. "Record again" and "Plan again" were
@@ -342,76 +430,88 @@ export function RunView({ id }) {
       toast.error(e.message);
     }
   };
+  const total = info.report?.summary.total;
   return (
-    <div className="space-y-6">
-      <div>
-        <a
-          href="#/runs"
-          className="inline-flex items-center gap-1 text-[12px] text-muted hover:text-text"
-        >
-          <ArrowLeft size={13} aria-hidden /> Runs
-        </a>
-        <div className="mt-2 flex flex-col gap-3 sm:flex-row sm:items-start sm:gap-4">
-          <div className="min-w-0 flex-1">
-            <div className="flex flex-wrap items-center gap-2.5">
-              <h1 className="truncate text-[24px] font-semibold tracking-tight">
-                {shortUrl(target)}
-              </h1>
-              <Badge
-                tone={
-                  running
-                    ? 'ai'
-                    : info.status === 'done'
-                      ? info.report?.summary.failed || info.report?.summary.errored
-                        ? 'bad'
-                        : 'ok'
-                      : 'warn'
-                }
-              >
-                {running
-                  ? 'Running'
-                  : info.status === 'done'
-                    ? info.report?.summary.failed || info.report?.summary.errored
-                      ? 'Has failures'
-                      : 'All passed'
-                    : info.status}
-              </Badge>
-            </div>
-            <p className="mt-1 text-[12px] text-muted">
-              Started {fmtWhen(info.startedAt)}
+    <div className="flex flex-col gap-6">
+      <header className="flex flex-wrap items-end justify-between gap-4">
+        <div className="flex min-w-0 flex-col gap-1.5">
+          <nav aria-label="Breadcrumb" className="text-[13px] text-muted">
+            <a href="#/runs" className="inline-flex items-center gap-1 hover:text-text">
+              <ArrowLeft size={13} aria-hidden /> Runs
+            </a>{' '}
+            / {app}
+          </nav>
+          <h1 className="truncate text-[26px] font-semibold leading-tight tracking-tight sm:text-[28px]">
+            {app}
+            {who && <span className="text-muted">, logged in as {who}</span>}
+          </h1>
+          <p className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[13px] text-muted">
+            <span className="font-mono">{shortUrl(target)}</span>
+            {info.options && <span aria-hidden>·</span>}
+            {!info.options ? null : info.options.suiteName ? (
+              <a className="hover:text-text" href={`#/suites/${info.options.suiteName}`}>
+                suite {info.options.suiteName}
+              </a>
+            ) : info.options?.suite ? (
+              <span>suite {String(info.options.suite).split(/[\\/]/).slice(-2).join('/')}</span>
+            ) : (
+              <span>{info.options?.goal ? 'one goal' : 'tests planned by AI'}</span>
+            )}
+            {total != null && (
+              <>
+                <span aria-hidden>·</span>
+                <span>
+                  {total} test{total === 1 ? '' : 's'}
+                </span>
+              </>
+            )}
+            <span aria-hidden>·</span>
+            <span>
+              {fmtWhen(info.startedAt)}
               {running && (
                 <>
                   {' '}
                   · running for <Elapsed since={info.startedAt} />
                 </>
-              )}{' '}
-              · <span className="font-mono">{id}</span>
-              {info.options?.suiteName && (
-                <>
-                  {' '}
-                  · suite{' '}
-                  <a
-                    className="font-mono hover:text-text"
-                    href={`#/suites/${info.options.suiteName}`}
-                  >
-                    {info.options.suiteName}
-                  </a>
-                </>
               )}
-              {info.report?.auth && <> · logged in as {info.report.auth.username}</>}
-            </p>
-          </div>
-          {!running && (
-            <div className="flex flex-wrap gap-2">
-              {info.report && (
-                <>
-                  <LinkButton href={fileUrl(id, 'report.html')} target="_blank" rel="noreferrer">
-                    <FileText size={14} aria-hidden /> HTML report{' '}
-                    <ExternalLink size={12} className="text-faint" aria-hidden />
-                  </LinkButton>
-                  <LinkButton href={fileUrl(id, 'report.json')} target="_blank" rel="noreferrer">
-                    <Braces size={14} aria-hidden /> JSON
-                  </LinkButton>
+            </span>
+            {info.report?.models?.preset && (
+              <>
+                <span aria-hidden>·</span>
+                <span>{info.report.models.preset} models</span>
+              </>
+            )}
+          </p>
+        </div>
+        {!running && (
+          <div className="flex flex-wrap gap-2">
+            {info.report && (
+              <>
+                <div
+                  role="radiogroup"
+                  aria-label="View"
+                  className="flex h-9 rounded-lg border border-line bg-subtle p-0.5 text-[13px]"
+                >
+                  {[
+                    ['summary', 'Summary'],
+                    ['developer', 'Developer view'],
+                  ].map(([v, label]) => (
+                    <button
+                      key={v}
+                      role="radio"
+                      aria-checked={view === v}
+                      onClick={() => switchView(v)}
+                      className={`rounded-md px-3 font-medium ${view === v ? 'bg-panel text-text shadow-sm' : 'text-muted hover:text-text'}`}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+                <LinkButton href={fileUrl(id, 'report.html')} target="_blank" rel="noreferrer">
+                  <FileText size={14} aria-hidden /> Report{' '}
+                  <ExternalLink size={12} className="text-faint" aria-hidden />
+                </LinkButton>
+                {!info.options?.suiteName && (
                   <Button
                     variant="secondary"
                     onClick={async () => {
@@ -426,39 +526,39 @@ export function RunView({ id }) {
                   >
                     <ListChecks size={14} aria-hidden /> Save as suite
                   </Button>
-                </>
-              )}
-              {info.options && (
-                <Button variant="primary" onClick={rerun}>
-                  <RotateCcw size={14} aria-hidden /> Run again
-                </Button>
-              )}
-            </div>
-          )}
-        </div>
-      </div>
+                )}
+              </>
+            )}
+            {info.options && (
+              <Button variant="accent" onClick={rerun}>
+                <RotateCcw size={14} aria-hidden /> Run again
+              </Button>
+            )}
+          </div>
+        )}
+      </header>
 
       {running ? (
-        <Live runId={id} onDone={refetch} />
-      ) : info.report ? (
-        <Results
-          runId={id}
-          report={info.report}
-          review={info.review ?? {}}
-          onReview={async (body) => {
-            try {
-              const { review } = await api.reviewVisual(id, body);
-              setInfo((cur) => (cur ? { ...cur, review } : cur));
-              toast.success(
-                body.action === 'approve'
-                  ? 'Approved: this screenshot is the new baseline'
-                  : 'Rejected: the old baseline stays',
-              );
-            } catch (e) {
-              toast.error(e.message);
-            }
-          }}
-        />
+        <Live runId={id} onDone={refetch} fromSuite={!!info.options?.suite} />
+      ) : info.report && insights ? (
+        view === 'summary' ? (
+          <RunSummary runId={id} report={info.report} insights={insights} />
+        ) : (
+          <div className="flex flex-col gap-3">
+            <div className="flex flex-wrap items-center gap-3 text-[12px] text-muted">
+              <LinkButton href={fileUrl(id, 'report.json')} target="_blank" rel="noreferrer">
+                <Braces size={14} aria-hidden /> report.json
+              </LinkButton>
+              <span className="font-mono">{id}</span>
+            </div>
+            <Results
+              runId={id}
+              report={info.report}
+              review={info.review ?? {}}
+              onReview={onReview}
+            />
+          </div>
+        )
       ) : (
         <EmptyState
           icon={info.status === 'stopped' ? Square : XCircle}

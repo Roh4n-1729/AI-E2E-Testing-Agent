@@ -5,7 +5,9 @@
  *
  * Event types and payloads:
  *   run.started    { runId, target: {url, description?, goal?}, config: {model, concurrency, headless, cache} }
- *   phase          { phase: 'crawl'|'plan'|'run'|'report', status: 'running'|'done', detail? }
+ *   phase          { phase: 'login'|'crawl'|'plan'|'run'|'report', status: 'running'|'done', detail? }
+ *   site.ready     { pages: [{ url, title }] }   what the crawler found (first 40)
+ *   plan.review    { found: string[], remaining: string[] }   weak checks the plan review caught
  *   plan.ready     { tests: [{ id, title, goal, expectations }] }
  *   test.started   { testId, title, goal }
  *   test.step      { testId, source: 'agent'|'replay', description, ok? }

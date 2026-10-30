@@ -2,7 +2,9 @@
 export const initial = {
   target: null,
   config: null,
-  phases: { crawl: null, plan: null, run: null, report: null },
+  phases: { login: null, crawl: null, plan: null, run: null, report: null },
+  site: [], // pages the crawler found: [{ url, title }]
+  review: null, // { found: string[], remaining: string[] } from the plan review
   tests: {}, // id -> { id, title, goal, expectations, status, steps[], screenshots[], result? }
   order: [],
   logs: [],
@@ -32,6 +34,10 @@ export function reduce(state, { type, data }) {
         ...state,
         phases: { ...state.phases, [data.phase]: { status: data.status, detail: data.detail } },
       };
+    case 'site.ready':
+      return { ...state, site: data.pages ?? [] };
+    case 'plan.review':
+      return { ...state, review: data };
     case 'plan.ready': {
       const tests = {};
       for (const t of data.tests) tests[t.id] = blank(t.id, t.title, t.goal, t.expectations);

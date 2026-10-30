@@ -693,8 +693,19 @@ footer { color: var(--muted); font-size: 0.85rem; border-top: 1px solid var(--li
         </div>
         <p>Frames are only captured while someone is watching. Run events (test started, step finished, verdict) go over the same SSE stream into a reducer.</p>
       </div>
-      <p class="why"><b>UI stack:</b> React 19, Tailwind v4 with theme tokens as CSS variables (light/dark, no flash on load), Radix UI primitives for selects, tabs, switches and dialogs, sonner for toasts, yet-another-react-lightbox for screenshots. The standalone <code>report.html</code> has the same views with no dependencies.</p>
-      <div class="files"><code>src/server/app.js</code><code>src/server/runManager.js</code><code>ui/src/screens/</code><code>ui/src/components/</code><code>src/reporter/htmlReporter.js</code></div>
+      <h3>UI v2: the run in plain words (built Fri 30 Oct)</h3>
+      <p>The first UI was for developers: a list, tabs and a long log. UI v2 reads like a report for anyone, with the developer view one click away.</p>
+      <div class="demo">
+        <div class="demo-bar"><span class="label">Who reads what</span></div>
+        <div class="flow">
+          <span class="box">report.json</span><span class="arr">insights.js (no LLM)</span><i class="pkt"></i>
+          <span class="box">Summary · Journey · report.html</span>
+        </div>
+        <p><b>Summary:</b> a verdict sentence ("1 of 6 flows work for problem_user"), four numbers, "What is wrong" cards ranked high / medium / review / low, and a tests table with what happened in one line. <b>Journey</b> (per test): the pages the user went through, the stuck page in red, pages never reached dashed; steps grouped by page with big screenshots; why it failed in one sentence; screens that look different with Approve / Keep; the old tabs under "Developer details". <b>Live:</b> Log in → Explore → Plan → Test → Report, the live browser, the planned tests, what the plan review fixed.</p>
+      </div>
+      <p class="why"><b>Why no LLM in the summary:</b> the judge decides and <code>reporter/insights.js</code> only explains, as a pure function of the report. A summary written by an LLM could contradict the verdict and would spend tokens on a run that replayed for free. Tests stuck on the same page become one finding, and an error the page itself shows ("Error: Last Name is required") is quoted from the final page text. Checks can carry a plain-words <code>label</code> ("The cart holds 1 product"); the planner writes one, the judge ignores it.</p>
+      <p class="why"><b>UI stack:</b> React 19, Tailwind v4 with theme tokens as CSS variables (light/dark, no flash on load), Radix UI primitives for selects, tabs, switches and dialogs, sonner for toasts, yet-another-react-lightbox for screenshots. The standalone <code>report.html</code> shows the same verdict and findings with no dependencies.</p>
+      <div class="files"><code>src/reporter/insights.js</code><code>ui/src/components/RunSummary.jsx</code><code>ui/src/screens/TestJourney.jsx</code><code>ui/src/components/LiveRun.jsx</code><code>src/server/app.js</code><code>src/reporter/htmlReporter.js</code></div>
     </section>
 
     <!-- 12 -->

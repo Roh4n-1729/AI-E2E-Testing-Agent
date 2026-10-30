@@ -24,7 +24,9 @@ export function App() {
     <AppShell route={route} health={health}>
       {route.name === 'new' && <NewRun health={health} />}
       {route.name === 'runs' && <Runs />}
-      {route.name === 'run' && <RunView key={route.id} id={route.id} />}
+      {route.name === 'run' && (
+        <RunView key={route.id} id={route.id} test={route.test} visual={route.visual} />
+      )}
       {route.name === 'recordings' && <Recordings id={route.id} />}
       {route.name === 'suites' && <Suites name={route.id} />}
       {route.name === 'hints' && <Hints />}

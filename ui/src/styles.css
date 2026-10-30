@@ -126,3 +126,26 @@ body {
   --yarl__slide_captions_container_background: rgb(8 11 18 / 0.7);
   font-family: var(--font-sans);
 }
+
+/* Side panels that must stay in view (verdict next to the steps, the test list next to its detail): pinned
+   below the top of the screen with their own scroll, so the page never has to be scrolled to see both. */
+@media (min-width: 1024px) {
+  .pin-lg {
+    position: sticky;
+    top: 1.5rem;
+    max-height: calc(100vh - 3rem);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    scrollbar-gutter: stable;
+  }
+}
+@media (min-width: 1280px) {
+  .pin-xl {
+    position: sticky;
+    top: 1.5rem;
+    max-height: calc(100vh - 3rem);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    scrollbar-gutter: stable;
+  }
+}

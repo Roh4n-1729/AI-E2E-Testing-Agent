@@ -291,13 +291,21 @@ on-theme on each screen and still drift, I also compare the same component acros
 
 - `npm run ui`: a Fastify server with a React 19 UI (Tailwind v4 tokens, Radix, sonner, yet-another-react-lightbox).
 - Live view: Chromium → CDP `Page.screencastFrame` → server → Server-Sent Events → UI. Frames are only captured while
-  someone watches.
-- Run page:
-  - summary;
-  - a filterable test list;
-  - tabs Steps (a timeline with screenshots), Checks, Network, Quality, Theme and Agent (the claim is shown, never
-    trusted).
-- The standalone `report.html` has the same views with no dependencies.
+  someone watches. Progress cards (Log in, Explore, Plan, Test, Report), the planned tests, what the plan review
+  fixed (`plan.review` event) and the pages the crawl found (`site.ready`).
+- **Run summary (UI v2, for anyone):** a verdict sentence, four numbers, "What is wrong" cards ranked by severity,
+  and a tests table with "What happened" in one line. All of it comes from `reporter/insights.js`, a pure function
+  of the report: no LLM, so every sentence traces back to a judge check.
+- **Test journey:** the pages the user went through as a flow strip (stuck page in red, pages never reached
+  dashed), steps grouped by page with large screenshots, why it failed in one sentence, screens that look
+  different with Approve / Keep, and the old developer tabs under "Developer details".
+- **Labels:** a check can carry `label`, plain words for the report ("The cart holds 1 product"). The judge ignores
+  it. The planner writes one; the suite editor has a field.
+- **Developer view:** the original list + tabs layout, one toggle away (remembered per browser).
+- The standalone `report.html` shows the same verdict and findings, with no dependencies.
+
+**Interview line:** "The judge decides, the insights module explains. It is deterministic on purpose: a summary
+written by an LLM could contradict the verdict, and it would cost tokens on a run that replayed for free."
 
 ## 12 Libraries
 

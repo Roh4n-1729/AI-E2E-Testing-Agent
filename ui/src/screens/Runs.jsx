@@ -114,14 +114,35 @@ export function Runs() {
                           onClick={(e) => e.stopPropagation()}
                         >
                           <Dot tone={tone} pulse={r.status === 'running'} />
-                          <span className="max-w-[360px] truncate">{shortUrl(r.targetUrl)}</span>
+                          <span className="min-w-0">
+                            <span className="block max-w-[360px] truncate">
+                              {r.app ?? shortUrl(r.targetUrl)}
+                              {r.username && (
+                                <span className="font-normal text-muted"> · {r.username}</span>
+                              )}
+                            </span>
+                            {r.app && (
+                              <span className="block max-w-[360px] truncate font-mono text-[11px] font-normal text-muted">
+                                {shortUrl(r.targetUrl)}
+                              </span>
+                            )}
+                          </span>
                         </a>
                       </td>
                       <td className="px-4 py-3">
                         {r.status === 'running' ? (
                           <Badge tone="ai">Running</Badge>
                         ) : (
-                          <ResultBar s={s} />
+                          <span className="flex flex-col gap-1">
+                            {r.headline && (
+                              <span
+                                className={`text-[13px] font-medium ${tone === 'bad' ? 'text-bad' : tone === 'ok' ? 'text-ok' : ''}`}
+                              >
+                                {r.headline}
+                              </span>
+                            )}
+                            <ResultBar s={s} />
+                          </span>
                         )}
                       </td>
                       <td className="px-4 py-3">

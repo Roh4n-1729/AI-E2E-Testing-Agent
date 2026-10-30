@@ -15,19 +15,23 @@
       "expectations": [
         {
           "kind": "text-visible",
-          "text": "Products"
+          "text": "Products",
+          "label": "The product list is open"
         },
         {
           "kind": "selector-visible",
-          "selector": "xpath=//img[@alt='Sauce Labs Backpack' and contains(@src,'sauce-backpack')]"
+          "selector": "xpath=//img[@alt='Sauce Labs Backpack' and contains(@src,'sauce-backpack')]",
+          "label": "The Backpack shows its own photo"
         },
         {
           "kind": "selector-visible",
-          "selector": "xpath=//img[@alt='Sauce Labs Bike Light' and contains(@src,'bike-light')]"
+          "selector": "xpath=//img[@alt='Sauce Labs Bike Light' and contains(@src,'bike-light')]",
+          "label": "The Bike Light shows its own photo"
         },
         {
           "kind": "selector-visible",
-          "selector": "xpath=//img[@alt='Sauce Labs Onesie' and contains(@src,'red-onesie')]"
+          "selector": "xpath=//img[@alt='Sauce Labs Onesie' and contains(@src,'red-onesie')]",
+          "label": "The Onesie shows its own photo"
         }
       ]
     },
@@ -38,11 +42,13 @@
       "expectations": [
         {
           "kind": "selector-visible",
-          "selector": "xpath=(//div[@data-test='inventory-item-price'])[1][normalize-space()='$7.99']"
+          "selector": "xpath=(//div[@data-test='inventory-item-price'])[1][normalize-space()='$7.99']",
+          "label": "The cheapest product ($7.99) comes first"
         },
         {
           "kind": "selector-visible",
-          "selector": "xpath=(//div[@data-test='inventory-item-price'])[6][normalize-space()='$49.99']"
+          "selector": "xpath=(//div[@data-test='inventory-item-price'])[6][normalize-space()='$49.99']",
+          "label": "The most expensive product ($49.99) comes last"
         }
       ],
       "steps": [
@@ -62,15 +68,18 @@
       "expectations": [
         {
           "kind": "url",
-          "pattern": "/cart.html"
+          "pattern": "/cart.html",
+          "label": "The cart page opens"
         },
         {
           "kind": "selector-visible",
-          "selector": "xpath=//span[@data-test='shopping-cart-badge'][normalize-space()='2']"
+          "selector": "xpath=//span[@data-test='shopping-cart-badge'][normalize-space()='2']",
+          "label": "The cart icon shows 2"
         },
         {
           "kind": "selector-visible",
-          "selector": "xpath=//div[@data-test='cart-list'][count(.//div[@data-test='inventory-item'])=2]"
+          "selector": "xpath=//div[@data-test='cart-list'][count(.//div[@data-test='inventory-item'])=2]",
+          "label": "The cart holds 2 products"
         }
       ],
       "steps": [
@@ -101,11 +110,13 @@
       "expectations": [
         {
           "kind": "text-visible",
-          "text": "Sauce Labs Bike Light"
+          "text": "Sauce Labs Bike Light",
+          "label": "The Bike Light is still in the cart"
         },
         {
           "kind": "selector-visible",
-          "selector": "xpath=//div[@data-test='cart-list'][count(.//div[@data-test='inventory-item'])=1]"
+          "selector": "xpath=//div[@data-test='cart-list'][count(.//div[@data-test='inventory-item'])=1]",
+          "label": "The cart holds 1 product"
         }
       ],
       "steps": [
@@ -142,15 +153,18 @@
       "expectations": [
         {
           "kind": "url",
-          "pattern": "/checkout-step-two.html"
+          "pattern": "/checkout-step-two.html",
+          "label": "The order overview opens"
         },
         {
           "kind": "text-visible",
-          "text": "Item total: $29.99"
+          "text": "Item total: $29.99",
+          "label": "The item total is $29.99"
         },
         {
           "kind": "text-visible",
-          "text": "Total: $32.39"
+          "text": "Total: $32.39",
+          "label": "The total with tax is $32.39"
         }
       ],
       "steps": [
@@ -208,11 +222,13 @@
       "expectations": [
         {
           "kind": "url",
-          "pattern": "/checkout-complete.html"
+          "pattern": "/checkout-complete.html",
+          "label": "The order confirmation page opens"
         },
         {
           "kind": "text-visible",
-          "text": "Thank you for your order!"
+          "text": "Thank you for your order!",
+          "label": "The thank-you message appears"
         }
       ],
       "steps": [

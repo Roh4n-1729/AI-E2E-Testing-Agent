@@ -38,6 +38,12 @@ export const PlanSchema = z.object({
               .describe(
                 'visual: a yes/no question answered from screenshots of the start, the run and the end. download: expected file extension or name fragment, e.g. ".pptx" (empty string = any file). text-appeared: text of a confirmation/toast/alert that shows briefly. text-visible: exact text that stays on the page. api-call: "METHOD /path" of an endpoint listed in the crawl summary. url-contains: a URL fragment copied from the crawl summary. selector-visible: a test id selector copied from the crawl summary.',
               ),
+            label: z
+              .string()
+              .optional()
+              .describe(
+                'What this check proves, in plain words for a non-developer reading the report, e.g. "The cart shows 2 products" or "The order confirmation appears". No selectors or URLs.',
+              ),
           }),
         )
         .describe('1 to 3 outcome checks that prove the goal was achieved'),
@@ -92,10 +98,20 @@ function summarizeSiteMap(siteMap) {
 /**
  * Map the planner's flat expectation to the internal type, or null when it is not grounded in the
  * crawl. Guessed URL fragments and endpoints are the #1 source of false failures, so they are dropped.
- * @param {{ kind: string, value: string }} e @param {SiteMap} siteMap
+ * @param {{ kind: string, value: string, label?: string }} e @param {SiteMap} siteMap
  * @returns {Expectation | null}
  */
 export function toExpectation(e, siteMap) {
+  const exp = groundExpectation(e, siteMap);
+  const label = e.label?.trim();
+  return exp && label ? { ...exp, label: label.slice(0, 160) } : exp;
+}
+
+/**
+ * @param {{ kind: string, value: string }} e @param {SiteMap} siteMap
+ * @returns {Expectation | null}
+ */
+function groundExpectation(e, siteMap) {
   const value = e.value.trim();
   switch (e.kind) {
     case 'url-contains': {
@@ -169,7 +185,11 @@ export function reviewExpectations(exps, siteMap, startUrl) {
       if (!seen.includes(shape(e.text))) {
         issues.push(`"${e.text}" appears nowhere in the crawl: that wording is a guess`);
         if (!repaired.some((r) => r.kind === 'visual'))
-          repaired.push({ kind: 'visual', question: SUCCESS_QUESTION });
+          repaired.push({
+            kind: 'visual',
+            question: SUCCESS_QUESTION,
+            ...(e.label ? { label: e.label } : {}),
+          });
         continue;
       }
     }
@@ -191,7 +211,8 @@ export function reviewExpectations(exps, siteMap, startUrl) {
 export class LlmPlanner {
   /**
    * @param {LlmClient} llm
-   * @param {{ maxTests: number }} opts
+   * @param {{ maxTests: number, onReview?: (review: { found: string[], remaining: string[] }) => void }} opts
+   *   onReview: what the plan review found, and what the revision round still got wrong (for the live UI)
    * @param {Logger} logger
    */
   constructor(llm, opts, logger) {
@@ -219,6 +240,7 @@ export class LlmPlanner {
 
     // One revision round: the planner gets the reviewer's findings and returns the whole plan again.
     if (review.issues.length) {
+      const found = review.issues;
       this.logger.info(
         `planner: ${review.issues.length} weak check(s) found, asking the planner to fix them`,
       );
@@ -242,6 +264,7 @@ export class LlmPlanner {
         );
       }
       for (const i of review.issues) this.logger.warn(`planner: repaired a weak check: ${i}`);
+      this.opts.onReview?.({ found, remaining: review.issues });
     }
     return review.tests;
   }

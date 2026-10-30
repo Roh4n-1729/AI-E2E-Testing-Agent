@@ -48,27 +48,41 @@ describe.skipIf(!hasChromium || !built)('web UI (real browser; needs `npm run ui
     await page.getByRole('button', { name: /start run/i }).click();
 
     await page.waitForURL(/#\/runs\//);
-    // finished: summary stat + the test card + the report links
-    // finished: the report links appear, with the test, its verdict and the evidence tabs
-    const html = page.getByRole('link', { name: /HTML report/ });
+    const runId = new URL(page.url()).hash.split('/')[2];
+    // finished: the plain-English verdict, the tests table and the report link
+    const html = page.getByRole('link', { name: /^Report/ });
     await html.waitFor({ timeout: 30_000 });
-    await page.getByRole('heading', { name: 'Smoke: page loads without errors' }).waitFor();
-    await page.getByText('tests passed').waitFor();
-    await page.getByRole('tab', { name: /Quality/ }).click();
-    await page.getByText('Core Web Vitals').waitFor();
+    await page.getByText('The flow works').waitFor();
+    const href = await html.getAttribute('href');
+    expect(href).toMatch(/^\/files\/runs\/.+\/report\.html$/);
+    expect((await page.request.get(ui + href)).status()).toBe(200);
+    await page
+      .getByRole('table')
+      .getByRole('link', { name: 'Smoke: page loads without errors' })
+      .click();
+    // the test as a journey: pages, steps, why it passed; the developer evidence one click away
+    await page.waitForURL(/#\/runs\/.+\/tests\/smoke/);
+    await page
+      .getByRole('heading', { name: 'Smoke: page loads without errors', level: 1 })
+      .waitFor();
+    await page.getByText('Why it passed').waitFor();
     // screenshots open in the viewer, not a new tab
-    await page.getByRole('button', { name: /Open screenshot: Final state/ }).click();
+    await page
+      .getByRole('button', { name: /Open screenshot:/ })
+      .first()
+      .click();
     await page.locator('.yarl__root').waitFor();
     await page.keyboard.press('Escape');
-    expect(await html.getAttribute('href')).toMatch(/^\/files\/runs\/.+\/report\.html$/);
-    expect((await page.request.get(ui + (await html.getAttribute('href')))).status()).toBe(200);
+    await page.getByRole('button', { name: 'Developer details' }).click();
+    await page.getByRole('tab', { name: /Quality/ }).click();
+    await page.getByText('Core Web Vitals').waitFor();
 
     // history lists it
-    await page.getByRole('navigation').getByRole('link', { name: 'Runs', exact: true }).click();
     await page
-      .getByRole('link', { name: target.base.replace('http://', '') })
-      .first()
-      .waitFor();
+      .getByRole('navigation', { name: 'Main' })
+      .getByRole('link', { name: 'Runs', exact: true })
+      .click();
+    await page.locator(`a[href="#/runs/${runId}"]`).first().waitFor();
     expect(errors).toEqual([]);
     await page.close();
   });
@@ -100,9 +114,12 @@ describe.skipIf(!hasChromium || !built)('web UI (real browser; needs `npm run ui
 
     await page.getByRole('button', { name: 'Run suite' }).click();
     await page.waitForURL(/#\/runs\//);
-    await page.getByRole('link', { name: /HTML report/ }).waitFor({ timeout: 45_000 });
-    await page.getByRole('heading', { name: 'Shop page shows its heading' }).waitFor();
-    await page.getByText('Passed on').first().waitFor();
+    await page.getByRole('link', { name: /^Report/ }).waitFor({ timeout: 45_000 });
+    await page
+      .getByRole('table')
+      .getByRole('link', { name: 'Shop page shows its heading' })
+      .waitFor();
+    await page.getByText('The flow works').waitFor();
     expect(errors).toEqual([]);
     await page.close();
   });

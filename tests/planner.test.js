@@ -25,8 +25,8 @@ describe('LlmPlanner', () => {
         title: 'Add item to cart',
         goal: 'Click Add to cart on the first product, then open the cart',
         expectations: [
-          { kind: 'url-contains', value: '/cart' },
-          { kind: 'text-visible', value: 'Your cart' },
+          { kind: 'url-contains', value: '/cart', label: 'The cart opens' },
+          { kind: 'text-visible', value: 'Your cart', label: 'The cart heading is shown' },
           { kind: 'visual', value: 'Does the page show one item in the cart?' },
         ],
       },
@@ -46,11 +46,13 @@ describe('LlmPlanner', () => {
     const cart = tests[1];
     // "Your cart" appears nowhere in the crawl: a guessed wording becomes a question about the screenshots
     expect(cart?.expectations).toEqual([
-      { kind: 'url', pattern: '/cart', mode: 'includes' },
+      // labels (plain words for the report) survive grounding and repair
+      { kind: 'url', pattern: '/cart', mode: 'includes', label: 'The cart opens' },
       {
         kind: 'visual',
         question:
           'After the action, does the page show that it succeeded (a confirmation, an updated count or new content)?',
+        label: 'The cart heading is shown',
       },
       { kind: 'visual', question: 'Does the page show one item in the cart?' },
       { kind: 'no-console-errors' },

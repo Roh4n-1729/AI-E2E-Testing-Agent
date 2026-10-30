@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import 'dotenv/config';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import * as prettier from 'prettier';
 import path from 'node:path';
 import { parseArgs } from 'node:util';
 import { startRun } from '../src/app/startRun.js';
@@ -277,5 +278,10 @@ const md = [
   '',
 ].join('\n');
 await mkdir(path.dirname(path.resolve(args.report)), { recursive: true });
-await writeFile(args.report, md);
+// formatted like every other doc in the repo, so a committed report passes CI's prettier check
+const prettierOptions = (await prettier.resolveConfig(path.resolve(args.report))) ?? {};
+await writeFile(
+  args.report,
+  await prettier.format(md, { ...prettierOptions, filepath: path.resolve(args.report) }),
+);
 console.log(`\n${md}\nWrote ${args.report}`);

@@ -6,6 +6,46 @@ teaches us something: it is the honest history of how the judge got stricter.
 
 ---
 
+## 2026-10-30 (Friday, 17:00): P2 of plan v2: UI v2, the run in plain words for anyone
+
+Rohan's review of the Asset Sense run: the UI was built for developers; a reader had to scroll a long log and work
+out the layout. Built from the approved mockups:
+
+- **Insights module** (`src/reporter/insights.js`): pure and deterministic, no LLM. It turns a report into a
+  headline ("4 problems found"), a sentence ("1 of 6 flows work for problem_user. Failing: …"), findings grouped
+  and ranked by severity (high = a flow is blocked, medium = a wrong result, review = a person decides, low =
+  advisory), and per test: what happened in one line, the pages it went through (stuck and never-reached pages
+  included) and its checks in words. Tests stuck on the same page become one finding. An error the page itself
+  shows ("Error: Last Name is required") is quoted from the final page text. The web UI, `report.html` and the
+  run list all use it, so every sentence traces back to a judge check.
+- **Plain-words labels on checks:** every expectation may carry `label` ("The cart holds 1 product"). The planner
+  writes one per check, the suite editor has a field, and the Sauce Demo and TodoMVC suites are labelled. Reports
+  show the label; the judge never reads it. Without a label, selectors are said in words (`@alt='Backpack'` →
+  "the Backpack image is shown").
+- **Run summary:** verdict card with the sentence and a bar per test, four numbers (flows working, problems,
+  screens that look different, AI cost), "What is wrong" cards with the screenshot that shows it and links to the
+  tests, and a tests table (result, what happened, how it ran, time). The old list + tabs view stays as
+  **Developer view** (remembered per browser).
+- **Test journey** (`#/runs/<id>/tests/<test>`): "Where the user went" flow strip (pages as nodes, the action on
+  each edge, the stuck page in red, pages never reached dashed), steps grouped by page with large screenshots,
+  "Why it failed" in a sentence plus the checks, a "Looks different" card with approved / now / changed pixels and
+  Approve new look / Keep the old one, "How it ran" (mode, models, heals, login), and the full developer tabs
+  behind "Developer details".
+- **Live run:** progress cards (Log in, Explore, Plan, Test, Report) with details, the live browser with the
+  current step, the planned tests (click to watch one), what the plan review fixed, and the pages the crawl found.
+  New events: `phase: login`, `site.ready`, `plan.review`.
+- **Run list:** the app's own name, who it logged in as, and the headline. **Sidebar:** models by role.
+- **`report.html`:** the same verdict card and findings, a one-line outcome and the page flow per test.
+- **Report records its models** (`report.models`: agent, planner, judge, preset).
+
+Found on the way: an effect that returned `window.scrollTo(...)` crashed the app when leaving a journey
+("destroy is not a function"); caught by the UI integration test, fixed.
+
+Tests: `tests/insights.test.js` (7), planner labels survive grounding and repair, reducer events, UI integration
+test rewritten for summary → journey → developer details.
+
+---
+
 ## 2026-10-30 (Friday, 15:45): P1 of plan v2: tools between the agent, the harness and the judge; model presets
 
 In the Asset Sense run the agent clicked "Explore Now", went back and clicked it again, then claimed success on

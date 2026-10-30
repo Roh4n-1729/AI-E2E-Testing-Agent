@@ -4,6 +4,8 @@ import { initial, reduce } from './runReducer.js';
 const TYPES = [
   'run.started',
   'phase',
+  'site.ready',
+  'plan.review',
   'plan.ready',
   'test.started',
   'test.step',

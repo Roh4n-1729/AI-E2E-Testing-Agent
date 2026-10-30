@@ -12,6 +12,9 @@ import {
 import { useTheme } from '../lib/theme.js';
 import { Tooltip } from './ui.jsx';
 
+/** "anthropic/claude-haiku-4-5" -> "claude-haiku-4-5" */
+const short = (m) => String(m ?? '').replace(/^[a-z]+\//, '');
+
 const NAV = [
   { name: 'new', href: '#/new', label: 'New run', icon: Play },
   { name: 'runs', href: '#/runs', label: 'Runs', icon: History },
@@ -62,9 +65,7 @@ export function AppShell({ route, health, children }) {
         href={n.href}
         aria-current={on ? 'page' : undefined}
         className={`flex items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-[13px] transition-colors ${
-          on
-            ? 'bg-panel font-medium text-text shadow-sm ring-1 ring-line'
-            : 'text-muted hover:bg-panel/60 hover:text-text'
+          on ? 'bg-user/10 font-semibold text-user' : 'text-muted hover:bg-panel/60 hover:text-text'
         } ${compact ? 'shrink-0' : ''}`}
       >
         <Icon size={15} strokeWidth={1.75} aria-hidden />
@@ -89,16 +90,44 @@ export function AppShell({ route, health, children }) {
         </nav>
         <div className="mt-auto space-y-3 px-1">
           {health && (
-            <div className="space-y-1 text-[12px] text-muted">
-              <div className="flex items-center gap-1.5">
-                <span
-                  className={`size-1.5 rounded-full ${health.keyPresent ? 'bg-ok' : 'bg-warn'}`}
-                />
-                {health.keyPresent ? 'API key found' : 'No API key'}
+            <div className="space-y-1.5 rounded-xl border border-line bg-panel px-3 py-2.5 text-[12px] text-muted">
+              <div className="flex items-center justify-between gap-2">
+                <span className="font-semibold text-text">
+                  Models
+                  {health.preset
+                    ? ` · ${health.preset[0].toUpperCase()}${health.preset.slice(1)}`
+                    : ''}
+                </span>
+                <Tooltip
+                  content={
+                    health.keyPresent
+                      ? `${health.keyVar ?? 'API key'} is set`
+                      : `Set ${health.keyVar ?? 'an API key'} in .env`
+                  }
+                >
+                  <span
+                    className={`size-1.5 rounded-full ${health.keyPresent ? 'bg-ok' : 'bg-warn'}`}
+                    aria-label={health.keyPresent ? 'API key found' : 'No API key'}
+                  />
+                </Tooltip>
               </div>
-              <div className="truncate font-mono text-[11px]" title="Browser-agent model">
-                {health.model}
-              </div>
+              {(health.plannerModel === health.judgeModel
+                ? [
+                    ['agent', health.model],
+                    ['planner and judge', health.plannerModel],
+                  ]
+                : [
+                    ['agent', health.model],
+                    ['planner', health.plannerModel],
+                    ['judge', health.judgeModel],
+                  ]
+              ).map(([role, m]) => (
+                <div key={role} className="min-w-0" title={m}>
+                  <div className="text-[11px]">{role}</div>
+                  <div className="truncate font-mono text-[11px] text-text">{short(m)}</div>
+                </div>
+              ))}
+              {!health.keyPresent && <div className="text-warn">No API key: replays only</div>}
             </div>
           )}
           <ThemeSwitch />

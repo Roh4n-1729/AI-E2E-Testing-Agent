@@ -136,6 +136,7 @@ export async function startRun(o, { events = new RunEvents(), signal } = {}) {
       scope: 'login',
       message: `Logging in at ${auth.loginUrl}`,
     });
+    events.emit('phase', { phase: 'login', status: 'running' });
     login = await performLogin({
       appUrl: o.url,
       auth: AuthSchema.parse(auth),
@@ -143,6 +144,7 @@ export async function startRun(o, { events = new RunEvents(), signal } = {}) {
       logger,
       screenshot: path.join(artifacts.runDir, 'login-failed.png'),
     });
+    events.emit('phase', { phase: 'login', status: 'done', detail: `as ${login.username}` });
   }
   const useAiPlanner = !suite && !o.goal && o.plan !== false;
   const cache = o.cache !== false;
@@ -151,7 +153,14 @@ export async function startRun(o, { events = new RunEvents(), signal } = {}) {
     ? suitePlanner
     : useAiPlanner
       ? new CachedPlanner(
-          new LlmPlanner(llm, { maxTests: config.maxTests }, logger),
+          new LlmPlanner(
+            llm,
+            {
+              maxTests: config.maxTests,
+              onReview: (review) => events.emit('plan.review', review),
+            },
+            logger,
+          ),
           path.join(config.outDir, 'plans'),
           {
             replan: !!o.replan || !cache,
