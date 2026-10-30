@@ -93,7 +93,7 @@ export class BfsCrawler {
           await page.waitForLoadState('load', { timeout: 5000 }).catch(() => undefined);
           const raw = await page.evaluate(() => ({
             title: document.title,
-            text: (document.body?.innerText ?? '').replace(/\s+/g, ' ').slice(0, 800),
+            text: (document.body?.innerText ?? '').replace(/\s+/g, ' ').slice(0, 1500),
             forms: document.forms.length,
             buttons: [...document.querySelectorAll('button, [role="button"]')]
               .map((b) => (b.textContent ?? '').trim())

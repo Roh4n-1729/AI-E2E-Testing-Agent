@@ -338,6 +338,7 @@ Full log: `docs/IMPROVEMENTS.md`.
 | A bug run approved its own screenshots as the baseline   | only clean runs approve          |
 | "Don't invent data" vs "fill the form" with no values    | planner writes test values       |
 | AI tests checked "checkout opened", not "both items in"  | check the effect of each action  |
+| The planner guessed "Thank you", reused home-page text   | plan review + one revision round |
 
 ## 14 What's next (deadline Mon 2 Nov)
 

@@ -193,6 +193,18 @@ START → crawl → plan ──Send(test)──▶ runTest (× N, `concurrency` 
   audit takes tokens from the reference (same theme id, else its base), ignores the target's own `var()` usage,
   marks misses `off-reference`, and audits theme-less targets in their default look.
 
+## 4i. Planner review loop (30 Oct, from the first full-AI evaluations)
+
+The planner is the weakest link, so its output is checked before any test runs (`reviewExpectations` in
+`planner/llmPlanner.js`): text checks are compared with what the crawler saw. Start-page text (proves nothing),
+wording the crawl never showed (a guess) and URL checks already true at the start are flagged; a changed number in
+text the crawl saw ("Cart (2)" vs "Cart (0)") is allowed. Findings go back to the planner for exactly one revision;
+what is still wrong is repaired deterministically (dropped, or turned into a yes/no question about the
+screenshots). Generator → deterministic critic → one revision: bounded cost, no infinite loops.
+
+Suites from third-party apps declare their noise (`ignore: { network, console }`), and seeded-bug runs in the
+evaluation never approve screenshots (`visual.saveNew: false`), so a bug can never become the baseline.
+
 ## 5. Data model
 
 ![data model](diagrams/04-data-model.png)

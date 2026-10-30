@@ -6,6 +6,35 @@ teaches us something: it is the honest history of how the judge got stricter.
 
 ---
 
+## 2026-10-30 (Friday, 13:15): second full-AI evaluation: the planner needs a reviewer
+
+With the 12:30 fixes the evaluation reported **2/6 detected, 3 tests failing on the clean app**. Every failure was
+the planner writing a check that cannot work; the judge was right each time and the agent's claims were true:
+
+| Planned test                  | Planned check                        | Why it cannot work                                    |
+| ----------------------------- | ------------------------------------ | ----------------------------------------------------- |
+| Add Mug, T-shirt and Notebook | the three product names are visible  | already on the home page: discarded as vacuous        |
+| Subscribe                     | "Thank you" appeared                 | a guess: the app says "Subscribed! Check your inbox." |
+| Check out                     | "Coffee Mug" visible after the order | a guess: the confirmation page lists no items         |
+
+The first one was caused by the 12:30 prompt rule ("expect both product names"). Prompt rules alone kept moving
+the mistake around, so the fix is in code:
+
+- **Plan review (deterministic):** every text check is compared with what the crawler saw. Text already on the
+  start page is flagged (it proves nothing); text the crawl never showed is flagged as a guess, except a changed
+  number in text the crawl did see ("Cart (2)" when it saw "Cart (0)", "Total: ₹448" when it saw "Total: ₹0"); a URL
+  check that already holds at the start URL is flagged.
+- **One revision round:** the planner gets the findings ("In "Subscribe": "Thank you" appears nowhere in the
+  crawl: that wording is a guess") and returns the plan again. What is still wrong is repaired mechanically:
+  start-page checks dropped, guessed wording replaced by a yes/no question about the screenshots. Never a second
+  round, so cost stays bounded (one extra planner call, only when needed).
+- The prompt now says it plainly too: start-page text proves nothing; never guess message wording; check counts.
+- The crawl keeps 1500 characters of page text instead of 800, so the review sees more of each page.
+
+Tests: `tests/planner.test.js` (review rules, the revision round, the fallback repair, goal-less tests untouched).
+
+---
+
 ## 2026-10-30 (Friday, 12:30): the first full-AI evaluation, read line by line
 
 Rohan ran `npm run eval -- --mode explore --heal --runs 1` on six seeded bugs (planner + agent with

@@ -44,9 +44,14 @@ describe('LlmPlanner', () => {
     for (const t of tests) expect(TestCaseSchema.safeParse(t).success).toBe(true);
 
     const cart = tests[1];
+    // "Your cart" appears nowhere in the crawl: a guessed wording becomes a question about the screenshots
     expect(cart?.expectations).toEqual([
       { kind: 'url', pattern: '/cart', mode: 'includes' },
-      { kind: 'text-visible', text: 'Your cart' },
+      {
+        kind: 'visual',
+        question:
+          'After the action, does the page show that it succeeded (a confirmation, an updated count or new content)?',
+      },
       { kind: 'visual', question: 'Does the page show one item in the cart?' },
       { kind: 'no-console-errors' },
       { kind: 'no-network-failures' },
@@ -119,9 +124,14 @@ describe('StaticPlanner', () => {
     };
     const planner = new LlmPlanner(mockLlm(out), { maxTests: 5 }, silentLogger);
     const tests = await planner.plan({ url: 'https://shop.test/' }, siteMap);
+    // the toast wording was never seen in the crawl: a guess, turned into a question about the screenshots
     expect(tests[1]?.expectations).toEqual([
       { kind: 'download', filenamePattern: '.pptx' },
-      { kind: 'text-appeared', text: 'PowerPoint file downloaded' },
+      {
+        kind: 'visual',
+        question:
+          'After the action, does the page show that it succeeded (a confirmation, an updated count or new content)?',
+      },
       { kind: 'no-console-errors' },
       { kind: 'no-network-failures' },
     ]);
@@ -150,5 +160,114 @@ describe('StaticPlanner', () => {
       urlPattern: '/api/products',
       method: 'GET',
     });
+  });
+});
+
+describe('plan review: checks grounded in what the crawler saw', () => {
+  const shop = {
+    origin: 'https://shop.test',
+    pages: [
+      {
+        url: 'https://shop.test/',
+        title: 'Shop',
+        links: ['https://shop.test/cart'],
+        textExcerpt: 'Coffee Mug ₹299 Notebook ₹149 Cart (0) Newsletter',
+        buttons: ['Add to cart', 'Subscribe'],
+      },
+      {
+        url: 'https://shop.test/cart',
+        title: 'Cart',
+        links: [],
+        textExcerpt: 'Your cart is empty. Total: ₹0',
+      },
+    ],
+  };
+
+  it('flags start-page text and guessed wording, accepts counters and totals in a new state', async () => {
+    const { reviewExpectations } = await import('../src/planner/llmPlanner.js');
+    const r = reviewExpectations(
+      [
+        { kind: 'text-visible', text: 'Coffee Mug' }, // on the home page already
+        { kind: 'text-appeared', text: 'Thank you' }, // never seen: a guess
+        { kind: 'text-visible', text: 'Cart (2)' }, // the crawl saw "Cart (0)"
+        { kind: 'text-visible', text: 'Total: ₹448' }, // the crawl saw "Total: ₹0"
+        { kind: 'url', pattern: '/', mode: 'includes' }, // true at the start URL
+      ],
+      shop,
+      'https://shop.test/',
+    );
+    expect(r.issues).toHaveLength(3);
+    expect(r.issues.join(' ')).toContain('"Coffee Mug" is already on the start page');
+    expect(r.issues.join(' ')).toContain('"Thank you" appears nowhere in the crawl');
+    expect(r.repaired.map((e) => (e.kind === 'text-visible' ? e.text : e.kind))).toEqual([
+      'visual',
+      'Cart (2)',
+      'Total: ₹448',
+    ]);
+  });
+
+  it('gives the planner one revision round with the findings, and uses the revised plan', async () => {
+    const weak = {
+      tests: [
+        {
+          title: 'Add two products',
+          goal: 'Add the Coffee Mug and the Notebook, then open the cart',
+          expectations: [{ kind: 'text-visible', value: 'Coffee Mug' }],
+        },
+      ],
+    };
+    const fixed = {
+      tests: [
+        {
+          title: 'Add two products',
+          goal: 'Add the Coffee Mug and the Notebook, then open the cart',
+          expectations: [
+            { kind: 'text-visible', value: 'Cart (2)' },
+            { kind: 'url-contains', value: '/cart' },
+          ],
+        },
+      ],
+    };
+    /** @type {string[]} */
+    const prompts = [];
+    let n = 0;
+    const llm = {
+      /** @param {{ prompt: string }} req */
+      generateObject: async (req) => {
+        prompts.push(req.prompt);
+        return /** @type {any} */ (n++ === 0 ? weak : fixed);
+      },
+    };
+    const planner = new LlmPlanner(/** @type {any} */ (llm), { maxTests: 3 }, silentLogger);
+    const tests = await planner.plan({ url: 'https://shop.test/' }, shop);
+    expect(prompts).toHaveLength(2);
+    expect(prompts[1]).toContain('"Coffee Mug" is already on the start page');
+    expect(tests[1]?.expectations.slice(0, 2)).toEqual([
+      { kind: 'text-visible', text: 'Cart (2)' },
+      { kind: 'url', pattern: '/cart', mode: 'includes' },
+    ]);
+  });
+
+  it('repairs what the revision still gets wrong, and never asks twice', async () => {
+    const stubborn = {
+      tests: [
+        {
+          title: 'Subscribe',
+          goal: 'Enter test@example.com in the newsletter form and click Subscribe',
+          expectations: [{ kind: 'text-appeared', value: 'Thank you' }],
+        },
+      ],
+    };
+    let calls = 0;
+    const llm = {
+      generateObject: async () => {
+        calls++;
+        return /** @type {any} */ (stubborn);
+      },
+    };
+    const planner = new LlmPlanner(/** @type {any} */ (llm), { maxTests: 3 }, silentLogger);
+    const [, t] = await planner.plan({ url: 'https://shop.test/' }, shop);
+    expect(calls).toBe(2);
+    expect(t?.expectations[0]?.kind).toBe('visual');
   });
 });

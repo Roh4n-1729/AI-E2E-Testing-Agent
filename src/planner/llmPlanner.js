@@ -52,7 +52,9 @@ Rules:
 - Every goal must be achievable by an agent that starts at the start URL and clicks/types like a real user.
 - Ground everything in the crawl summary. Never invent pages, button labels or credentials.
 - When a goal fills in a form, write the exact test values into the goal (e.g. name "Ada Lovelace", email "ada@example.com", address "1 Test Street"): the agent types only what it is given. Use obviously fake data, never real people, passwords or card numbers.
-- Check the EFFECT of every action in the goal, not only that the last page opened: if a test adds two products, expect both product names on the cart page (or the cart count that matches); if the page shows a number the action changes (count, total, quantity), check that number. A goal with three actions and one check on the final URL proves almost nothing.
+- Check the EFFECT of every action in the goal, not only that the last page opened: if a test adds two products, check the cart count that matches (the crawl shows "Cart (0)", so expect "Cart (2)") or ask a visual question about the cart; if the page shows a number the action changes (count, total, quantity), check that number. A goal with three actions and one check on the final URL proves almost nothing.
+- Text that is already on the start page proves nothing and is discarded by the judge: product names listed on the home page cannot prove they reached the cart.
+- Never guess the wording of a message you have not seen in the crawl (confirmations, thank-you notes, errors). Ask a visual yes/no question about it instead.
 - Do NOT plan destructive or irreversible actions (deleting, paying, sending messages, logging out) and do not plan flows that need a login you were not given.
 - Each test needs 1 to 3 expectations about the END state, and at least one MUST be false on the start page and true only after the goal succeeds (the judge discards expectations that already hold at the start, and a test with none of those is reported as inconclusive).
   - Never use generic words that are already on the page (button labels, the app name, "slide", "edit", "export").
@@ -126,6 +128,59 @@ export function toExpectation(e, siteMap) {
   }
 }
 
+/** @param {string} s */
+const norm = (s) => s.toLowerCase().replace(/\s+/g, ' ').trim();
+/** the same text with every number replaced, so "Cart (3)" matches the "Cart (0)" the crawler saw */
+const shape = (/** @type {string} */ s) => norm(s).replace(/\d+(?:[.,]\d+)*/g, '#');
+const SUCCESS_QUESTION =
+  'After the action, does the page show that it succeeded (a confirmation, an updated count or new content)?';
+
+/**
+ * Deterministic review of planned outcome checks against what the crawler actually saw. The judge would
+ * discard a check that already holds on the start page, and a text the crawl never showed is a guess.
+ * Returns the problems (for one revision round with the planner) and a repaired list to fall back on:
+ * start-page checks dropped, guessed texts turned into a yes/no question about the screenshots.
+ * @param {Expectation[]} exps @param {SiteMap} siteMap @param {string} startUrl
+ * @returns {{ issues: string[], repaired: Expectation[] }}
+ */
+export function reviewExpectations(exps, siteMap, startUrl) {
+  const strip = (/** @type {string} */ u) => u.replace(/\/+$/, '');
+  const start = siteMap.pages.find((p) => strip(p.url) === strip(startUrl)) ?? siteMap.pages[0];
+  const startText = norm(
+    [start?.title, start?.textExcerpt, ...(start?.buttons ?? [])].filter(Boolean).join(' '),
+  );
+  const seen = shape(
+    siteMap.pages
+      .flatMap((p) => [p.title, p.textExcerpt, ...(p.buttons ?? [])])
+      .filter(Boolean)
+      .join(' | '),
+  );
+  /** @type {string[]} */
+  const issues = [];
+  /** @type {Expectation[]} */
+  const repaired = [];
+  for (const e of exps) {
+    if (e.kind === 'text-visible' || e.kind === 'text-appeared') {
+      if (startText.includes(norm(e.text))) {
+        issues.push(`"${e.text}" is already on the start page, so it proves nothing`);
+        continue;
+      }
+      if (!seen.includes(shape(e.text))) {
+        issues.push(`"${e.text}" appears nowhere in the crawl: that wording is a guess`);
+        if (!repaired.some((r) => r.kind === 'visual'))
+          repaired.push({ kind: 'visual', question: SUCCESS_QUESTION });
+        continue;
+      }
+    }
+    if (e.kind === 'url' && e.mode === 'includes' && startUrl.includes(e.pattern)) {
+      issues.push(`the URL check "${e.pattern}" is already true at the start URL`);
+      continue;
+    }
+    repaired.push(e);
+  }
+  return { issues, repaired };
+}
+
 /**
  * Generates tests from the site map and description. A deterministic smoke test is always
  * included first (cheap, no LLM, catches a broken page even if planning is mediocre).
@@ -158,24 +213,69 @@ export class LlmPlanner {
       .filter((l) => l !== '')
       .join('\n');
 
-    const plan = await this.llm.generateObject({ schema: PlanSchema, system: SYSTEM, prompt });
+    let plan = await this.llm.generateObject({ schema: PlanSchema, system: SYSTEM, prompt });
+    let review = this.#build(plan.tests, target, siteMap, smoke);
 
+    // One revision round: the planner gets the reviewer's findings and returns the whole plan again.
+    if (review.issues.length) {
+      this.logger.info(
+        `planner: ${review.issues.length} weak check(s) found, asking the planner to fix them`,
+      );
+      const feedback = [
+        prompt,
+        '',
+        'A reviewer checked your previous plan against the crawl and found these problems:',
+        ...review.issues.map((i) => `- ${i}`),
+        'Return the complete plan again with every problem fixed. Keep the good tests as they are.',
+      ].join('\n');
+      try {
+        plan = await this.llm.generateObject({
+          schema: PlanSchema,
+          system: SYSTEM,
+          prompt: feedback,
+        });
+        review = this.#build(plan.tests, target, siteMap, smoke);
+      } catch (e) {
+        this.logger.warn(
+          `planner: revision failed (${/** @type {Error} */ (e).message}); repairing the first plan`,
+        );
+      }
+      for (const i of review.issues) this.logger.warn(`planner: repaired a weak check: ${i}`);
+    }
+    return review.tests;
+  }
+
+  /**
+   * Turn planned tests into TestCases: ground each check in the crawl, then review it. Tests use the
+   * repaired checks; `issues` says what was wrong, for the revision round.
+   * @param {z.infer<typeof PlanSchema>['tests']} planned @param {Target} target @param {SiteMap} siteMap
+   * @param {TestCase | undefined} smoke
+   */
+  #build(planned, target, siteMap, smoke) {
     /** @type {TestCase[]} */
     const tests = smoke ? [smoke] : [];
+    /** @type {string[]} */
+    const issues = [];
     const ids = new Set(tests.map((t) => t.id));
-    for (const raw of plan.tests.slice(0, this.opts.maxTests)) {
+    for (const raw of planned.slice(0, this.opts.maxTests)) {
       let id = slugify(raw.title);
       for (let n = 2; ids.has(id); n++) id = `${slugify(raw.title, 40)}-${n}`;
       /** @type {Expectation[]} */
-      const outcome = [];
+      const grounded = [];
       for (const e of raw.expectations) {
         const exp = toExpectation(e, siteMap);
-        if (exp) outcome.push(exp);
+        if (exp) grounded.push(exp);
         else
           this.logger.warn(
             `planner: dropped ungrounded expectation (${e.kind}: "${e.value}") in "${raw.title}"`,
           );
       }
+      // A test without a goal checks the start page itself (no action), so start-page text is its point.
+      const review = raw.goal.trim()
+        ? reviewExpectations(grounded, siteMap, target.url)
+        : { issues: [], repaired: grounded };
+      for (const i of review.issues) issues.push(`In "${raw.title}": ${i}`);
+      const outcome = review.repaired;
       if (outcome.length === 0)
         outcome.push({
           kind: 'visual',
@@ -195,6 +295,6 @@ export class LlmPlanner {
       ids.add(id);
       tests.push(parsed.data);
     }
-    return tests;
+    return { tests, issues };
   }
 }
