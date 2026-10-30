@@ -83,7 +83,9 @@ real CSS. Also never measured: the full-AI evaluation (planner + agent on the sh
 
 **Fri (Rohan, about 1.5 h, whenever ready)**
 
-- [ ] Sync the machine: double-click `scripts/finish-thursday.cmd` (cleanup, ci.yml, npm install, all checks); commit + push; CI green
+- [ ] Sync the machine (checked 10:45: all files match the verified copy, but `.github/workflows/ci.yml` is missing,
+      `@types/react` is not installed and two batches are uncommitted): `npm install`, save `ci.yml`, 3 commits, push, CI green.
+      Do not run `finish-thursday.cmd` again: it writes an older `ci.yml`
 - [ ] Presentation Builder run in light and dark (`npm run ui`). Use `--visual off` or mask the generated slides:
       AI-generated content differs every run by design. Paste the report → fixes
 - [ ] Full-AI evaluation once: `npm run eval -- --mode explore --heal --runs 1 --report docs/EVALUATION_AI.md` (costs tokens)
@@ -100,6 +102,8 @@ real CSS. Also never measured: the full-AI evaluation (planner + agent on the sh
 - [x] `npm run diagrams` as a Node script (works on Windows) and refresh all five diagrams
 - [x] `CLAUDE.md`, `docs/DECISIONS.md` (D1–D21), `docs/TRADEOFFS.md`
 - [ ] Fixes from Friday's real runs (first priority if any)
+- [ ] Optional: Sauce Demo (saucelabs/sample-app-web, MIT) built locally: 0-token real-app demo with login and
+      seeded bug users (problem_user, error_user, visual_user, performance_glitch_user, locked_out_user)
 
 **Sun**
 
