@@ -1,0 +1,75 @@
+name: ci
+on:
+  push:
+  pull_request:
+
+jobs:
+  check:
+    name: lint, types, unit + integration tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - run: npm run check
+      - run: npm run lint
+      - run: npm run format:check
+      - run: npm run ui:build
+      - run: npm test
+
+  e2e-demo:
+    # The product dogfooding itself in CI: a committed suite replays with no LLM and no API key.
+    # The clean shop must pass; the same suite must catch a seeded regression (the job fails if it doesn't).
+    name: committed suite against the seeded-bug shop
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - name: clean app passes
+        run: |
+          BUGS=none PORT=4300 node examples/buggy-shop/server.js &
+          sleep 1
+          node src/cli/main.js run http://localhost:4300 --suite examples/buggy-shop/suite.json --no-heal -c 3 -o .aie2e/clean
+      - name: a seeded regression is caught
+        run: |
+          BUGS=wrong-total PORT=4301 node examples/buggy-shop/server.js &
+          sleep 1
+          if node src/cli/main.js run http://localhost:4301 --suite examples/buggy-shop/suite.json --no-heal -c 3 -o .aie2e/buggy; then
+            echo "::error::the seeded bug was NOT detected"; exit 1
+          fi
+          echo "regression detected as expected"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: e2e-reports
+          path: .aie2e/*/runs/*/
+          retention-days: 7
+
+  action:
+    # The reusable action (action.yml at the repo root), tested the way another repo would use it.
+    name: the GitHub Action, used on the demo shop
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: start the demo shop (keeps running for the next steps)
+        run: |
+          BUGS=none PORT=4300 nohup node examples/buggy-shop/server.js > shop.log 2>&1 &
+          sleep 1
+      - id: e2e
+        uses: ./
+        with:
+          url: http://localhost:4300
+          suite: examples/buggy-shop/suite.json
+      - name: outputs are set
+        run: |
+          test "${{ steps.e2e.outputs.passed }}" = "7"
+          test "${{ steps.e2e.outputs.failed }}" = "0"
