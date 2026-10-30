@@ -47,11 +47,33 @@ jobs:
             echo "::error::the seeded bug was NOT detected"; exit 1
           fi
           echo "regression detected as expected"
+      - name: a third-party app (TodoMVC) passes, and a regression in it is caught
+        run: |
+          PORT=4400 node examples/todomvc/server.js &
+          BUGS=clear-broken PORT=4401 node examples/todomvc/server.js &
+          sleep 1
+          node src/cli/main.js run http://localhost:4400 --suite examples/todomvc/suite.json --no-heal -c 3 -o .aie2e/todomvc
+          if node src/cli/main.js run http://localhost:4401 --suite examples/todomvc/suite.json --no-heal -c 3 -o .aie2e/todomvc-buggy; then
+            echo "::error::the TodoMVC regression was NOT detected"; exit 1
+          fi
+          echo "regression detected as expected"
+      - name: Sauce Demo, a real app with login, passes for the standard user and fails for the problem user
+        env:
+          AIE2E_PASSWORD: secret_sauce # the public demo password printed on its login page
+        run: |
+          PORT=4500 node examples/saucedemo/server.js &
+          sleep 1
+          AIE2E_USERNAME=standard_user node src/cli/main.js run http://localhost:4500 --suite examples/saucedemo/suite.json --no-heal -c 3 -o .aie2e/sauce
+          if AIE2E_USERNAME=problem_user node src/cli/main.js run http://localhost:4500 --suite examples/saucedemo/suite.json --no-heal -c 3 -o .aie2e/sauce; then
+            echo "::error::the problem_user bugs were NOT detected"; exit 1
+          fi
+          echo "regressions detected as expected"
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: e2e-reports
           path: .aie2e/*/runs/*/
+          include-hidden-files: true # .aie2e starts with a dot; upload-artifact v4 skips those by default
           retention-days: 7
 
   action:
