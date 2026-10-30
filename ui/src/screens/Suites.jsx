@@ -658,6 +658,10 @@ function tidy(suite) {
           ),
         }
       : {}),
+    // known third-party noise (edited in JSON mode); kept as is so saving in the editor never drops it
+    ...(suite.ignore?.network?.length || suite.ignore?.console?.length
+      ? { ignore: suite.ignore }
+      : {}),
     tests: suite.tests.map((t) => ({
       ...(t.id ? { id: t.id } : {}),
       title: t.title,

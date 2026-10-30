@@ -277,6 +277,16 @@ on-theme on each screen and still drift, I also compare the same component acros
   `//ul[@data-testid='todo-list'][count(li)=1]`). The judge is only as strict as the expectation.
 - Code: `examples/todomvc/`, `tests/integration/todomvc.test.js`.
 
+### A real app with a login: Sauce Demo (added Fri 30 Oct)
+
+- Sauce Labs' demo shop (MIT) built locally; `npm run saucedemo` → http://localhost:4500.
+- Bugs depend on who logs in (`AIE2E_USERNAME`, password `secret_sauce`). Record as `standard_user` (6/6), then
+  replay as each broken user for 0 tokens: problem_user 1/6, error_user 2/6, visual_user 4/6 with diffs on every
+  screen, performance_glitch_user 6/6 with LCP warnings, locked_out_user stops at login.
+- **Declared noise:** a suite's `ignore: { network, console }` (or `AIE2E_IGNORE_NETWORK` / `_CONSOLE`) lists
+  third-party requests and console messages that should not fail guards (fonts, error reporters). They stay in
+  the evidence; the app's own errors still fail.
+
 ## 11 UI and live view
 
 - `npm run ui`: a Fastify server with a React 19 UI (Tailwind v4 tokens, Radix, sonner, yet-another-react-lightbox).
@@ -306,37 +316,45 @@ on-theme on each screen and still drift, I also compare the same component acros
 
 Full log: `docs/IMPROVEMENTS.md`.
 
-| What we saw                                             | What changed                     |
-| ------------------------------------------------------- | -------------------------------- |
-| A check passed on text that was already on the page     | vacuity                          |
-| A false pass on a "change" question from one screenshot | timeline + asymmetric trust      |
-| Blank start screenshots                                 | settle                           |
-| A heal was labelled by the agent's own claim            | the judge relabels heals         |
-| 1.04M tokens per run                                    | shortest-path rule               |
-| The planner guessed URLs                                | grounding                        |
-| LangGraph dropped Send branches                         | own limiter                      |
-| The judge caught a script-order bug in the demo shop    | fixed in the app, not the tester |
-| `.first()` picked a hidden copy of the text             | visible-only text checks         |
-| A theme bug lived in a dialog the test closed again     | audit every screen               |
-| A 16px→4px grid change looked "unchanged"               | strict pixel tolerance (0.02)    |
-| A leftover toast made visual runs flaky                 | hide live regions in captures    |
-| Hand-written login steps used CSS, replay assumed XPath | login steps default to CSS       |
-| The transparency regex treated orange as transparent    | only alpha 0 is transparent      |
-| "Other todo still visible" passed a broken Clear button | expectations check the effect    |
+| What we saw                                              | What changed                     |
+| -------------------------------------------------------- | -------------------------------- |
+| A check passed on text that was already on the page      | vacuity                          |
+| A false pass on a "change" question from one screenshot  | timeline + asymmetric trust      |
+| Blank start screenshots                                  | settle                           |
+| A heal was labelled by the agent's own claim             | the judge relabels heals         |
+| 1.04M tokens per run                                     | shortest-path rule               |
+| The planner guessed URLs                                 | grounding                        |
+| LangGraph dropped Send branches                          | own limiter                      |
+| The judge caught a script-order bug in the demo shop     | fixed in the app, not the tester |
+| `.first()` picked a hidden copy of the text              | visible-only text checks         |
+| A theme bug lived in a dialog the test closed again      | audit every screen               |
+| A 16px→4px grid change looked "unchanged"                | strict pixel tolerance (0.02)    |
+| A leftover toast made visual runs flaky                  | hide live regions in captures    |
+| Hand-written login steps used CSS, replay assumed XPath  | login steps default to CSS       |
+| The transparency regex treated orange as transparent     | only alpha 0 is transparent      |
+| "Other todo still visible" passed a broken Clear button  | expectations check the effect    |
+| First GitHub CI run: every agent test errored            | Linux Chrome without its sandbox |
+| Fonts and an error reporter failed every Sauce Demo test | suite-declared `ignore` noise    |
 
 ## 14 What's next (deadline Mon 2 Nov)
 
-- **Fri:**
-  - ~~theme audit on every screen~~, ~~cross-page consistency~~, ~~visible-only text checks~~: done;
-  - first real run on the AI Presentation Builder in light and dark, and fixes from it;
-  - rehearse the demo story on the real app.
-- **Sat:** ~~visual baselines~~, ~~test suites in the UI~~, ~~login flows~~: all done Friday morning. AI triage of
-  visual diffs only if time.
-- **Sat items, done Fri:** ~~`--theme-from`~~, ~~typed attribute contract (`.d.ts`)~~, ~~the GitHub Action~~,
-  ~~TodoMVC~~, ~~diagrams~~, ~~DECISIONS / TRADEOFFS / CLAUDE.md~~.
-- **Sun:** the README final pass, demo script.
-- **Mon:** final evaluation runs and the demo GIF. Nothing new.
-- **Cut order:** Figma/reference-site comparison → Playwright spec export → MCP server → AI diff triage.
+- **Thu + Fri (done):** everything in chapters 01 to 13, three demo apps (seeded-bug shop, TodoMVC, Sauce Demo),
+  the GitHub Action, the first CI run fixed, decision docs, the demo script (`docs/DEMO.md`), the README pass.
+- **Left, Rohan:** push the CI fix and see run #2 green; one full-AI evaluation run; rehearse with `docs/DEMO.md`.
+- **Left, Claude:** fix whatever those two runs show; add the AI numbers and "green in CI" to the README.
+- **Sun:** demo GIF, buffer. **Mon:** final run, transcripts, submit. Nothing new.
+- **Dropped:** the Presentation Builder run (its own AI spends tokens on every test; Sauce Demo covers the
+  real-app-with-login case).
+- **Cut, and why:** each one is either covered by something we have, or would add risk without changing the demo:
+
+| Cut                       | Why                                                                                                   |
+| ------------------------- | ----------------------------------------------------------------------------------------------------- |
+| Design-token file import  | Themes are read from the production CSS, which works on every app; a token file is an optional extra. |
+| AI review of visual diffs | Puts an LLM back into a deterministic check; a human approves or rejects in the UI instead.           |
+| Comparing two runs        | Baselines and recordings already carry history; a side-by-side view is presentation, not capability.  |
+| Dockerfile                | The GitHub Action and `npm ci` cover CI; a container adds a build to maintain.                        |
+| Playwright `.spec` export | Suites already replay with no LLM and run in CI; exporting would create a second format to keep true. |
+| MCP server                | Lets other AI tools call ours; nice, but no requirement or demo step needs it.                        |
 
 ## Glossary
 

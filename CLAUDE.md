@@ -21,11 +21,13 @@ npm test             # vitest; browser tests skip if Chromium is missing
 npm run eval         # seeded-bug evaluation, writes docs/EVALUATION.md (no LLM)
 npm run shop         # demo app with switchable bugs, :4300
 npm run todomvc      # third-party demo app, :4400
+npm run saucedemo    # Sauce Demo with login, :4500 (AIE2E_USERNAME=<user>, AIE2E_PASSWORD=secret_sauce)
 npm run ui           # web UI, :4173
 npm run diagrams     # docs/diagrams/*.mmd -> PNG
 ```
 
-Browser tests in a container running as root need `AIE2E_CHROME_ARGS="--no-sandbox"`.
+On Linux the agent's Chrome runs without Chrome's sandbox (like Playwright's own launches), so CI and root
+containers work with no flags; `AIE2E_CHROME_SANDBOX=true` keeps it.
 
 ## Rules (each one is tested; do not break them)
 
@@ -59,13 +61,16 @@ Browser tests in a container running as root need `AIE2E_CHROME_ARGS="--no-sandb
 
 - Done: record/replay/heal, strict judge, crawler, planner, LangGraph, web UI, suites, login, quality,
   theme (every screen, consistency, `--theme-from`), visual baselines, GitHub Action, 3 demo apps
-  (buggy-shop eval 12/12, TodoMVC 6/6), decision docs.
-- Pending: real runs on the Presentation Builder; full-AI eval (`--mode explore --heal`); README final
-  pass; demo GIF.
+  (buggy-shop eval 12/12, TodoMVC 6/6, Sauce Demo: every broken user caught), decision docs, CI green
+  pending the push of the Linux Chrome fix.
+- Pending: CI run #2 (fix pushed by Rohan); full-AI eval (`--mode explore --heal`); demo rehearsal with
+  `docs/DEMO.md`; demo GIF. The Presentation Builder run was dropped (its own AI spends tokens per test).
 
 ## Gotchas
 
 - zod v4: nested object defaults need `.prefault({})`, not `.default({})`.
 - LangGraph `maxConcurrency: 1` drops `Send` branches; the pipeline works around it.
 - `pixelmatch` is pinned to 7.2.0 (8.0 was too fresh when chosen).
-- Vendored third-party builds (`examples/todomvc/app`) are excluded from prettier and eslint; never reformat them.
+- Vendored third-party builds (`examples/todomvc/app`, `examples/saucedemo/app`) are excluded from prettier and
+  eslint; never reformat them.
+- Third-party noise on a demo or real app goes in the suite's `ignore` block, never into code.

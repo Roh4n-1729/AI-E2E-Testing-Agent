@@ -329,8 +329,10 @@ export function RunView({ id }) {
   const running = info.status === 'running';
   const rerun = async () => {
     try {
-      // a UI suite is stored by path; the API takes its name
-      const { suite, suiteName, ...rest } = info.options;
+      // a UI suite is stored by path; the API takes its name. "Record again" and "Plan again" were
+      // one-off requests for that run: running it again should replay what it recorded, not redo it.
+      // eslint-disable-next-line no-unused-vars
+      const { suite, suiteName, rerecord, replan, ...rest } = info.options;
       if (suite && !suiteName)
         throw new Error('This run used a suite file from the command line: run it again there.');
       const { runId } = await api.startRun(suiteName ? { ...rest, suite: suiteName } : rest);

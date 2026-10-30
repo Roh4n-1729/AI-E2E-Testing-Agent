@@ -29,6 +29,7 @@
     "eval": "node scripts/evaluate.js",
     "shop": "node examples/buggy-shop/server.js",
     "todomvc": "node examples/todomvc/server.js",
+    "saucedemo": "node examples/saucedemo/server.js",
     "graph": "node scripts/graph.js"
   },
   "dependencies": {

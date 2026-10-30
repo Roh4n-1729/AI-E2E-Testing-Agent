@@ -663,7 +663,21 @@ footer { color: var(--muted); font-size: 0.85rem; border-top: 1px solid var(--li
       <p>The shop was written by the same people as the tester, so it could be "tuned" to it. <code>examples/todomvc</code> serves the untouched React TodoMVC production build (MIT). Its 6-test suite replays with no LLM; a regression is a tiny script added to the page as it is served (the build itself is never edited).</p>
       <div class="facts"><span class="pill pass">6/6 on the real app</span><span class="pill pass">clear-broken → only "Clear completed" fails</span><span class="pill pass">edit-lost → only "Edit" fails</span><span class="pill warn">real a11y finding: unlabelled checkboxes</span></div>
       <p class="why"><b>Lesson from writing it:</b> "Walk the dog is visible" also passes when Clear completed does nothing. A good expectation checks the <i>effect</i>: the list has exactly one todo (<code>//ul[@data-testid='todo-list'][count(li)=1]</code>). The judge is only as strict as the expectation, which is why an AI-planned test needs a human glance before it is committed.</p>
-      <div class="files"><code>examples/buggy-shop/server.js</code><code>examples/buggy-shop/bugs.json</code><code>examples/buggy-shop/suite.json</code><code>examples/todomvc/server.js</code><code>examples/todomvc/suite.json</code><code>scripts/evaluate.js</code><code>docs/EVALUATION.md</code></div>
+      <h3>A real app with a login: Sauce Demo</h3>
+      <p>Sauce Labs' demo shop is open source, so it runs locally from its own build. Its bugs are switched by <b>who logs in</b>: record and approve screenshots as <code>standard_user</code>, then change <code>AIE2E_USERNAME</code> and replay the same suite for 0 tokens.</p>
+      <div class="scroll-x"><table>
+        <thead><tr><th>User</th><th>Passed</th><th>Caught by</th></tr></thead>
+        <tbody>
+          <tr><td>standard_user</td><td>6/6</td><td>approves the baselines</td></tr>
+          <tr><td>problem_user</td><td>1/6</td><td>wrong photos, sort ignored, remove and last name broken, visual diffs</td></tr>
+          <tr><td>error_user</td><td>2/6</td><td>the app's own JavaScript errors</td></tr>
+          <tr><td>visual_user</td><td>4/6</td><td>wrong photo, random prices, every screenshot differs</td></tr>
+          <tr><td>performance_glitch_user</td><td>6/6</td><td>LCP ≈ 6 s warnings: slow, not broken</td></tr>
+          <tr><td>locked_out_user</td><td>–</td><td>the run stops at login, with the reason</td></tr>
+        </tbody>
+      </table></div>
+      <p class="why"><b>Third-party noise is declared, not hidden.</b> Real apps load fonts, analytics and error reporters that fail offline or with placeholder tokens. A suite's <code>ignore: { network, console }</code> lists them; they still appear in the evidence, and the app's own errors (error_user) still fail tests.</p>
+      <div class="files"><code>examples/saucedemo/</code><code>tests/integration/saucedemo.test.js</code><code>examples/buggy-shop/server.js</code><code>examples/buggy-shop/bugs.json</code><code>examples/buggy-shop/suite.json</code><code>examples/todomvc/server.js</code><code>examples/todomvc/suite.json</code><code>scripts/evaluate.js</code><code>docs/EVALUATION.md</code></div>
     </section>
 
     <!-- 11 -->
@@ -736,12 +750,23 @@ footer { color: var(--muted); font-size: 0.85rem; border-top: 1px solid var(--li
       <div class="ch-head"><div class="eyebrow">Chapter 14 · plan to Mon 2 Nov</div><h2>What's next</h2></div>
       <div class="days">
         <div class="day done"><b>Thu</b><span>Agent loop, judge, planner, replay/heal, crawler, quality evidence, live view, UI, LangGraph, suites, evaluation, theme conformance v1. <i>Done.</i></span></div>
-        <div class="day"><b>Fri</b><span><s>Theme audit on every screen</s>, <s>cross-page consistency</s>, <s>visible-only text checks</s>: done. Left: first real run on the AI Presentation Builder in light and dark, fix what it teaches us, rehearse the demo story.</span></div>
-        <div class="day done"><b>Sat</b><span><s>Visual baselines</s>, <s>test suites in the UI</s>, <s>login flows</s>: all done Friday morning. AI triage of visual diffs only if time.</span></div>
-        <div class="day now"><b>Sun</b><span>Typed attribute contract (<code>.d.ts</code> for JSX); GitHub Action; a run on TodoMVC; README.</span></div>
-        <div class="day"><b>Mon</b><span>Final evaluation runs, demo GIF. Nothing new.</span></div>
+        <div class="day done"><b>Fri</b><span>Theme on every screen, consistency, visual baselines, suites in the UI, login, <code>--theme-from</code>, JSX types, the GitHub Action, TodoMVC, Sauce Demo, first CI run fixed, decision docs, demo script, README pass. <i>Done.</i></span></div>
+        <div class="day now"><b>Next</b><span>Rohan: push the CI fix (run #2 green), one full-AI evaluation run, rehearse with <code>docs/DEMO.md</code>. Claude: fix what those runs show, AI numbers into the README.</span></div>
+        <div class="day"><b>Sun</b><span>Demo GIF, buffer.</span></div>
+        <div class="day"><b>Mon</b><span>Final run, transcripts, submit. Nothing new.</span></div>
       </div>
-      <p class="why"><b>Cut order if behind:</b> Figma/reference-site comparison → Playwright spec export → MCP server → AI diff triage. <b>Never cut:</b> strict judge, record/replay/heal, live view, theme conformance v1, evaluation, honest limits.</p>
+      <div class="scroll-x"><table>
+        <thead><tr><th>Cut</th><th>Why</th></tr></thead>
+        <tbody>
+          <tr><td>Design-token file import</td><td>Themes are read from the production CSS, which works on every app; a token file is an optional extra.</td></tr>
+          <tr><td>AI review of visual diffs</td><td>Puts an LLM back into a deterministic check; a human approves or rejects in the UI.</td></tr>
+          <tr><td>Comparing two runs</td><td>Baselines and recordings already carry history; a side-by-side view is presentation, not capability.</td></tr>
+          <tr><td>Dockerfile</td><td>The GitHub Action and <code>npm ci</code> cover CI; a container adds a build to maintain.</td></tr>
+          <tr><td>Playwright <code>.spec</code> export</td><td>Suites already replay with no LLM and run in CI; a second format would have to be kept true.</td></tr>
+          <tr><td>MCP server</td><td>Lets other AI tools call ours; no requirement or demo step needs it.</td></tr>
+        </tbody>
+      </table></div>
+      <p class="why"><b>Dropped:</b> the Presentation Builder run (its own AI spends tokens on every test; Sauce Demo covers the real-app-with-login case). <b>Never cut:</b> strict judge, record/replay/heal, live view, theme conformance, evaluation, honest limits.</p>
     </section>
 
     <section class="ch" id="glossary">

@@ -63,3 +63,33 @@ describe('util', () => {
     expect(peak).toBeLessThanOrEqual(2);
   });
 });
+
+describe('agent Chrome flags', () => {
+  it('matches Playwright on Linux (no Chrome sandbox) unless asked, and leaves other platforms alone', async () => {
+    const { agentChromeArgs } = await import('../src/browser/chrome.js');
+    expect(agentChromeArgs({ chromeArgs: [] }, 'linux')).toEqual(['--no-sandbox']);
+    expect(agentChromeArgs({ chromeArgs: ['--no-sandbox'] }, 'linux')).toEqual(['--no-sandbox']);
+    expect(agentChromeArgs({ chromeArgs: [], chromeSandbox: true }, 'linux')).toEqual([]);
+    expect(agentChromeArgs({ chromeArgs: ['--x'] }, 'win32')).toEqual(['--x']);
+    expect(agentChromeArgs({ chromeArgs: [] }, 'darwin')).toEqual([]);
+  });
+});
+
+describe('known third-party noise', () => {
+  it('reads AIE2E_IGNORE_NETWORK / AIE2E_IGNORE_CONSOLE as comma-separated lists, keeping the favicon default', () => {
+    const c = loadConfig(
+      {},
+      {
+        AIE2E_IGNORE_NETWORK: 'sentry\\.io, fonts\\.gstatic\\.com',
+        AIE2E_IGNORE_CONSOLE: 'ResizeObserver loop',
+      },
+    );
+    expect(c.judge.ignoreNetworkPatterns).toEqual([
+      'favicon\\.ico',
+      'sentry\\.io',
+      'fonts\\.gstatic\\.com',
+    ]);
+    expect(c.judge.ignoreConsolePatterns).toEqual(['ResizeObserver loop']);
+    expect(loadConfig({}, {}).judge.ignoreNetworkPatterns).toEqual(['favicon\\.ico']);
+  });
+});

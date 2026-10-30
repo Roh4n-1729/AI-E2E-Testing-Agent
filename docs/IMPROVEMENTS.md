@@ -6,6 +6,71 @@ teaches us something: it is the honest history of how the judge got stricter.
 
 ---
 
+## 2026-10-30 (Friday, late morning): Sauce Demo, and declared third-party noise
+
+### Why
+
+Testing the AI path on the Presentation Builder spends that app's own tokens on every run. Sauce Labs' demo shop
+is open source (MIT), so it now runs locally from a build of its unmodified source: a real app we did not
+write, with a login, whose bugs are switched by the user you log in as.
+
+### Results (committed suite, 0 tokens)
+
+standard_user 6/6; problem_user 1/6; error_user 2/6; visual_user 4/6 (plus diffs on every screen);
+performance_glitch_user 6/6 with LCP warnings; locked_out_user stops at login. Details in `docs/EVALUATION.md`.
+
+### Found while building it
+
+- **Third-party noise failed every test.** Google Fonts (blocked offline), the Backtrace error reporter with the
+  upstream placeholder token, and the Backtrace SDK's deprecated `unload` handler. The judge was right to see them,
+  but they are not this app's bugs. New: a suite's `ignore: { network, console }` (regexes) and
+  `AIE2E_IGNORE_NETWORK` / `AIE2E_IGNORE_CONSOLE`. Ignored requests stay in the evidence and the run logs what was
+  declared; nothing is ignored silently. `error_user`'s own JavaScript errors still fail tests.
+- **The UI suite editor would have dropped `ignore` on save** (its `tidy()` keeps only known fields). Fixed.
+- The `unload` violation appeared on `127.0.0.1` but not on `localhost`: Chrome's deprecation rollout differs by
+  origin. Declaring it in the suite makes both behave the same.
+
+### Verified
+
+`tests/integration/saucedemo.test.js` (standard 6/6, problem_user fails the photo, sort and order tests, locked-out
+stops at login, the password appears nowhere in the report); unit test for the env lists; CI step.
+
+---
+
+## 2026-10-30 (Friday, 11:00): first CI run on GitHub, all three jobs red
+
+### What we saw
+
+Run #1 on GitHub: the check job exited 1, both e2e jobs exited 2 (2 = tests errored, not failed), and the
+report upload found no files. Reproduced in a clean copy with a fresh `npm ci`: types, lint, prettier and the UI
+build all pass; every browser test errors with `waiting for dynamic debugging port in chrome-err.log`.
+
+### Cause
+
+Two bugs, neither in the test logic:
+
+1. **Chrome never started on Linux CI.** Playwright launches Chromium with `--no-sandbox` by default
+   (`chromiumSandbox: false`); Stagehand launches Chrome itself and does not. GitHub's Ubuntu runners restrict the
+   user namespaces Chrome's sandbox needs, so the agent's browser died at launch. The crawler (plain Playwright)
+   was fine, which is why it looked like "the agent" was broken. Our own sandbox had been hiding this with
+   `AIE2E_CHROME_ARGS=--no-sandbox`.
+2. **Reports were never uploaded:** `actions/upload-artifact@v4` skips hidden folders by default, and every report
+   lives under `.aie2e/`.
+
+### Fix
+
+- `agentChromeArgs()` (`src/browser/chrome.js`): on Linux the agent's Chrome gets `--no-sandbox`, matching
+  Playwright; `AIE2E_CHROME_SANDBOX=true` keeps the sandbox. Windows and macOS are unchanged.
+- `include-hidden-files: true` on the CI upload.
+
+### Verified
+
+- The full suite and every CI e2e command now pass in a clean copy **without** the sandbox workaround: shop clean
+  7/7 (exit 0), shop wrong-total 6/7 (exit 1), TodoMVC 6/6 (exit 0), TodoMVC clear-broken 5/6 (exit 1).
+- Unit test for the flag on linux / win32 / darwin and with the opt-out.
+
+---
+
 ## 2026-10-30 (Friday midday): a third-party app, decision docs, diagrams
 
 ### TodoMVC, an app we did not write

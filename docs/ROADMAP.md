@@ -61,60 +61,48 @@ toggling the class or `data-theme` on `<html>`, or the app's own toggle) and re-
 plus new: `data-aie2e-mask`, `data-aie2e-component`, `data-aie2e-theme`. Shipped with a `.d.ts` so React/JSX
 props autocomplete and type-check.
 
-## Schedule (deadline Mon 2 Nov) · re-evaluated Fri 30 Oct, 04:00
+## Schedule (deadline Mon 2 Nov) · re-evaluated Fri 30 Oct, 11:30
 
-### Status check (verified against the code)
+### Status check (verified against the code and Rohan's folder)
 
-Built and tested (97 tests, eval 12/12, 0 false positives, 0/70 visual drift):
+Built and tested (105 tests; buggy-shop 12/12 with 0 false positives; TodoMVC 6/6 and 2 regressions caught;
+Sauce Demo: every broken user caught for the right reason; 0 tokens for all of it):
 
 - Thu: agent loop, strict judge, planner, crawler, parallel runs, reports, record/replay/heal, cursor, local UI,
-  quality evidence, app hints, LangGraph, suites + export, CI workflow, seeded-bug shop + eval, theme conformance v1.
-- Fri (night): theme audit on every screen, cross-page consistency, visible-only text checks.
-- Sat items, done early: visual baselines + approve/reject, test suites in the UI, login flows.
+  quality evidence, app hints, LangGraph, suites + export, CI workflow, seeded-bug shop + eval, theme v1.
+- Fri: theme on every screen, consistency, visible-only checks, visual baselines + review, suites in the UI,
+  login, `--theme-from`, JSX attribute types, GitHub Action, TodoMVC, Sauce Demo, suite `ignore`, diagrams,
+  DECISIONS / TRADEOFFS / CLAUDE.md, first-CI-run fixes.
 
-Done on Rohan's machine: repo pushed to GitHub (2 commits). Not verifiable right now: obsolete files deleted,
-`ci.yml` in `.github/workflows/`, `npm install` after the new dependencies (pixelmatch, pngjs), CI green.
+Rohan's folder (11:30): every file matches the tested copy, **except** `.github/workflows/ci.yml` (old version).
+Pushed: 7 commits up to "docs: decisions, trade-offs…". **Not committed yet:** the Linux Chrome fix, Sauce Demo,
+suite `ignore`. CI run #1 failed (fixed, not pushed). `@types/react` not installed locally. No AI run since Thu.
 
-**Never run on a real app yet (the biggest risk):** everything built since Thursday afternoon with the real LLM
-agent: theme audits between agent steps, visual comparison of agent runs, login on a real site, consistency on
-real CSS. Also never measured: the full-AI evaluation (planner + agent on the shop).
+### What is left
 
-### Re-plan
+**Rohan (blocking, in this order)**
 
-**Fri (Rohan, about 1.5 h, whenever ready)**
+- [ ] Replace `.github/workflows/ci.yml` with the latest one, `npm install`, commit, push → CI run #2 green
+- [ ] Full-AI evaluation once (step 4), command below the list
+- [ ] Rehearse the demo with `docs/DEMO.md`; record the GIF (Sun)
+- [ ] Mon: final run, save chat transcripts, submit
 
-- [ ] Sync the machine (checked 10:45: all files match the verified copy, but `.github/workflows/ci.yml` is missing,
-      `@types/react` is not installed and two batches are uncommitted): `npm install`, save `ci.yml`, 3 commits, push, CI green.
-      Do not run `finish-thursday.cmd` again: it writes an older `ci.yml`
-- [ ] Presentation Builder run in light and dark (`npm run ui`). Use `--visual off` or mask the generated slides:
-      AI-generated content differs every run by design. Paste the report → fixes
-- [ ] Full-AI evaluation once: `npm run eval -- --mode explore --heal --runs 1 --report docs/EVALUATION_AI.md` (costs tokens)
-- [ ] Rehearse the demo: replay at 0 tokens, a forced heal, a wrong expectation failing, a visual change approved, a theme leak
+```bash
+npm run eval -- --mode explore --heal --runs 1 --bugs dead-button,wrong-total,fake-subscribe,no-validation,console-error,dark-leak --report docs/EVALUATION_AI.md
+```
 
-**Sat (mostly Claude)**
+**Claude**
 
-- [x] Cross-product theme conformance: `--theme-from <url>` (reference product's tokens, values not names); found and fixed the transparency bug
-
-- [x] Third demo app: TodoMVC (React build, MIT) with a 6-test suite: 6/6 on replay, 2 injected regressions each caught by the right test; found a real a11y issue in TodoMVC
-- [x] Attribute types `.d.ts` for JSX: data-testid family, aria-busy, data-aie2e-hint / -reveal / -mask / -component /
-      -ignore-theme (`data-aie2e-theme` dropped: themes are discovered from the CSS, nothing to declare)
-- [x] Reusable GitHub Action (`action.yml`, composite) for other repos; job summary, outputs, report artifact; CI job uses it on the shop
-- [x] `npm run diagrams` as a Node script (works on Windows) and refresh all five diagrams
-- [x] `CLAUDE.md`, `docs/DECISIONS.md` (D1–D21), `docs/TRADEOFFS.md`
-- [ ] Fixes from Friday's real runs (first priority if any)
-- [ ] Optional: Sauce Demo (saucelabs/sample-app-web, MIT) built locally: 0-token real-app demo with login and
-      seeded bug users (problem_user, error_user, visual_user, performance_glitch_user, locked_out_user)
-
-**Sun**
-
-- [ ] README final pass (features, eval incl. full-AI numbers, honest limits)
-- [ ] Demo script + GIF (needs Rohan's screen)
+- [ ] Fixes from the AI run and CI run #2 (first priority when they arrive)
+- [x] Demo script `docs/DEMO.md` (Sauce Demo for the AI part: 0 tokens for the app itself)
+- [x] README pass: quick start for 3 demo apps, evaluation, honest limits, library licences, Flowtrace link
+- [ ] README: add the AI-path numbers and "green in CI" once they are in
+- [x] Remove `scripts/finish-thursday.*` (obsolete; writes an old ci.yml), refresh KICKOFF demo story
 - [ ] Optional: static showcase on Vercel (study guide, sample report, GIF)
-- [ ] Buffer for anything the real runs exposed
 
-**Mon:** final evaluation runs, one final run, chat transcripts. No new features.
+**Dropped:** the Presentation Builder run (its own AI costs tokens on every test; Sauce Demo covers the real-app
+case). Optional later if a demo mode lands in that app.
 
-**Cut (decided):** DTCG token-file override, AI triage of visual diffs, compare two runs, Dockerfile.
-
-**Cut order if behind:** reference-site/Figma comparison → Playwright spec export → MCP server → AI diff triage.
-**Never cut:** strict judge, record/replay/heal, live view, theme conformance v1, evaluation table, honest limits.
+**Cut (decided):** DTCG token-file override, AI triage of visual diffs, compare two runs, Dockerfile, Playwright
+spec export, MCP server.
+**Never cut:** strict judge, record/replay/heal, live view, theme conformance, evaluation table, honest limits.

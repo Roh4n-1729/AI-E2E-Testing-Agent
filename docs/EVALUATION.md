@@ -60,3 +60,22 @@ script added to the page when it is served, never by editing the build.
 Each test that changes the list also checks how many todos are left
 (`xpath=//ul[@data-testid='todo-list'][count(li)=1]`), so a button that silently does nothing cannot pass on
 "the other todo is still visible". Verified by `tests/integration/todomvc.test.js`.
+
+## A real app with a login: Sauce Demo (Swag Labs)
+
+`examples/saucedemo` serves Sauce Labs' demo shop, built from its unmodified MIT source. Its bugs are built in
+and depend on who logs in, so one suite and one approved set of screenshots (recorded as `standard_user`)
+measure every kind of bug with no seeding of our own. Committed suite, healing off, 0 tokens:
+
+| User                      | Passed | What failed, and why                                                                                      |
+| ------------------------- | ------ | --------------------------------------------------------------------------------------------------------- |
+| `standard_user`           | 6/6    | nothing; approves the baselines                                                                           |
+| `problem_user`            | 1/6    | photos wrong, sort ignored, remove does nothing, last name overwrites first name; 12–20% of pixels differ |
+| `error_user`              | 2/6    | the app's own JavaScript errors on sort, remove, last name and finish                                     |
+| `visual_user`             | 4/6    | wrong first photo, random prices; every screenshot differs (1.4–3.7% of pixels)                           |
+| `performance_glitch_user` | 6/6    | passes, with a Web Vitals warning on every test (LCP about 6 s, budget 4 s): slow, not broken             |
+| `locked_out_user`         | n/a    | the run stops at login with the reason and a screenshot, before any test runs                             |
+
+Google Fonts, the Backtrace error reporter and its SDK's deprecated `unload` handler are declared in the suite's
+`ignore` block: third-party noise on every page, still visible in the evidence. Verified by
+`tests/integration/saucedemo.test.js` and a CI step (standard user must pass, problem user must fail).

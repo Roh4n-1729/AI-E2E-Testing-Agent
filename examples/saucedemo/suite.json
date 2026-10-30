@@ -1,0 +1,273 @@
+{
+  "description": "Swag Labs (Sauce Demo): log in, browse six products, sort them, add and remove products, check out with name and postal code, and see the order total.",
+  "auth": {
+    "loginUrl": "/",
+    "successUrl": "/inventory.html"
+  },
+  "ignore": {
+    "network": ["fonts\\.googleapis\\.com", "fonts\\.gstatic\\.com", "backtrace\\.io"],
+    "console": ["Permissions policy violation: unload"]
+  },
+  "tests": [
+    {
+      "title": "Every product shows its own photo",
+      "startUrl": "/inventory.html",
+      "expectations": [
+        {
+          "kind": "text-visible",
+          "text": "Products"
+        },
+        {
+          "kind": "selector-visible",
+          "selector": "xpath=//img[@alt='Sauce Labs Backpack' and contains(@src,'sauce-backpack')]"
+        },
+        {
+          "kind": "selector-visible",
+          "selector": "xpath=//img[@alt='Sauce Labs Bike Light' and contains(@src,'bike-light')]"
+        },
+        {
+          "kind": "selector-visible",
+          "selector": "xpath=//img[@alt='Sauce Labs Onesie' and contains(@src,'red-onesie')]"
+        }
+      ]
+    },
+    {
+      "title": "Sort products by price, low to high",
+      "goal": "Sort the products by price from low to high.",
+      "startUrl": "/inventory.html",
+      "expectations": [
+        {
+          "kind": "selector-visible",
+          "selector": "xpath=(//div[@data-test='inventory-item-price'])[1][normalize-space()='$7.99']"
+        },
+        {
+          "kind": "selector-visible",
+          "selector": "xpath=(//div[@data-test='inventory-item-price'])[6][normalize-space()='$49.99']"
+        }
+      ],
+      "steps": [
+        {
+          "kind": "act",
+          "description": "Choose \"Price (low to high)\"",
+          "selector": "[data-test=\"product-sort-container\"]",
+          "method": "selectOption",
+          "arguments": ["lohi"]
+        }
+      ]
+    },
+    {
+      "title": "Add two products to the cart",
+      "goal": "Add the Sauce Labs Backpack and the Sauce Labs Bike Light to the cart, then open the cart.",
+      "startUrl": "/inventory.html",
+      "expectations": [
+        {
+          "kind": "url",
+          "pattern": "/cart.html"
+        },
+        {
+          "kind": "selector-visible",
+          "selector": "xpath=//span[@data-test='shopping-cart-badge'][normalize-space()='2']"
+        },
+        {
+          "kind": "selector-visible",
+          "selector": "xpath=//div[@data-test='cart-list'][count(.//div[@data-test='inventory-item'])=2]"
+        }
+      ],
+      "steps": [
+        {
+          "kind": "act",
+          "description": "Add the Sauce Labs Backpack",
+          "selector": "[data-test=\"add-to-cart-sauce-labs-backpack\"]",
+          "method": "click"
+        },
+        {
+          "kind": "act",
+          "description": "Add the Sauce Labs Bike Light",
+          "selector": "[data-test=\"add-to-cart-sauce-labs-bike-light\"]",
+          "method": "click"
+        },
+        {
+          "kind": "act",
+          "description": "Open the cart",
+          "selector": "[data-test=\"shopping-cart-link\"]",
+          "method": "click"
+        }
+      ]
+    },
+    {
+      "title": "Remove a product before opening the cart",
+      "goal": "Add the Backpack and the Bike Light, remove the Backpack again, then open the cart.",
+      "startUrl": "/inventory.html",
+      "expectations": [
+        {
+          "kind": "text-visible",
+          "text": "Sauce Labs Bike Light"
+        },
+        {
+          "kind": "selector-visible",
+          "selector": "xpath=//div[@data-test='cart-list'][count(.//div[@data-test='inventory-item'])=1]"
+        }
+      ],
+      "steps": [
+        {
+          "kind": "act",
+          "description": "Add the Sauce Labs Backpack",
+          "selector": "[data-test=\"add-to-cart-sauce-labs-backpack\"]",
+          "method": "click"
+        },
+        {
+          "kind": "act",
+          "description": "Add the Sauce Labs Bike Light",
+          "selector": "[data-test=\"add-to-cart-sauce-labs-bike-light\"]",
+          "method": "click"
+        },
+        {
+          "kind": "act",
+          "description": "Remove the Backpack",
+          "selector": "[data-test=\"remove-sauce-labs-backpack\"]",
+          "method": "click"
+        },
+        {
+          "kind": "act",
+          "description": "Open the cart",
+          "selector": "[data-test=\"shopping-cart-link\"]",
+          "method": "click"
+        }
+      ]
+    },
+    {
+      "title": "Order overview shows the right total",
+      "goal": "Add the Sauce Labs Backpack, check out as Ada Lovelace, postal code 560001, and continue to the overview.",
+      "startUrl": "/inventory.html",
+      "expectations": [
+        {
+          "kind": "url",
+          "pattern": "/checkout-step-two.html"
+        },
+        {
+          "kind": "text-visible",
+          "text": "Item total: $29.99"
+        },
+        {
+          "kind": "text-visible",
+          "text": "Total: $32.39"
+        }
+      ],
+      "steps": [
+        {
+          "kind": "act",
+          "description": "Add the Sauce Labs Backpack",
+          "selector": "[data-test=\"add-to-cart-sauce-labs-backpack\"]",
+          "method": "click"
+        },
+        {
+          "kind": "act",
+          "description": "Open the cart",
+          "selector": "[data-test=\"shopping-cart-link\"]",
+          "method": "click"
+        },
+        {
+          "kind": "act",
+          "description": "Click Checkout",
+          "selector": "[data-test=\"checkout\"]",
+          "method": "click"
+        },
+        {
+          "kind": "act",
+          "description": "Type the first name",
+          "selector": "[data-test=\"firstName\"]",
+          "method": "fill",
+          "arguments": ["Ada"]
+        },
+        {
+          "kind": "act",
+          "description": "Type the last name",
+          "selector": "[data-test=\"lastName\"]",
+          "method": "fill",
+          "arguments": ["Lovelace"]
+        },
+        {
+          "kind": "act",
+          "description": "Type the postal code",
+          "selector": "[data-test=\"postalCode\"]",
+          "method": "fill",
+          "arguments": ["560001"]
+        },
+        {
+          "kind": "act",
+          "description": "Click Continue",
+          "selector": "[data-test=\"continue\"]",
+          "method": "click"
+        }
+      ]
+    },
+    {
+      "title": "Place an order",
+      "goal": "Add the Sauce Labs Backpack, check out as Ada Lovelace, postal code 560001, and finish the order.",
+      "startUrl": "/inventory.html",
+      "expectations": [
+        {
+          "kind": "url",
+          "pattern": "/checkout-complete.html"
+        },
+        {
+          "kind": "text-visible",
+          "text": "Thank you for your order!"
+        }
+      ],
+      "steps": [
+        {
+          "kind": "act",
+          "description": "Add the Sauce Labs Backpack",
+          "selector": "[data-test=\"add-to-cart-sauce-labs-backpack\"]",
+          "method": "click"
+        },
+        {
+          "kind": "act",
+          "description": "Open the cart",
+          "selector": "[data-test=\"shopping-cart-link\"]",
+          "method": "click"
+        },
+        {
+          "kind": "act",
+          "description": "Click Checkout",
+          "selector": "[data-test=\"checkout\"]",
+          "method": "click"
+        },
+        {
+          "kind": "act",
+          "description": "Type the first name",
+          "selector": "[data-test=\"firstName\"]",
+          "method": "fill",
+          "arguments": ["Ada"]
+        },
+        {
+          "kind": "act",
+          "description": "Type the last name",
+          "selector": "[data-test=\"lastName\"]",
+          "method": "fill",
+          "arguments": ["Lovelace"]
+        },
+        {
+          "kind": "act",
+          "description": "Type the postal code",
+          "selector": "[data-test=\"postalCode\"]",
+          "method": "fill",
+          "arguments": ["560001"]
+        },
+        {
+          "kind": "act",
+          "description": "Click Continue",
+          "selector": "[data-test=\"continue\"]",
+          "method": "click"
+        },
+        {
+          "kind": "act",
+          "description": "Click Finish",
+          "selector": "[data-test=\"finish\"]",
+          "method": "click"
+        }
+      ]
+    }
+  ]
+}

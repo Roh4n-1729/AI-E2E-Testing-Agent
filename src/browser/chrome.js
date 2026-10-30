@@ -20,6 +20,23 @@ function systemBrowserCandidates(env = process.env) {
 }
 
 /**
+ * Flags for the browser Stagehand launches (the agent's and replay's browser). Playwright launches its own
+ * browsers (crawler, login, theme reference) with --no-sandbox by default; Stagehand does not, and on Linux
+ * CI runners (Ubuntu 24+ restricts the user namespaces Chrome's sandbox needs) and in root containers Chrome
+ * then never starts ("waiting for dynamic debugging port"). Match Playwright on Linux unless
+ * AIE2E_CHROME_SANDBOX=true. Windows and macOS keep Chrome's defaults.
+ * @param {{ chromeArgs: string[], chromeSandbox?: boolean }} cfg
+ * @param {NodeJS.Platform} [platform]
+ * @returns {string[]}
+ */
+export function agentChromeArgs(cfg, platform = process.platform) {
+  const args = [...cfg.chromeArgs];
+  if (platform === 'linux' && !cfg.chromeSandbox && !args.includes('--no-sandbox'))
+    args.push('--no-sandbox');
+  return args;
+}
+
+/**
  * Chromium binary used by EVERY component (agent, crawler, replay), so they never disagree:
  * explicit config > Playwright's full Chromium > an installed system Chrome/Edge.
  * Returns undefined only when nothing is found; callers then get Playwright's own error.

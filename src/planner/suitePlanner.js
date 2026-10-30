@@ -25,6 +25,16 @@ export const SuiteSchema = z.object({
   themeFrom: z.url({ protocol: /^https?$/ }).optional(),
   /** log in before the tests (credentials come from .env, never from this file) */
   auth: AuthSchema.optional(),
+  /**
+   * Known third-party noise this app makes (regexes): failed requests and console errors that match do
+   * not fail the no-network-failures / no-console-errors guards. They still show in the evidence.
+   */
+  ignore: z
+    .object({
+      network: z.array(z.string()).default([]),
+      console: z.array(z.string()).default([]),
+    })
+    .optional(),
   tests: z
     .array(
       z.object({

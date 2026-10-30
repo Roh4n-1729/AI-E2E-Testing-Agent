@@ -34,6 +34,11 @@ export const ConfigSchema = z.object({
   chromePath: z.string().optional(),
   /** Extra Chromium flags, e.g. --no-sandbox inside containers/CI running as root. */
   chromeArgs: z.array(z.string()).default([]),
+  /**
+   * Keep Chrome's own sandbox on Linux for the agent's browser. Off by default, like Playwright: CI runners
+   * (Ubuntu 24+ AppArmor) and containers running as root cannot start a sandboxed Chrome at all.
+   */
+  chromeSandbox: z.boolean().default(false),
   logLevel: z.enum(['silent', 'error', 'warn', 'info', 'debug']).default('info'),
   crawl: z
     .object({
@@ -96,6 +101,11 @@ export const ConfigSchema = z.object({
       slowApiMs: z.number().positive().default(3000),
     })
     .prefault({}),
+  /**
+   * Known third-party noise the guards ignore (regexes on the URL / console text): analytics, error
+   * reporters, font CDNs. Ignored requests still appear in the evidence; they just do not fail a test.
+   * Also from a suite's "ignore" and AIE2E_IGNORE_NETWORK / AIE2E_IGNORE_CONSOLE (comma-separated).
+   */
   judge: z
     .object({
       ignoreConsolePatterns: z.array(z.string()).default([]),
@@ -109,6 +119,14 @@ export const ConfigSchema = z.object({
 
 /** @param {string | undefined} v */
 const bool = (v) => (v === undefined ? undefined : ['1', 'true', 'yes'].includes(v.toLowerCase()));
+/** @param {string | undefined} v comma-separated list */
+const list = (v) =>
+  v
+    ? v
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean)
+    : undefined;
 /** @param {string | undefined} v */
 const int = (v) => (v === undefined || v === '' ? undefined : Number(v));
 
@@ -136,6 +154,7 @@ export function loadConfig(overrides = {}, env = process.env) {
     concurrency: int(env.AIE2E_CONCURRENCY),
     chromePath: env.AIE2E_CHROME_PATH || undefined,
     chromeArgs: env.AIE2E_CHROME_ARGS ? env.AIE2E_CHROME_ARGS.split(' ') : undefined,
+    chromeSandbox: bool(env.AIE2E_CHROME_SANDBOX),
     logLevel: /** @type {ConfigInput['logLevel']} */ (env.AIE2E_LOG_LEVEL || undefined),
     visual:
       env.AIE2E_VISUAL_GATE || env.AIE2E_BASELINES_DIR
@@ -151,10 +170,19 @@ export function loadConfig(overrides = {}, env = process.env) {
             themeStates: env.AIE2E_THEME_STATES ? Number(env.AIE2E_THEME_STATES) : undefined,
           })
         : undefined,
+    judge:
+      env.AIE2E_IGNORE_NETWORK || env.AIE2E_IGNORE_CONSOLE
+        ? defined({
+            ignoreNetworkPatterns: env.AIE2E_IGNORE_NETWORK
+              ? ['favicon\\.ico', ...(list(env.AIE2E_IGNORE_NETWORK) ?? [])]
+              : undefined,
+            ignoreConsolePatterns: list(env.AIE2E_IGNORE_CONSOLE),
+          })
+        : undefined,
   };
   const merged = { ...defined(fromEnv), ...defined(overrides) };
   // nested groups merge, so a CLI flag (--visual fail) keeps the env's settings (AIE2E_BASELINES_DIR)
-  for (const k of /** @type {const} */ (['visual', 'quality']))
+  for (const k of /** @type {const} */ (['visual', 'quality', 'judge']))
     if (fromEnv[k] && overrides[k]) merged[k] = { ...fromEnv[k], ...defined(overrides[k]) };
   return ConfigSchema.parse(merged);
 }

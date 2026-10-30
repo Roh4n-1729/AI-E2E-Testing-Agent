@@ -26,13 +26,15 @@ in front of you.
 
 ## Product
 
-| Alternative                                     | Why not (roadmap)                                                                                                  |
-| ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
-| **TypeScript**                                  | JSDoc + `tsc --checkJs` gives the same checking without a build step; faster on a 5-day deadline (D3).             |
-| **Hosted backend + database, dashboard**        | Out of scope. Runs, suites and baselines are files: easy to commit, diff and review in a PR.                       |
-| **Tracing platform** (Langfuse / LangSmith)     | Useful once the core works; the report already shows every step, heal, token cost and screenshot. Roadmap.         |
-| **Multi-model support and comparison UI**       | One model string (`AIE2E_MODEL`) works with any provider the AI SDK supports; a comparison UI is roadmap.          |
-| **DTCG design-token files** as the theme source | Most apps do not ship one; reading the production CSS works everywhere. A token-file import is roadmap.            |
-| **AI triage of visual diffs**                   | Nice for review, but would put an LLM back into a deterministic check. Humans approve or reject in the UI for now. |
-| **Dockerfile**                                  | The GitHub Action and `npm ci && npx playwright install` cover CI; a container is roadmap.                         |
-| **Run comparison** (this run vs last run)       | Baselines and the cache already carry history; a side-by-side view is roadmap.                                     |
+| Alternative                                     | Why not (roadmap)                                                                                                                  |
+| ----------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| **TypeScript**                                  | JSDoc + `tsc --checkJs` gives the same checking without a build step; faster on a 5-day deadline (D3).                             |
+| **Hosted backend + database, dashboard**        | Out of scope. Runs, suites and baselines are files: easy to commit, diff and review in a PR.                                       |
+| **Tracing platform** (Langfuse / LangSmith)     | Useful once the core works; the report already shows every step, heal, token cost and screenshot. Roadmap.                         |
+| **Multi-model support and comparison UI**       | One model string (`AIE2E_MODEL`) works with any provider the AI SDK supports; a comparison UI is roadmap.                          |
+| **DTCG design-token files** as the theme source | Most apps do not ship one; reading the production CSS works everywhere. A token-file import is roadmap.                            |
+| **AI triage of visual diffs**                   | Nice for review, but would put an LLM back into a deterministic check. Humans approve or reject in the UI for now.                 |
+| **Dockerfile**                                  | The GitHub Action and `npm ci && npx playwright install` cover CI; a container is roadmap.                                         |
+| **Run comparison** (this run vs last run)       | Baselines and the cache already carry history; a side-by-side view is roadmap.                                                     |
+| **Playwright `.spec` export**                   | Suites already replay with no LLM and run in CI; exporting would create a second format that must stay true to the first. Roadmap. |
+| **MCP server** (other AI tools call this one)   | Useful for agentic IDEs, but no requirement or demo step needs it. Roadmap.                                                        |

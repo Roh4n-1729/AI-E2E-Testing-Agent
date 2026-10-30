@@ -1,0 +1,37 @@
+{
+  "description": "Self-healing demo: this suite was recorded against an older Swag Labs whose add-to-cart button had the test id \"add-to-cart-backpack\". The app renamed it, so replay breaks at step 1 and the agent heals that one step.",
+  "auth": { "loginUrl": "/", "successUrl": "/inventory.html" },
+  "ignore": {
+    "network": ["fonts\\.googleapis\\.com", "fonts\\.gstatic\\.com", "backtrace\\.io"],
+    "console": ["Permissions policy violation: unload"]
+  },
+  "tests": [
+    {
+      "title": "Add the backpack and open the cart",
+      "goal": "Add the Sauce Labs Backpack to the cart, then open the cart.",
+      "startUrl": "/inventory.html",
+      "expectations": [
+        { "kind": "url", "pattern": "/cart.html" },
+        { "kind": "text-visible", "text": "Sauce Labs Backpack" },
+        {
+          "kind": "selector-visible",
+          "selector": "xpath=//span[@data-test='shopping-cart-badge'][normalize-space()='1']"
+        }
+      ],
+      "steps": [
+        {
+          "kind": "act",
+          "description": "Add the Sauce Labs Backpack",
+          "selector": "[data-test=\"add-to-cart-backpack\"]",
+          "method": "click"
+        },
+        {
+          "kind": "act",
+          "description": "Open the cart",
+          "selector": "[data-test=\"shopping-cart-link\"]",
+          "method": "click"
+        }
+      ]
+    }
+  ]
+}

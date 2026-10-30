@@ -162,6 +162,21 @@ export async function startRun(o, { events = new RunEvents(), signal } = {}) {
       ? new BfsCrawler(config, logger, { storageState: login?.state })
       : new NoopCrawler();
 
+  // Known third-party noise declared by the suite (analytics, error reporters, font CDNs): logged, never silent.
+  const judgeCfg = {
+    ignoreNetworkPatterns: [
+      ...config.judge.ignoreNetworkPatterns,
+      ...(suite?.ignore?.network ?? []),
+    ],
+    ignoreConsolePatterns: [
+      ...config.judge.ignoreConsolePatterns,
+      ...(suite?.ignore?.console ?? []),
+    ],
+  };
+  const declared = [...(suite?.ignore?.network ?? []), ...(suite?.ignore?.console ?? [])];
+  if (declared.length)
+    logger.info(`Ignoring known third-party noise declared by the suite: ${declared.join(', ')}`);
+
   const agent = new AgentExecutor(config);
   agent.loggedIn = !!login;
   const fileStore = new FileRecordStore(path.join(config.outDir, 'recordings'));
@@ -203,7 +218,7 @@ export async function startRun(o, { events = new RunEvents(), signal } = {}) {
         : agent,
       recordStore: cache ? recordStore : undefined,
       fallbackExecutor: cache && heal ? agent : undefined,
-      judge: new EvidenceJudge(config.judge, judgeLlm, config.quality, {
+      judge: new EvidenceJudge(judgeCfg, judgeLlm, config.quality, {
         store: baselines,
         cfg: config.visual,
       }),

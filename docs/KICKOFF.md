@@ -129,11 +129,17 @@ Fixes:
 
 ### Demo story for the interview (what the final run must show)
 
-1. `aie2e ui` → paste my AI Presentation Builder URL → watch the agent (cursor visible) plan and run 4–5 flows in parallel.
+Full script with commands, talking points and fallbacks: [DEMO.md](DEMO.md). Updated Fri 30 Oct: the live AI
+part runs on Sauce Demo (a real app with a login, served locally) instead of the Presentation Builder, whose own
+AI would spend tokens on every test.
+
+1. `aie2e ui` → Sauce Demo → watch the agent (cursor visible) log in, plan and run 3 flows in parallel.
 2. Run again → **replay**: seconds instead of a minute, **0 tokens**.
-3. Break a selector (or ship a changed UI) → **self-heal** shown in the report with old/new selector.
+3. Same suite as `problem_user` / `visual_user` → real failures and visual diffs, still 0 tokens.
 4. A deliberately wrong expectation → the judge **fails** it and flags **agent claim ≠ evidence**.
-5. Seeded-bug demo app → detection-rate table (§8b).
+5. A renamed test id → **self-heal** of that one step, old and new selector in the report.
+6. A theme leak in dark mode (seeded-bug shop) → the CSS rule, nearest token and a crop.
+7. The evaluation tables and green CI.
 
 ---
 
@@ -184,7 +190,7 @@ Flowtrace (link TODO), Playwright Test Agents (planner/generator/healer), Magnit
 
 ### 8b. Quality, safety nets, evaluation
 
-1. **Evaluation table (README centrepiece).** Run on 3 apps: my AI Presentation Builder, a public TodoMVC, and a **seeded-bug app** (`examples/buggy-shop`: known injected bugs such as a broken button, wrong total, console error, failing request, missing validation). Report per app: tests planned / passed / failed, **bugs detected vs seeded**, **false positives**, **repeatability** (3 runs), time, tokens/cost, agent vs replay.
+1. **Evaluation table (README centrepiece).** Run on 3 apps (updated Fri 30 Oct: Sauce Demo replaces the Presentation Builder, see DEMO.md): Sauce Demo, a public TodoMVC, and a **seeded-bug app** (`examples/buggy-shop`: known injected bugs such as a broken button, wrong total, console error, failing request, missing validation). Report per app: tests planned / passed / failed, **bugs detected vs seeded**, **false positives**, **repeatability** (3 runs), time, tokens/cost, agent vs replay.
 2. **Honesty tests** (already working): goal the app can't satisfy → judge FAIL + `AGENT CLAIM MISMATCH`.
 3. **Judge unit/integration tests** are the safety net; run them before every handoff (`npm run check && npm run lint && npm test`).
 4. **CI**: GitHub Action that runs `aie2e run` against a URL and uploads `report.html`; exit code gates the job. (Replays in CI cost nothing, which is the point.)

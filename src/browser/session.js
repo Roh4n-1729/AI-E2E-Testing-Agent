@@ -2,7 +2,7 @@ import { writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { Stagehand } from '@browserbasehq/stagehand';
 import { chromium } from 'playwright';
-import { resolveChromePath } from './chrome.js';
+import { agentChromeArgs, resolveChromePath } from './chrome.js';
 import { QualityCollector } from './collectors.js';
 import { CURSOR_SCRIPT } from './cursor.js';
 import { settle } from './settle.js';
@@ -99,7 +99,7 @@ export class BrowserSession {
       localBrowserLaunchOptions: {
         headless: cfg.headless,
         executablePath,
-        args: cfg.chromeArgs,
+        args: agentChromeArgs(cfg),
         viewport: cfg.viewport,
       },
     });
