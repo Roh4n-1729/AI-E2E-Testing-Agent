@@ -6,6 +6,76 @@ teaches us something: it is the honest history of how the judge got stricter.
 
 ---
 
+## 2026-10-30 (Friday midday): a third-party app, decision docs, diagrams
+
+### TodoMVC, an app we did not write
+
+The evaluation so far was on our own shop, which the tool's author also wrote. `examples/todomvc` now serves
+the unmodified React TodoMVC production build (tastejs/todomvc, MIT, licence kept next to it) with a 6-test
+suite. Results: 6/6 replayed with no LLM; `BUGS=clear-broken` and `BUGS=edit-lost` (a small capture-phase
+script added when the page is served, the build itself is never edited) each fail exactly the matching test.
+
+### Found while building it
+
+- **A weak expectation.** "Walk the dog is visible" also passes when "Clear completed" does nothing. Tests
+  that change the list now also check the exact number of todos with an XPath count. The judge was right;
+  the test was too lenient, which is the mistake an AI planner makes too.
+- **A real finding in TodoMVC:** the quality gate reports the todo checkboxes have no accessible label (axe
+  `label`, critical). That is a genuine issue in the upstream app, not a seeded one.
+- **Prettier reformatted the vendored bundle.** Vendored builds are now excluded from prettier and eslint.
+
+### Docs and diagrams
+
+`docs/DECISIONS.md` (21 numbered decisions, superseded ones kept), `docs/TRADEOFFS.md` (what was not built
+and why), `CLAUDE.md` (rules, commands, where things go). `npm run diagrams` is a Node script that works on
+Windows; the four stale diagrams were redrawn from the current code (UI, login, theme, visual, suites).
+
+### Verified
+
+- `tests/integration/todomvc.test.js`: clean 6/6, both regressions caught in the right test.
+- Full suite: 101 tests pass. `npm run eval`: still 12/12 detected, 0 false positives.
+- Sandbox note: Chrome as root needs `AIE2E_CHROME_ARGS="--no-sandbox"`; without it every Stagehand test times out.
+
+---
+
+## 2026-10-30 (Friday): theme conformance across products (`--theme-from`)
+
+- **Why:** "how close are all our products to one theme" was the part of the vision only half covered. Each app
+  was checked against its own themes; now one product (a design-system site, or the main app) can be the
+  reference for the others.
+- **How** (`src/theme/reference.js`): read the reference product once per run, with every theme it ships and
+  every token resolved to a real value. The audit then compares the target's values with those tokens, theme
+  by theme (light ↔ light, dark ↔ dark, else the reference's base theme).
+  - Values are compared, not names: products rarely name tokens alike (`--color-primary` vs
+    `--brand-primary`).
+  - The target's own `var()` usage no longer counts as "on theme", since its variables might hold another
+    brand's colours.
+  - A product with no CSS variables at all is still checked, in its default look.
+  - Findings are `off-reference`, with the nearest reference token, e.g. `#2563eb` → `--brand-primary`. The
+    gate is the score threshold: products may legitimately use a few extra values.
+- Entry points: `--theme-from <url>`, the New run form, or a suite's `themeFrom`. The Theme tab and report say
+  which product the page was compared with.
+
+### Found while building it: a real audit bug
+
+- **Seen:** on a plain page, an orange promo banner (`#ff6600`) was never checked. The "transparent background"
+  test was `/,\s*0\)$/`, which matches any colour whose last channel is 0, so `rgb(255, 102, 0)` counted as
+  transparent. Pure red, green and yellow backgrounds were also invisible to the theme audit, the leak check and
+  the component inventory.
+- **Change:** only an alpha of 0 is transparent (`rgba(…, 0)` or `/ 0`). Verified on sample colours, and the new
+  test fails without the fix.
+
+### Verified
+
+- `tests/integration/themeReference.test.js`:
+  - the shop against itself is 100% in light and dark, with the message "against <url>";
+  - the shop against a violet brand is under 90%, with `#2563eb` off-reference and nearest `--brand-primary`, and
+    the judge fails it;
+  - a page without CSS variables is audited as "default": the brand violet button matches, the orange promo
+    does not.
+
+---
+
 ## 2026-10-30 (late morning): test suites in the UI, login flows
 
 ### Test suites written in the UI

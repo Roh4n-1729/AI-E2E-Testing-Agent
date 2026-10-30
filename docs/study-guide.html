@@ -579,6 +579,9 @@ footer { color: var(--muted); font-size: 0.85rem; border-top: 1px solid var(--li
         </div>
         <p class="caption" id="scrCap" aria-live="polite">A test opens a profile dialog, edits, and closes it again.</p>
       </div>
+      <h3>Across products: <code>--theme-from</code></h3>
+      <p>Are all your products on one theme? One product (a design-system site, or the main app) becomes the reference: its themes are read once, every token resolved to a value. Every other product is then checked against those values, light against light and dark against dark. Values are compared, not names, because <code>--color-primary</code> in one codebase is <code>--brand-primary</code> in another. A product with no CSS variables at all is still checked, in its default look.</p>
+      <p class="why"><b>Found while building it:</b> the audit's "is this background transparent?" test matched any colour ending in 0, so an orange <code>rgb(255, 102, 0)</code> banner was never checked, and neither was pure red, green or yellow. Only an alpha of 0 counts as transparent now.</p>
       <h3>Consistency across screens</h3>
       <p>A value can pass on every single screen and the product still drift. Each audit also records how buttons, links, inputs and headings look; the run then flags looks that differ only slightly (ΔE between 2.3 and 10, radius within 2px), and elements named with <code>data-aie2e-component</code> that render in more than one way. Advisory: it never fails a test.</p>
       <div class="demo">
@@ -656,7 +659,11 @@ footer { color: var(--muted); font-size: 0.85rem; border-top: 1px solid var(--li
         </tbody>
       </table></div>
       <p class="why"><b>Be honest about what this proves:</b> it measures the judge and the replay path on a known app. <code>npm run eval -- --mode explore --heal</code> measures the full AI path (planner + agent), which costs tokens and varies run to run.</p>
-      <div class="files"><code>examples/buggy-shop/server.js</code><code>examples/buggy-shop/bugs.json</code><code>examples/buggy-shop/suite.json</code><code>scripts/evaluate.js</code><code>docs/EVALUATION.md</code></div>
+      <h3>An app we did not write: TodoMVC</h3>
+      <p>The shop was written by the same people as the tester, so it could be "tuned" to it. <code>examples/todomvc</code> serves the untouched React TodoMVC production build (MIT). Its 6-test suite replays with no LLM; a regression is a tiny script added to the page as it is served (the build itself is never edited).</p>
+      <div class="facts"><span class="pill pass">6/6 on the real app</span><span class="pill pass">clear-broken → only "Clear completed" fails</span><span class="pill pass">edit-lost → only "Edit" fails</span><span class="pill warn">real a11y finding: unlabelled checkboxes</span></div>
+      <p class="why"><b>Lesson from writing it:</b> "Walk the dog is visible" also passes when Clear completed does nothing. A good expectation checks the <i>effect</i>: the list has exactly one todo (<code>//ul[@data-testid='todo-list'][count(li)=1]</code>). The judge is only as strict as the expectation, which is why an AI-planned test needs a human glance before it is committed.</p>
+      <div class="files"><code>examples/buggy-shop/server.js</code><code>examples/buggy-shop/bugs.json</code><code>examples/buggy-shop/suite.json</code><code>examples/todomvc/server.js</code><code>examples/todomvc/suite.json</code><code>scripts/evaluate.js</code><code>docs/EVALUATION.md</code></div>
     </section>
 
     <!-- 11 -->

@@ -21,6 +21,8 @@ export const SuiteSchema = z.object({
   description: z.string().optional(),
   /** the app this suite usually runs against (the UI's default); the CLI's URL argument wins */
   url: z.url({ protocol: /^https?$/ }).optional(),
+  /** check the theme against another product's themes (cross-product conformance) */
+  themeFrom: z.url({ protocol: /^https?$/ }).optional(),
   /** log in before the tests (credentials come from .env, never from this file) */
   auth: AuthSchema.optional(),
   tests: z

@@ -192,7 +192,7 @@ Flowtrace (link TODO), Playwright Test Agents (planner/generator/healer), Magnit
 
 ---
 
-## 9. Scope and priorities (updated Fri 30 Oct, 03:00)
+## 9. Scope and priorities (re-evaluated Fri 30 Oct, 04:00)
 
 Full plan and designs: [docs/ROADMAP.md](ROADMAP.md).
 
@@ -205,8 +205,8 @@ agent reaches); proper visual testing; an optional attribute contract in client 
 | --- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------- |
 | Thu | repo, agent loop, judge, planner, crawler, parallel runs, reports, record/replay/heal, cursor, **local UI** (live screencast, results, dark mode, viewer), quality evidence (API, vitals, a11y, downloads, toasts), app hints, **LangGraph**, **seeded-bug shop + evaluation (10/10, 0 false positives)**, committed suites + export, CI e2e job, **theme conformance v1** (moved up from Fri), study guide | **done**    |
 | Fri | ~~Theme audit on every agent-reached screen~~, ~~cross-page consistency~~, ~~visible-only text checks~~ (done 03:00, 11/11 in eval); first real run on my Presentation Builder (light/dark) + fixes; rehearse the demo story (replay at 0 tokens, forced heal, wrong expectation)                                                                                                                           | in progress |
-| Sat | Visual baselines per theme (pixel diff + `data-aie2e-mask` + approve; AI triage if time), test case manager in the UI, login flows (credentials + saved session)                                                                                                                                                                                                                                            |             |
-| Sun | Attribute types `.d.ts`, reusable GitHub Action, TodoMVC run, diagrams refresh, CLAUDE.md / DECISIONS.md / TRADEOFFS.md, README, static showcase (optional)                                                                                                                                                                                                                                                 |             |
+| Sat | ~~Visual baselines + approve/reject~~, ~~test suites in the UI~~, ~~login flows~~ (all done Fri morning). ~~TodoMVC run, attribute `.d.ts`, reusable GitHub Action, diagrams, CLAUDE.md / DECISIONS.md / TRADEOFFS.md~~ (done Fri). Left: fixes from real runs                                                                                                                                              | next        |
+| Sun | README final pass, demo script + GIF, optional Vercel showcase, buffer                                                                                                                                                                                                                                                                                                                                      |             |
 | Mon | Final evaluation runs, demo GIF, one final run only. **No new features.**                                                                                                                                                                                                                                                                                                                                   |             |
 
 **Cut order if behind:** reference-site/Figma comparison → Playwright spec export → MCP server → AI diff triage.

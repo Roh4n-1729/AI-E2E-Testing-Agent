@@ -1,34 +1,44 @@
 sequenceDiagram
   autonumber
   actor Dev as Developer / CI
-  participant CLI
-  participant G as Orchestrator graph
+  participant Run as startRun
+  participant L as Login
+  participant G as LangGraph
   participant P as Planner
   participant R as TestRunner
   participant S as BrowserSession
   participant E as Executor
   participant J as Judge
-  participant Rep as Reporter
+  participant Rep as Reporters
 
-  Dev->>CLI: aie2e run URL --goal ...
-  CLI->>G: invoke(target)
-  G->>G: crawl (capped BFS, same-origin, skips logout/delete)
+  Dev->>Run: URL (+ suite, login, --theme-from, --visual)
+  opt login configured
+    Run->>L: log in once (plain Playwright, password from .env)
+    L-->>Run: storageState (cookies + localStorage)
+  end
+  Run->>G: invoke(target)
+  G->>G: crawl (capped BFS, logged in, skips logout/delete)
   G->>P: plan(target, siteMap)
-  P-->>G: TestCase[] (goal + expectations)
+  P-->>G: TestCase[] (from the suite, the cache or the LLM)
 
-  loop each test (up to N in parallel)
+  par each test, up to N at once
     G->>R: run(test)
-    R->>S: open() fresh Chromium + collectors
+    R->>S: open fresh browser, restore login, start collectors
     R->>E: execute(test, session)
-    E-->>R: ExecutionOutcome (mode, steps, heals, agentClaim)
-    Note over E,R: The agent's claim is recorded but never trusted
+    loop each step
+      E->>S: replay (or heal / agent)
+      S->>S: settle, then theme audit if this screen is new
+      S->>S: visual capture for the step
+    end
+    E-->>R: outcome (mode, steps, heals, agent claim)
+    Note over E,R: The agent's claim is recorded, never trusted
     R->>J: judge(test, session, outcome)
-    J->>S: collect evidence (URL, aria tree, console, network, screenshot)
-    J-->>R: Verdict + Evidence
-    R->>S: close()
+    J->>S: collect evidence (DOM, URL, console, network, vitals, a11y, theme, screenshots)
+    J-->>R: verdict + checks + warnings
+    R->>R: pass: save recording and new baselines
     R-->>G: TestResult
   end
 
-  G->>Rep: report(RunReport)
-  Rep-->>Dev: report.json + report.html + console summary
-  CLI-->>Dev: exit code 0 pass, 1 fail, 2 error
+  G->>G: consistency across all screens
+  G->>Rep: RunReport
+  Rep-->>Dev: report.json + report.html (+ live in the UI)

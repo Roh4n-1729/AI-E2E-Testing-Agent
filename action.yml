@@ -1,0 +1,125 @@
+name: AI E2E test
+description: >-
+  Run end-to-end tests against a URL with ai-e2e-agent: a committed suite replays with plain Playwright (no AI,
+  no tokens) and an AI agent records or heals what is new. Pass/fail is decided from browser evidence. Uploads the
+  HTML report and fails the job when a test fails.
+author: Rohan Pradhan
+branding:
+  icon: check-circle
+  color: blue
+
+inputs:
+  url:
+    description: The app to test (a preview deployment, staging, or a server started earlier in the job).
+    required: true
+  suite:
+    description: Path to a suite JSON in your repo (written in the UI or with `aie2e export`). Empty = the AI plans tests.
+    required: false
+    default: ''
+  description:
+    description: One sentence about the app; helps the AI planner when no suite is given.
+    required: false
+    default: ''
+  heal:
+    description: '"true" lets the agent heal a broken replay step (needs an API key). CI default: a broken step fails.'
+    required: false
+    default: 'false'
+  quality:
+    description: 'Web Vitals, accessibility and theme checks: off | warn | fail'
+    required: false
+    default: 'warn'
+  visual:
+    description: 'Screenshot comparison with approved baselines: off | warn | fail'
+    required: false
+    default: 'warn'
+  baselines-dir:
+    description: Approved screenshots committed in your repo (empty = none; first runs create them in the report only).
+    required: false
+    default: ''
+  theme-from:
+    description: Check the theme against another product (URL of a design-system site or the main app).
+    required: false
+    default: ''
+  login-url:
+    description: Log in here first. Set AIE2E_USERNAME and AIE2E_PASSWORD as secrets in the job env.
+    required: false
+    default: ''
+  login-success-text:
+    description: Text that proves the login worked.
+    required: false
+    default: ''
+  concurrency:
+    description: Tests in parallel.
+    required: false
+    default: '3'
+
+outputs:
+  passed:
+    description: Number of tests that passed.
+    value: ${{ steps.run.outputs.passed }}
+  failed:
+    description: Number of tests that failed.
+    value: ${{ steps.run.outputs.failed }}
+  report:
+    description: Path of the HTML report.
+    value: ${{ steps.run.outputs.report }}
+
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-node@v4
+      with:
+        node-version: 22
+
+    - name: Install ai-e2e-agent
+      shell: bash
+      working-directory: ${{ github.action_path }}
+      run: |
+        npm ci --no-audit --no-fund
+        npx playwright install --with-deps chromium
+
+    - name: Run the tests
+      id: run
+      shell: bash
+      # Inputs reach the script as environment variables, never pasted into it (no script injection).
+      env:
+        IN_URL: ${{ inputs.url }}
+        IN_SUITE: ${{ inputs.suite }}
+        IN_DESCRIPTION: ${{ inputs.description }}
+        IN_HEAL: ${{ inputs.heal }}
+        IN_QUALITY: ${{ inputs.quality }}
+        IN_VISUAL: ${{ inputs.visual }}
+        IN_BASELINES: ${{ inputs.baselines-dir }}
+        IN_THEME_FROM: ${{ inputs.theme-from }}
+        IN_LOGIN_URL: ${{ inputs.login-url }}
+        IN_LOGIN_TEXT: ${{ inputs.login-success-text }}
+        IN_CONCURRENCY: ${{ inputs.concurrency }}
+        OUT_DIR: ${{ runner.temp }}/aie2e
+        CLI: ${{ github.action_path }}/src/cli/main.js
+      run: |
+        args=(run "$IN_URL" -o "$OUT_DIR" -c "$IN_CONCURRENCY" --quality "$IN_QUALITY" --visual "$IN_VISUAL")
+        [ -n "$IN_SUITE" ] && args+=(--suite "$GITHUB_WORKSPACE/$IN_SUITE")
+        [ -n "$IN_DESCRIPTION" ] && args+=(-d "$IN_DESCRIPTION")
+        [ "$IN_HEAL" != "true" ] && args+=(--no-heal)
+        [ -n "$IN_THEME_FROM" ] && args+=(--theme-from "$IN_THEME_FROM")
+        [ -n "$IN_LOGIN_URL" ] && args+=(--login-url "$IN_LOGIN_URL")
+        [ -n "$IN_LOGIN_TEXT" ] && args+=(--login-success-text "$IN_LOGIN_TEXT")
+        [ -n "$IN_BASELINES" ] && export AIE2E_BASELINES_DIR="$GITHUB_WORKSPACE/$IN_BASELINES"
+        status=0
+        node "$CLI" "${args[@]}" || status=$?
+        run_dir=$(ls -td "$OUT_DIR"/runs/*/ 2>/dev/null | head -1)
+        if [ -n "$run_dir" ] && [ -f "$run_dir/report.json" ]; then
+          node -e "const r=require(process.argv[1]);const s=r.summary;console.log('passed='+s.passed);console.log('failed='+(s.failed+s.errored))" "$run_dir/report.json" >> "$GITHUB_OUTPUT"
+          echo "report=${run_dir}report.html" >> "$GITHUB_OUTPUT"
+          echo "run_dir=$run_dir" >> "$GITHUB_OUTPUT"
+          node -e "const r=require(process.argv[1]);const s=r.summary;const rows=r.results.map(t=>'| '+(t.verdict.status==='pass'?'✅':t.verdict.status==='fail'?'❌':'⚠️')+' | '+t.test.title.replace(/\|/g,'/')+' | '+t.mode+' |').join('\n');console.log('### AI E2E: '+s.passed+'/'+s.total+' passed\n\n| | Test | How it ran |\n| --- | --- | --- |\n'+rows+'\n\nFull report in the **aie2e-report** artifact.')" "$run_dir/report.json" >> "$GITHUB_STEP_SUMMARY"
+        fi
+        exit $status
+
+    - name: Upload the report
+      if: always() && steps.run.outputs.run_dir != ''
+      uses: actions/upload-artifact@v4
+      with:
+        name: aie2e-report
+        path: ${{ steps.run.outputs.run_dir }}
+        retention-days: 14

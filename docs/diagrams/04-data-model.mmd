@@ -1,31 +1,36 @@
 classDiagram
   direction LR
+  class Suite {
+    url
+    description
+    auth
+    themeFrom
+  }
   class RunReport {
     runId
-    startedAt
     targetUrl
     summary
+    auth
+    consistency
   }
   class TestCase {
     id
     title
     goal
     startUrl
-    maxSteps
+    steps
   }
   class Expectation {
-    kind: url | text-visible | selector-visible
-    kind: no-console-errors | no-network-failures | visual
+    url · text-visible · selector-visible
+    no-console-errors · no-network-failures
+    visual · api-call · download · text-appeared
+    web-vitals · no-a11y-violations
+    theme-conformance · visual-baseline
   }
   class TestResult {
     mode: agent | replay | healed | deterministic
     durationMs
     claimMismatch
-  }
-  class ExecutionOutcome {
-    mode
-    agentClaim
-    error
   }
   class Verdict {
     status: pass | fail | error
@@ -38,44 +43,46 @@ classDiagram
   }
   class Evidence {
     finalUrl
-    title
-    ariaSnapshotPath
-    pageTextExcerpt
+    console · network
+    vitals · a11y
+  }
+  class ThemeState {
+    fingerprint
+    label
+    audit per theme
+  }
+  class VisualCapture {
+    checkpoint
+    status: new | unchanged | changed
+    diffRatio
   }
   class Screenshot {
     label
-    path
     source: harness | agent
   }
   class RecordedStep {
-    index
-    kind: navigate | act
+    kind: navigate | act | mouse | wait
     selector
+    fallbackSelectors
     method
     arguments
-  }
-  class Recording {
-    schemaVersion
-    fingerprint
-    recordedAt
   }
   class HealEvent {
     stepIndex
     oldSelector
     newSelector
-    outcome
   }
 
+  Suite "1" o-- "*" TestCase
   RunReport "1" o-- "*" TestResult
   TestResult --> TestCase
   TestCase "1" o-- "*" Expectation
+  TestCase "1" o-- "*" RecordedStep
   TestResult --> Verdict
   TestResult --> Evidence
-  TestResult --> ExecutionOutcome
   TestResult "1" o-- "*" HealEvent
   Verdict "1" o-- "*" CheckResult
   CheckResult --> Expectation
   Evidence "1" o-- "*" Screenshot
-  ExecutionOutcome "1" o-- "*" RecordedStep
-  Recording "1" o-- "*" RecordedStep
-  Recording --> TestCase : fingerprint of goal, url, expectations
+  Evidence "1" o-- "*" ThemeState
+  Evidence "1" o-- "*" VisualCapture

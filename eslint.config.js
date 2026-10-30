@@ -4,7 +4,7 @@ import react from 'eslint-plugin-react';
 import reactHooks from 'eslint-plugin-react-hooks';
 
 export default [
-  { ignores: ['node_modules', '.aie2e', 'docs', 'ui/dist'] },
+  { ignores: ['node_modules', '.aie2e', 'docs', 'ui/dist', 'examples/todomvc/app'] },
   js.configs.recommended,
   {
     languageOptions: {

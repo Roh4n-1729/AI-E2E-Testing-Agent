@@ -53,6 +53,8 @@ export class BrowserSession {
   /** @type {'off' | 'warn' | 'fail'} visual regression gate; 'off' = no comparison captures */
   visualGate = 'off';
   hideLiveRegions = true;
+  /** @type {import('../core/types.js').ThemeReference | undefined} audit against another product's themes */
+  themeReference;
 
   /**
    * @param {Stagehand} stagehand
@@ -79,7 +81,7 @@ export class BrowserSession {
    * @param {Config} cfg
    * @param {TestArtifacts} artifacts
    * @param {Logger} logger
-   * @param {{ themeStates?: ThemeStates, storageState?: import('../auth/login.js').StorageState }} [opts]
+   * @param {{ themeStates?: ThemeStates, storageState?: import('../auth/login.js').StorageState, themeReference?: import('../core/types.js').ThemeReference }} [opts]
    */
   static async open(cfg, artifacts, logger, opts = {}) {
     await artifacts.init();
@@ -127,6 +129,7 @@ export class BrowserSession {
       opts.themeStates,
     );
     session.visualGate = cfg.visual.gate;
+    session.themeReference = opts.themeReference;
     session.hideLiveRegions = cfg.visual.hideLiveRegions;
     return session;
   }
@@ -411,6 +414,7 @@ export class BrowserSession {
           dir,
           rel: (abs) => path.relative(this.artifacts.runDir, abs).split(path.sep).join('/'),
           scrollSafe: !final,
+          reference: this.themeReference,
         }).catch(
           (e) =>
             /** @type {ThemeAudit} */ ({

@@ -140,7 +140,7 @@ export const RecordingSchema = z.object({
  * @property {'color' | 'background' | 'border' | 'radius' | 'fontSize' | 'fontFamily'} category
  * @property {string} value
  * @property {number} count
- * @property {'hard-coded' | 'browser-default' | 'off-theme'} kind  hard-coded = an author rule without var(); browser-default = no author style at all
+ * @property {'hard-coded' | 'browser-default' | 'off-theme' | 'off-reference'} kind  hard-coded = an author rule without var(); browser-default = no author style at all; off-reference = matches no token of the reference product
  * @property {{ token: string, value: string, deltaE?: number }} [nearest]
  * @property {{ value: string, source?: string, selector?: string }} [declaration]  the CSS rule Chrome says produced it
  * @property {{ selector: string, text: string }[]} examples
@@ -181,7 +181,12 @@ export const RecordingSchema = z.object({
  * @property {{ testId: string, label: string }} [reusedFrom]  the run already audited this screen there
  * @property {ThemeAudit} audit
  */
-/** @typedef {{ themes: ThemeResult[], tokenCount: number, skippedSheets: string[], error?: string }} ThemeAudit */
+/** @typedef {{ themes: ThemeResult[], tokenCount: number, skippedSheets: string[], error?: string, reference?: string }} ThemeAudit  reference = the product whose themes this page was checked against */
+/**
+ * @typedef {object} ThemeReference  Another product's themes, read once per run (--theme-from).
+ * @property {string} url
+ * @property {{ id: string, tokens: { colors: { name: string, value: string }[], lengths: { name: string, px: number }[], fonts: { name: string, family: string }[] } }[]} themes
+ */
 /**
  * @typedef {object} Evidence
  * @property {string} finalUrl

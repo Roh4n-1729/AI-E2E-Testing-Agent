@@ -22,6 +22,7 @@ const DEFAULTS = {
   visual: 'warn',
   loginUrl: '',
   loginSuccess: '',
+  themeFrom: '',
 };
 
 const MODES = [
@@ -114,6 +115,9 @@ export function NewRun({ health }) {
         headed: form.headed,
         quality: form.quality,
         visual: form.visual,
+        themeFrom: /^https?:\/\/\S+$/.test(form.themeFrom.trim())
+          ? form.themeFrom.trim()
+          : undefined,
         auth: form.loginUrl.trim()
           ? { loginUrl: form.loginUrl.trim(), successText: form.loginSuccess.trim() || undefined }
           : undefined,
@@ -294,6 +298,20 @@ export function NewRun({ health }) {
                 />
               </Field>
             </div>
+            <Field
+              id="themefrom"
+              label="Compare the theme with another product (optional)"
+              hint="Every colour, radius and font is checked against that product's themes instead of this app's own: are all your products on one theme?"
+            >
+              <input
+                id="themefrom"
+                type="url"
+                className={`${inputCls} font-mono text-[13px]`}
+                placeholder="https://design.your-company.com"
+                value={form.themeFrom}
+                onChange={(e) => set({ themeFrom: e.target.value })}
+              />
+            </Field>
             <Field id="visual" label="Visual comparison">
               <Select
                 id="visual"

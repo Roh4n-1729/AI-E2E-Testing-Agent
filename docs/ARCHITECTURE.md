@@ -16,11 +16,13 @@ Layers, outermost first:
 
 | Layer             | Path                                   | Rule                                                                |
 | ----------------- | -------------------------------------- | ------------------------------------------------------------------- |
-| CLI               | `src/cli`                              | Parses flags, wires dependencies, sets exit code. No logic.         |
-| Orchestrator      | `src/core/pipeline.ts`, `graph.ts`     | Typed state graph: crawl, plan, run, report. Knows only ports.      |
+| CLI and UI        | `src/cli`, `src/server`, `ui/`         | Parse input, start a run, stream events. No test logic.             |
+| Run setup         | `src/app/startRun.js`                  | Config, login once, theme reference, baselines; builds the graph.   |
+| Orchestrator      | `src/core/pipeline.js`                 | LangGraph: crawl, plan, runTest (fan-out), writeReport.             |
 | Ports             | `src/core/ports.js`                    | Interfaces: Crawler, Planner, Executor, Judge, Reporter, Store.     |
 | Adapters          | `crawler/ planner/ executor/ judge/ …` | One implementation per port. Swap without touching the graph.       |
-| Browser           | `src/browser/session.ts`               | The only place that touches Stagehand and Playwright directly.      |
+| Browser           | `src/browser/session.js`               | The only place that touches Stagehand and Playwright directly.      |
+| Checks            | `src/theme`, `src/visual`, `src/auth`  | Theme audit, consistency, visual baselines, login. Pure evidence.   |
 | Domain + contract | `src/core/types.js`                    | Zod schemas are the source of truth for every persisted/JSON shape. |
 
 ## 2. Run lifecycle
@@ -30,7 +32,7 @@ Layers, outermost first:
 Each test gets its own Chromium (isolation first; pooling is an optimisation we skip).
 The judge runs even when the executor throws, so a crash is reported with evidence. Tests run in parallel with `--concurrency N` (bounded pool, one Chromium each).
 
-## 3. Record, replay, heal (Saturday)
+## 3. Record, replay, heal
 
 ![record replay heal](diagrams/03-record-replay-heal.png)
 
@@ -182,6 +184,14 @@ START → crawl → plan ──Send(test)──▶ runTest (× N, `concurrency` 
   Stagehand-owned context in `BrowserSession.open`). The crawler gets the state via `newContext({ storageState })`.
   `AgentExecutor.loggedIn` adds "do not log out" to the instruction. `report.auth` records the username, never
   the password.
+
+## 4h. Theme conformance across products (30 Oct)
+
+- `src/theme/reference.js` `captureReference(url)` runs once in `startRun` (like login) and produces a
+  `ThemeReference` (themes → resolved colours, lengths and fonts). It reaches the audit via `TestRunner` →
+  `BrowserSession.open({ themeReference })` → `auditState` → `auditThemes({ reference })`. In reference mode the
+  audit takes tokens from the reference (same theme id, else its base), ignores the target's own `var()` usage,
+  marks misses `off-reference`, and audits theme-less targets in their default look.
 
 ## 5. Data model
 

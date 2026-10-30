@@ -1,51 +1,48 @@
 flowchart TB
-  user([Developer / CI]) --> cli
+  dev([Developer]) --> ui
+  dev --> cli
+  ci([CI: GitHub Action]) --> cli
 
-  subgraph app["ai-e2e-agent (Node CLI, JavaScript + JSDoc types)"]
-    cli["CLI (Node, plain JS)<br/>run · doctor"]
-    cfg["Config<br/>zod-validated env + flags"]
+  subgraph app["ai-e2e-agent (Node, JavaScript + JSDoc types)"]
+    ui["Web UI<br/>React + Fastify + SSE<br/>new run · live view · suites · review"]
+    cli["CLI<br/>run · export · doctor"]
+    start["startRun()<br/>config · login once · theme reference · baselines"]
 
-    subgraph orch["Orchestrator: typed state graph"]
+    subgraph lg["LangGraph: crawl → plan → runTest ×N → writeReport"]
       direction LR
-      crawl["crawl (BFS)"] --> plan["plan (LLM)"] --> run["run tests"] --> report["report"]
-      plan -. "no tests" .-> report
+      crawl["Crawler<br/>capped BFS, same-origin"] --> plan["Planner<br/>suite / cached / LLM"]
+      plan --> run["TestRunner<br/>fresh browser per test, in parallel"]
+      run --> report["Reporters<br/>JSON + HTML"]
     end
 
-    subgraph ports["Ports (interfaces in core/ports.js)"]
+    subgraph test["One test"]
       direction LR
-      pCrawler["Crawler"]
-      pPlanner["Planner"]
-      pExecutor["Executor"]
-      pJudge["Judge"]
-      pReporter["Reporter"]
-      pStore["RecordStore"]
+      exec["Executor<br/>replay → heal → agent"]
+      session["BrowserSession<br/>Playwright + Stagehand<br/>collectors · settle · cursor"]
+      judge["Strict judge<br/>harness evidence only"]
+      exec --> session --> judge
     end
 
-    subgraph runner["TestRunner (one isolated browser per test)"]
+    subgraph checks["Evidence the judge reads"]
       direction LR
-      session["BrowserSession<br/>Stagehand + Playwright<br/>one Chromium, two drivers"]
-      exec["Executor<br/>agent now; cache-then-heal Sat"]
-      judge["Judge<br/>evidence from the harness<br/>+ LLM visual check"]
-      session --- exec
-      exec --> judge
+      basic["DOM · URL · console · network"]
+      quality["Web Vitals · axe a11y<br/>API calls · downloads · toasts"]
+      theme["Theme audit<br/>every screen, every theme<br/>consistency · --theme-from"]
+      visual["Visual regression<br/>pixelmatch vs baselines"]
     end
 
-    cli --> cfg --> orch
-    run --> runner
-    orch -.uses.-> ports
-    runner -.uses.-> ports
+    ui --> start
+    cli --> start
+    start --> lg
+    run --> test
+    judge --> checks
   end
 
-  exec -- "AI actions (act / observe / agent)" --> sh["Stagehand 3.x"]
-  exec -- "deterministic replay (Sat)" --> pw["Playwright"]
-  judge -- "DOM · URL · console · network · screenshots" --> pw
-  sh <-- "same Chromium via CDP" --> pw
-  sh --> llm[("LLM provider<br/>via AIE2E_MODEL")]
+  exec -. "act / observe / agent" .-> llm[("LLM<br/>AIE2E_MODEL")]
   plan -. "plan tests" .-> llm
-  judge -. "visual check" .-> llm
-  pw --> target[("App under test")]
-
-  reporter["report.json + report.html"]
-  report --> reporter
-  reporter --> out[(".aie2e/runs/&lt;runId&gt;/")]
-  pStore --> cache[(".aie2e/cache/&lt;host&gt;/&lt;test&gt;.json<br/>recorded steps, commit to git")]
+  judge -. "visual questions" .-> llm
+  session --> target[("App under test")]
+  exec <--> store[(".aie2e/cache<br/>recorded steps")]
+  visual <--> baselines[("baselines/<br/>approved PNGs")]
+  ui <--> suites[("suites/*.json")]
+  report --> out[(".aie2e/runs/&lt;id&gt;/<br/>report · screenshots · diffs")]

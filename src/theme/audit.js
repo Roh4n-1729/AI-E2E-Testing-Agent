@@ -154,7 +154,7 @@ function readProbes() {
       p.fontFamily = cs.fontFamily;
     }
     const transparent = (/** @type {string} */ c) =>
-      c === 'transparent' || /,\s*0\)$|\/\s*0\)$/.test(c);
+      c === 'transparent' || /^rgba\([^)]*,\s*0(\.0+)?\)$|\/\s*0(\.0+)?\)$/.test(c);
     if (!transparent(cs.backgroundColor)) p.background = cs.backgroundColor;
     if (
       parseFloat(cs.borderTopWidth) > 0 &&
@@ -168,7 +168,7 @@ function readProbes() {
   }
   const bodyBg = getComputedStyle(document.body).backgroundColor;
   const page =
-    /,\s*0\)$/.test(bodyBg) || bodyBg === 'transparent'
+    /^rgba\([^)]*,\s*0(\.0+)?\)$/.test(bodyBg) || bodyBg === 'transparent'
       ? getComputedStyle(document.documentElement).backgroundColor
       : bodyBg;
   return { values: out, page };
@@ -184,7 +184,7 @@ function readStyles(indices) {
   /** @type {Record<number, Record<string, string>>} */
   const out = {};
   const transparent = (/** @type {string} */ c) =>
-    c === 'transparent' || /,\s*0\)$|\/\s*0\)$/.test(c);
+    c === 'transparent' || /^rgba\([^)]*,\s*0(\.0+)?\)$|\/\s*0(\.0+)?\)$/.test(c);
   for (const i of indices) {
     const el = document.querySelector(`[data-aie2e-probe="${i}"]`);
     if (!el || el.matches(':hover, :focus, :active')) continue;
@@ -209,7 +209,7 @@ function readStyles(indices) {
 }
 
 /** Runs in the page: resolve every token in the CURRENT theme to a colour, a length or a font list. */
-function resolveTokens(/** @type {string[]} */ names) {
+export function resolveTokens(/** @type {string[]} */ names) {
   const host = document.createElement('div');
   host.style.cssText = 'position:absolute;left:-9999px;top:0;color:rgb(1, 2, 3);';
   const probe = document.createElement('div');
@@ -260,15 +260,27 @@ function resolveTokens(/** @type {string[]} */ names) {
  * in view (a crop of anything else would scroll the page), and the scroll position is restored, so the
  * page the agent saw in its last screenshot is still the page it acts on.
  * @param {Page} page
- * @param {{ dir: string, rel: (abs: string) => string, maxElements?: number, crops?: number, scrollSafe?: boolean }} opts
+ * @param {{ dir: string, rel: (abs: string) => string, maxElements?: number, crops?: number, scrollSafe?: boolean, reference?: import('../core/types.js').ThemeReference }} opts
+ *   reference: audit against ANOTHER product's themes (cross-product conformance) instead of the page's own
  * @returns {Promise<ThemeAudit>}
  */
 export async function auditThemes(
   page,
-  { dir, rel, maxElements = 400, crops = 6, scrollSafe = false },
+  { dir, rel, maxElements = 400, crops = 6, scrollSafe = false, reference },
 ) {
-  const discovery = await discoverThemes(page);
-  if (!discovery.themes.length || !discovery.tokenNames.length) {
+  const found = await discoverThemes(page);
+  // Against a reference product the target's own variables do not matter (it may have none at all):
+  // every value is compared with the reference's tokens, theme by theme.
+  const discovery =
+    reference && !found.themes.length
+      ? {
+          ...found,
+          themes: [
+            /** @type {ThemeDef} */ ({ id: 'default', switch: { type: 'base' }, overrides: {} }),
+          ],
+        }
+      : found;
+  if (!discovery.themes.length || (!reference && !discovery.tokenNames.length)) {
     return {
       themes: [],
       tokenCount: discovery.tokenNames.length,
@@ -311,7 +323,9 @@ export async function auditThemes(
     const perTheme = new Map();
     for (const theme of discovery.themes) {
       await applyTheme(page, theme, discovery.themes);
-      const tokens = await page.evaluate(resolveTokens, discovery.tokenNames);
+      const tokens = reference
+        ? referenceTokens(reference, theme.id)
+        : await page.evaluate(resolveTokens, discovery.tokenNames);
       const snap = await page.evaluate(readProbes);
       perTheme.set(theme.id, snap);
       const styles = inventoryIdx.length ? await page.evaluate(readStyles, inventoryIdx) : {};
@@ -358,7 +372,7 @@ export async function auditThemes(
           // Off-theme by value. Ask Chrome which rule produced it: a var() means it is derived from the
           // theme (e.g. calc(var(--radius) - 2px)), which is fine.
           const decl = await declarationOf(i, cat);
-          if (decl?.usesVar) {
+          if (decl?.usesVar && !reference) {
             categories[cat].on++;
             on++;
             continue;
@@ -368,8 +382,13 @@ export async function auditThemes(
             category: cat,
             value: match.display,
             count: 0,
-            kind:
-              decl?.origin === 'user-agent' ? 'browser-default' : decl ? 'hard-coded' : 'off-theme',
+            kind: reference
+              ? 'off-reference'
+              : decl?.origin === 'user-agent'
+                ? 'browser-default'
+                : decl
+                  ? 'hard-coded'
+                  : 'off-theme',
             nearest: match.nearest,
             declaration: decl
               ? { value: decl.value, source: decl.source, selector: decl.selector }
@@ -442,8 +461,9 @@ export async function auditThemes(
     }
     return {
       themes: results,
-      tokenCount: discovery.tokenNames.length,
+      tokenCount: reference ? referenceTokenCount(reference) : discovery.tokenNames.length,
       skippedSheets: discovery.skippedSheets,
+      ...(reference ? { reference: reference.url } : {}),
     };
   } finally {
     await page
@@ -492,6 +512,21 @@ function inventoryOf(styles, meta) {
   }
   return [...groups.values()].sort((a, b) => b.count - a.count).slice(0, 80);
 }
+
+/**
+ * The reference product's tokens for one of the target's themes: same id (light ↔ light, dark ↔ dark),
+ * else the reference's base theme.
+ * @param {import('../core/types.js').ThemeReference} ref @param {string} id
+ */
+function referenceTokens(ref, id) {
+  const t = ref.themes.find((x) => x.id === id) ?? ref.themes[0];
+  return t ? t.tokens : { colors: [], lengths: [], fonts: [] };
+}
+/** @param {import('../core/types.js').ThemeReference} ref */
+const referenceTokenCount = (ref) => {
+  const t = ref.themes[0]?.tokens;
+  return t ? t.colors.length + t.lengths.length + t.fonts.length : 0;
+};
 
 /** @param {ThemeDef} t */
 function describeSwitch(t) {

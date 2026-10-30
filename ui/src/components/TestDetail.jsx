@@ -549,6 +549,11 @@ const RATING = {
 };
 
 const KIND = {
+  'off-reference': [
+    'warn',
+    'Not in reference',
+    'Matches no token of the reference product this run compares with',
+  ],
   'hard-coded': [
     'bad',
     'Hard-coded',
@@ -592,11 +597,32 @@ function ThemePanel({ states, runId }) {
   return (
     <div className="space-y-6">
       <p className="max-w-3xl text-[13px] text-muted">
-        {theme.tokenCount} theme variables found in the production CSS. Every visible element was
-        checked in each theme, on {states.length === 1 ? 'the screen' : `${states.length} screens`}{' '}
-        this test reached: a value counts as on-theme when it equals a token (colours within the
-        just-noticeable difference) or when Chrome reports that the CSS rule producing it uses{' '}
-        <code className="font-mono text-[12px]">var(--…)</code>.
+        {theme.reference ? (
+          <>
+            Compared with the theme of{' '}
+            <a
+              className="font-mono text-text underline"
+              href={theme.reference}
+              target="_blank"
+              rel="noreferrer"
+            >
+              {theme.reference}
+            </a>{' '}
+            ({theme.tokenCount} tokens): every visible element, in each theme, on{' '}
+            {states.length === 1 ? 'the screen' : `${states.length} screens`} this test reached. A
+            value counts when it equals one of that product's tokens (colours within the
+            just-noticeable difference).
+          </>
+        ) : (
+          <>
+            {theme.tokenCount} theme variables found in the production CSS. Every visible element
+            was checked in each theme, on{' '}
+            {states.length === 1 ? 'the screen' : `${states.length} screens`} this test reached: a
+            value counts as on-theme when it equals a token (colours within the just-noticeable
+            difference) or when Chrome reports that the CSS rule producing it uses{' '}
+            <code className="font-mono text-[12px]">var(--…)</code>.
+          </>
+        )}
       </p>
       {states.length > 1 && (
         <div role="group" aria-label="Screen" className="flex flex-wrap gap-2">

@@ -29,7 +29,8 @@ run test:   recording? ──yes──▶ replay with Playwright (no LLM) ──
   variables) are discovered automatically. Every element on every screen a test reaches is checked in every theme,
   and Chrome reports the exact CSS rule behind each hard-coded value. Leaks such as a white card in dark mode are
   caught too, and buttons, links, inputs and headings are compared across screens to catch drift (a slightly
-  different blue on one page).
+  different blue on one page). `--theme-from <url>` checks a product against another product's themes: are all
+  your products on one theme?
 - **Visual regression.** Deterministic screenshots of the final screen, each theme and each replayed step are compared
   pixel by pixel with approved baselines. The first passing run creates them; changes are approved or rejected in the
   UI. Mark changing content with `data-aie2e-mask`.
@@ -69,6 +70,9 @@ npm start -- run http://localhost:4300 --suite examples/buggy-shop/suite.json --
 npm start -- run http://localhost:4300 --suite examples/buggy-shop/suite.json --visual fail
 npm start -- run http://localhost:4300 --suite examples/buggy-shop/suite.json --update-baselines
 
+# is this product on the same theme as our design-system site? (values compared, not variable names)
+npm start -- run https://app-two.your-company.com --theme-from https://design.your-company.com
+
 # an app behind a login (username/password from AIE2E_USERNAME / AIE2E_PASSWORD in .env)
 npm start -- run https://staging.your-app.com --login-url /login --login-success-text "Welcome back"
 
@@ -89,8 +93,13 @@ several times and then each bug on its own:
 > no LLM). Details and the per-bug table: [docs/EVALUATION.md](docs/EVALUATION.md).
 > `npm run eval -- --mode explore --heal` measures the full AI path (planner + agent).
 
+The same suite format works on an app we did not write: `examples/todomvc` (the React TodoMVC build) passes
+6/6 with no LLM, each injected regression fails exactly the test it should, and the quality gate found a real
+accessibility issue in TodoMVC itself (unlabelled checkboxes). See the TodoMVC section of the evaluation.
+
 CI runs the same suite against the clean shop (must pass) and against a seeded regression (must fail):
-see `.github/workflows/ci.yml`.
+see `.github/workflows/ci.yml`. Other repos can use the tool as a GitHub Action
+(`uses: Roh4n-1729/AI-E2E-Testing-Agent@main`): see [docs/GITHUB_ACTION.md](docs/GITHUB_ACTION.md).
 
 ## Optional app hints
 
@@ -121,6 +130,7 @@ server + SSE), React 19 + Tailwind v4 + Radix UI (web UI), Vitest. Why each one:
 
 [Architecture](docs/ARCHITECTURE.md) · [Improvements log](docs/IMPROVEMENTS.md) ·
 [Evaluation](docs/EVALUATION.md) · [App hints](docs/APP_HINTS.md) · [Kickoff](docs/KICKOFF.md) ·
+[Decisions](docs/DECISIONS.md) · [Trade-offs](docs/TRADEOFFS.md) · [GitHub Action](docs/GITHUB_ACTION.md) ·
 [Study guide](docs/STUDY_GUIDE.md) (animated version: `docs/study-guide.html`)
 
 ## Credits

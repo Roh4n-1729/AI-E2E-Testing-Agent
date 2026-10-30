@@ -424,6 +424,7 @@ export class EvidenceJudge {
           for (const th of st.audit.themes)
             if (th.score !== null) lowest.set(th.id, Math.min(lowest.get(th.id) ?? 1, th.score));
         }
+        const ref = audited.find((st) => st.audit.reference)?.audit.reference;
         const where = (/** @type {string[]} */ labels) =>
           audited.length > 1 ? ` [${[...new Set(labels)].join(', ')}]` : '';
         const screens = `${audited.length} screen${audited.length === 1 ? '' : 's'}`;
@@ -431,8 +432,8 @@ export class EvidenceJudge {
         return result(
           problems.size === 0,
           problems.size
-            ? `Theme conformance: ${[...problems].map(([p, l]) => `${p}${where(l)}`).join('; ')}`
-            : `Theme conformance: ${summary || 'n/a'} on-theme over ${screens}, no leaks`,
+            ? `Theme conformance${ref ? ` against ${ref}` : ''}: ${[...problems].map(([p, l]) => `${p}${where(l)}`).join('; ')}`
+            : `Theme conformance${ref ? ` against ${ref}` : ''}: ${summary || 'n/a'} ${ref ? 'matching' : 'on-theme'} over ${screens}, no leaks`,
         );
       }
       case 'visual-baseline': {
@@ -600,7 +601,7 @@ function themeProblems(t, exp) {
         `${th.id}: ${pct}% on-theme${top ? ` (${top.kind} ${top.category} ${top.value}${top.examples[0] ? ` in ${top.examples[0].selector}` : ''}${top.declaration?.source ? ` at ${top.declaration.source}` : ''})` : ''}`,
       );
     }
-    const hard = th.findings.filter((f) => f.kind !== 'off-theme');
+    const hard = th.findings.filter((f) => f.kind === 'hard-coded' || f.kind === 'browser-default');
     if (!exp.allowHardCoded && hard.length && (th.score === null || th.score >= exp.minScore)) {
       const f = /** @type {import('../core/types.js').ThemeFinding} */ (hard[0]);
       out.push(

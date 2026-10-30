@@ -188,6 +188,17 @@ element out.
 - Why: a theme bug inside a dialog is invisible to a final-only audit once the dialog closes. The test for this is
   exactly that dialog.
 
+### Across products: `--theme-from` (added Fri 30 Oct)
+
+- Read another product's themes once (a design-system site, or the main app), with every token resolved to a
+  value. Then check this app against them, theme by theme. Values are compared, not names: `--color-primary`
+  and `--brand-primary` can be the same violet.
+- The target's own `var()` usage does not count here (its variables might hold another brand's colours). A
+  product without any CSS variables is still checked in its default look. Misses are `off-reference`, with the
+  nearest reference token.
+- Found while building it: the audit's "transparent" test matched any colour ending in 0, so an orange
+  `rgb(255, 102, 0)` background was never checked. Only an alpha of 0 is transparent now.
+
 ### Consistency across screens (advisory, run level)
 
 - Each audit also records how buttons, links, inputs, headings and named components look in each theme. It skips
@@ -256,6 +267,16 @@ on-theme on each screen and still drift, I also compare the same component acros
 - This measures the judge and the replay path. `npm run eval -- --mode explore --heal` measures the full AI path.
 - Code: `scripts/evaluate.js`, `docs/EVALUATION.md`.
 
+### An app we did not write: TodoMVC (added Fri 30 Oct)
+
+- `examples/todomvc` serves the untouched React TodoMVC build (MIT); `npm run todomvc` → http://localhost:4400.
+- 6-test suite, replayed with no LLM: 6/6 on the real app. `BUGS=clear-broken` / `BUGS=edit-lost` inject a tiny
+  script when the page is served (the build is never edited); each fails exactly the matching test.
+- Real finding: the quality gate reports TodoMVC's checkboxes have no accessible label (axe `label`).
+- Lesson: "the other todo is visible" also passes when Clear does nothing. Check the effect (exactly one todo:
+  `//ul[@data-testid='todo-list'][count(li)=1]`). The judge is only as strict as the expectation.
+- Code: `examples/todomvc/`, `tests/integration/todomvc.test.js`.
+
 ## 11 UI and live view
 
 - `npm run ui`: a Fastify server with a React 19 UI (Tailwind v4 tokens, Radix, sonner, yet-another-react-lightbox).
@@ -300,6 +321,8 @@ Full log: `docs/IMPROVEMENTS.md`.
 | A 16px→4px grid change looked "unchanged"               | strict pixel tolerance (0.02)    |
 | A leftover toast made visual runs flaky                 | hide live regions in captures    |
 | Hand-written login steps used CSS, replay assumed XPath | login steps default to CSS       |
+| The transparency regex treated orange as transparent    | only alpha 0 is transparent      |
+| "Other todo still visible" passed a broken Clear button | expectations check the effect    |
 
 ## 14 What's next (deadline Mon 2 Nov)
 
@@ -309,7 +332,9 @@ Full log: `docs/IMPROVEMENTS.md`.
   - rehearse the demo story on the real app.
 - **Sat:** ~~visual baselines~~, ~~test suites in the UI~~, ~~login flows~~: all done Friday morning. AI triage of
   visual diffs only if time.
-- **Sun:** typed attribute contract (`.d.ts`), the GitHub Action, a TodoMVC run, the README.
+- **Sat items, done Fri:** ~~`--theme-from`~~, ~~typed attribute contract (`.d.ts`)~~, ~~the GitHub Action~~,
+  ~~TodoMVC~~, ~~diagrams~~, ~~DECISIONS / TRADEOFFS / CLAUDE.md~~.
+- **Sun:** the README final pass, demo script.
 - **Mon:** final evaluation runs and the demo GIF. Nothing new.
 - **Cut order:** Figma/reference-site comparison → Playwright spec export → MCP server → AI diff triage.
 

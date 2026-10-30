@@ -24,6 +24,7 @@ import { newRunId } from '../util/misc.js';
 import { ThemeStates } from '../theme/states.js';
 import { BaselineStore } from '../visual/baselines.js';
 import { AuthSchema, performLogin } from '../auth/login.js';
+import { captureReference } from '../theme/reference.js';
 
 /**
  * @typedef {object} RunOptions  Everything a run needs; the CLI and the UI server both build this.
@@ -48,6 +49,7 @@ import { AuthSchema, performLogin } from '../auth/login.js';
  * @property {string} [suite]            path to a committed test suite (JSON); replaces planning
  * @property {string} [suiteName]        the UI's name for that suite (shown, and used by "Run again")
  * @property {import('../auth/login.js').Auth} [auth]  log in first (a suite's own "auth" is used otherwise)
+ * @property {string} [themeFrom]  check the theme against this other product's themes (a suite's own "themeFrom" otherwise)
  * @property {boolean} [heal]             false = a broken replay is a plain failure, never handed to the agent
  * @property {'off' | 'warn' | 'fail'} [quality]  Web Vitals / accessibility gate (default: warn = advisory)
  * @property {'off' | 'warn' | 'fail'} [visual]  screenshot comparison with approved baselines (default: warn)
@@ -149,6 +151,12 @@ export async function startRun(o, { events = new RunEvents(), signal } = {}) {
           logger,
         )
       : new StaticPlanner();
+  // Cross-product theme conformance: read the reference product's themes once, before the tests.
+  const themeFrom = o.themeFrom ?? suite?.themeFrom;
+  const themeReference = themeFrom
+    ? await captureReference({ url: themeFrom, cfg: config, logger })
+    : undefined;
+
   const crawler =
     useAiPlanner && o.crawl !== false
       ? new BfsCrawler(config, logger, { storageState: login?.state })
@@ -202,6 +210,7 @@ export async function startRun(o, { events = new RunEvents(), signal } = {}) {
       baselines,
       themeStates: new ThemeStates({ perTest: config.quality.themeStates }),
       storageState: login?.state,
+      themeReference,
     }),
   });
 

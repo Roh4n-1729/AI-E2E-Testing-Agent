@@ -27,6 +27,7 @@ import { errorMessage } from '../util/misc.js';
  * @property {import('../theme/states.js').ThemeStates} [themeStates]  run-wide memory of theme-audited screens
  * @property {import('../visual/baselines.js').BaselineStore} [baselines]  approved screenshots
  * @property {import('../auth/login.js').StorageState} [storageState]  logged-in session every test starts with
+ * @property {import('./types.js').ThemeReference} [themeReference]  check the theme against another product
  */
 
 /** Runs one test in its own isolated browser: execute -> judge -> (record) -> close. */
@@ -123,6 +124,7 @@ export class TestRunner {
       session = await BrowserSession.open(config, testArtifacts, ctx.logger, {
         themeStates: this.deps.themeStates,
         storageState: this.deps.storageState,
+        themeReference: this.deps.themeReference,
       });
       const s = session;
       s.onScreenshot = (ref) => events.emit('test.screenshot', { testId: test.id, ...ref });

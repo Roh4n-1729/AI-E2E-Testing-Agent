@@ -340,7 +340,20 @@ function Editor({ name }) {
                 onChange={(e) => set({ auth: { ...suite.auth, successText: e.target.value } })}
               />
             </label>
-            <label className="block text-[13px] font-medium sm:col-span-2">
+            <label className="block text-[13px] font-medium">
+              Compare the theme with another product
+              <span className="block text-[12px] font-normal text-muted">
+                Optional. Checked against that product&apos;s themes instead of this app&apos;s own.
+              </span>
+              <input
+                type="url"
+                className={`${inputCls} mt-1.5 font-mono`}
+                placeholder="https://design.your-company.com"
+                value={suite.themeFrom ?? ''}
+                onChange={(e) => set({ themeFrom: e.target.value })}
+              />
+            </label>
+            <label className="block text-[13px] font-medium">
               What is this suite about?
               <span className="block text-[12px] font-normal text-muted">Optional</span>
               <input
@@ -635,6 +648,7 @@ function tidy(suite) {
   return {
     ...(suite.description?.trim() ? { description: suite.description.trim() } : {}),
     ...(suite.url?.trim() ? { url: suite.url.trim() } : {}),
+    ...(suite.themeFrom?.trim() ? { themeFrom: suite.themeFrom.trim() } : {}),
     ...(suite.auth?.loginUrl?.trim()
       ? {
           auth: Object.fromEntries(

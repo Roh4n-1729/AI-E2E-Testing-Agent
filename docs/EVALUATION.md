@@ -42,3 +42,21 @@ Visual stability: 0 of 70 screenshot comparisons differed from the baselines acr
 | bug: cramped-grid     | 7/7    | 2 deterministic, 5 replay | 0.0k   | 34.9s |
 
 No flaky tests across the clean runs.
+
+## A third-party app: TodoMVC (React)
+
+`examples/todomvc` serves the unmodified production build of the React TodoMVC (tastejs/todomvc, MIT).
+`examples/todomvc/suite.json` has 6 tests (add, complete + Active filter, edit by double-click, delete with
+the hover-revealed button, clear completed), replayed with no LLM. Regressions are switched on by a small
+script added to the page when it is served, never by editing the build.
+
+| Run                      | Result                                                                                      |
+| ------------------------ | ------------------------------------------------------------------------------------------- |
+| real app                 | 6/6 passed, all replayed (0 tokens)                                                         |
+| `BUGS=clear-broken`      | only "Clear completed todos" fails: the list still has 2 todos                              |
+| `BUGS=edit-lost`         | only "Edit a todo by double-clicking it" fails: "Buy oat milk" never appears                |
+| quality gate on (`warn`) | a real finding in TodoMVC itself: the todo checkboxes have no label (axe `label`, critical) |
+
+Each test that changes the list also checks how many todos are left
+(`xpath=//ul[@data-testid='todo-list'][count(li)=1]`), so a button that silently does nothing cannot pass on
+"the other todo is still visible". Verified by `tests/integration/todomvc.test.js`.

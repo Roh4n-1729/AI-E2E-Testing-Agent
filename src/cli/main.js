@@ -50,6 +50,10 @@ program
     '--login-url <url>',
     'log in here first (username/password from AIE2E_USERNAME / AIE2E_PASSWORD)',
   )
+  .option(
+    '--theme-from <url>',
+    'check the theme against another product (its CSS variables), e.g. your design-system site',
+  )
   .option('--login-success-text <text>', 'with --login-url: text that proves the login worked')
   .option('--login-success-url <part>', 'with --login-url: URL part that proves the login worked')
   .option('--headed', 'show the browser')
@@ -79,6 +83,7 @@ program
       replan: !!o.replan,
       quality: o.quality,
       visual: o.visual,
+      themeFrom: o.themeFrom,
       auth: o.loginUrl
         ? {
             loginUrl: o.loginUrl,

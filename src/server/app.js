@@ -36,6 +36,8 @@ const StartBody = z.object({
   quality: z.enum(['off', 'warn', 'fail']).optional(),
   visual: z.enum(['off', 'warn', 'fail']).optional(),
   heal: z.boolean().optional(),
+  /** check the theme against another product's themes */
+  themeFrom: z.url({ protocol: /^https?$/ }).optional(),
   /** log in first; credentials come from the server's .env, never from the request */
   auth: AuthSchema.omit({ steps: true }).optional(),
   /** a suite saved in the UI (its name); replaces planning */

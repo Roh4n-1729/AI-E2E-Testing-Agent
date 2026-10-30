@@ -5,3 +5,4 @@ docs/diagrams/*.png
 package-lock.json
 ui/dist
 docs/study-guide.html
+examples/todomvc/app

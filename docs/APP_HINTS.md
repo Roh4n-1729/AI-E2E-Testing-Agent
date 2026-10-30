@@ -31,6 +31,19 @@ A few attributes make runs cheaper, replays sturdier, and hover-only or conditio
 </button>
 ```
 
+## Types for JSX (autocomplete and value checks)
+
+Copy [`types/aie2e-attributes.d.ts`](../types/aie2e-attributes.d.ts) into your app (e.g. `src/types/aie2e.d.ts`).
+Your editor then suggests every attribute with its explanation, and a wrong value is a type error:
+
+```tsx
+<div data-aie2e-reveal="click" />
+// error TS2322: Types of property 'data-aie2e-reveal' are incompatible (only "hover" exists)
+```
+
+It augments React's `HTMLAttributes`; nothing changes at runtime. `npm run check` compiles
+`types/attributes.typecheck.tsx` (valid usage plus expected errors), so the definitions cannot drift from the docs.
+
 ## How it is used
 
 - `src/browser/hints.js`: `readHints` lists test ids and hints on the page, hidden ones included (visibility

@@ -205,7 +205,8 @@ function renderTheme(r, g) {
     return `${head}<div class="chips">${cards}</div>${rows ? `<table style="margin-top:10px"><tr><th>Theme</th><th>Problem</th><th>Value</th><th>Where</th></tr>${rows}</table>` : ''}`;
   });
   const tokens = audited[0]?.audit.tokenCount ?? 0;
-  return `<h3>Theme conformance (${tokens} theme variables · ${audited.length} screen${audited.length === 1 ? '' : 's'})</h3>${blocks.join('')}`;
+  const ref = audited[0]?.audit.reference;
+  return `<h3>Theme conformance ${ref ? `against <a href="${h(ref)}">${h(ref)}</a> (${tokens} reference tokens` : `(${tokens} theme variables`} · ${audited.length} screen${audited.length === 1 ? '' : 's'})</h3>${blocks.join('')}`;
 }
 
 /**

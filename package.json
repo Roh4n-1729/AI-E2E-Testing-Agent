@@ -13,7 +13,7 @@
   "scripts": {
     "start": "node src/cli/main.js",
     "dev": "node --watch src/cli/main.js",
-    "check": "tsc -p jsconfig.json",
+    "check": "tsc -p jsconfig.json && tsc -p types/tsconfig.json",
     "lint": "eslint .",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
@@ -22,12 +22,13 @@
     "test:int": "vitest run tests/integration",
     "browsers": "playwright install chromium",
     "doctor": "node src/cli/main.js doctor",
-    "diagrams": "for f in docs/diagrams/*.mmd; do mmdc -i $f -o ${f%.mmd}.png -b white -w 1600 -s 2; done",
+    "diagrams": "node scripts/diagrams.js",
     "ui": "npm run ui:build && node src/cli/main.js ui",
     "ui:build": "vite build --config ui/vite.config.js",
     "ui:dev": "vite --config ui/vite.config.js",
     "eval": "node scripts/evaluate.js",
     "shop": "node examples/buggy-shop/server.js",
+    "todomvc": "node examples/todomvc/server.js",
     "graph": "node scripts/graph.js"
   },
   "dependencies": {
@@ -55,6 +56,7 @@
     "@tailwindcss/vite": "^4.3.3",
     "@types/node": "^22.0.0",
     "@types/pngjs": "6.0.5",
+    "@types/react": "19.3.0",
     "@vitejs/plugin-react": "^5.2.0",
     "eslint": "^9.0.0",
     "eslint-plugin-react": "^7.37.5",

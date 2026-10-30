@@ -1,0 +1,302 @@
+{
+  "description": "TodoMVC: add todos, complete them, filter by All / Active / Completed, edit a todo by double-clicking it, delete it with the button that appears on hover, clear completed todos.",
+  "tests": [
+    {
+      "title": "TodoMVC loads cleanly",
+      "startUrl": "/",
+      "expectations": [
+        {
+          "kind": "selector-visible",
+          "selector": "[data-testid=\"text-input\"]"
+        }
+      ]
+    },
+    {
+      "title": "Add two todos",
+      "goal": "Add the todos \"Buy milk\" and \"Walk the dog\".",
+      "startUrl": "/",
+      "expectations": [
+        {
+          "kind": "text-visible",
+          "text": "Walk the dog"
+        },
+        {
+          "kind": "text-visible",
+          "text": "2 items left"
+        },
+        {
+          "kind": "selector-visible",
+          "selector": "xpath=//ul[@data-testid='todo-list'][count(li)=2]"
+        }
+      ],
+      "steps": [
+        {
+          "kind": "act",
+          "description": "Type the first todo",
+          "selector": "[data-testid=\"text-input\"]",
+          "method": "fill",
+          "arguments": ["Buy milk"]
+        },
+        {
+          "kind": "act",
+          "description": "Press Enter to add it",
+          "selector": "[data-testid=\"text-input\"]",
+          "method": "press",
+          "arguments": ["Enter"]
+        },
+        {
+          "kind": "act",
+          "description": "Type the second todo",
+          "selector": "[data-testid=\"text-input\"]",
+          "method": "fill",
+          "arguments": ["Walk the dog"]
+        },
+        {
+          "kind": "act",
+          "description": "Press Enter to add it",
+          "selector": "[data-testid=\"text-input\"]",
+          "method": "press",
+          "arguments": ["Enter"]
+        }
+      ]
+    },
+    {
+      "title": "Complete a todo and show only the active ones",
+      "goal": "Add \"Buy milk\" and \"Walk the dog\", mark \"Buy milk\" as done, then open the Active filter.",
+      "startUrl": "/",
+      "expectations": [
+        {
+          "kind": "url",
+          "pattern": "#/active"
+        },
+        {
+          "kind": "text-visible",
+          "text": "1 item left"
+        },
+        {
+          "kind": "text-visible",
+          "text": "Walk the dog"
+        },
+        {
+          "kind": "selector-visible",
+          "selector": "xpath=//ul[@data-testid='todo-list'][count(li)=1]"
+        }
+      ],
+      "steps": [
+        {
+          "kind": "act",
+          "description": "Type the first todo",
+          "selector": "[data-testid=\"text-input\"]",
+          "method": "fill",
+          "arguments": ["Buy milk"]
+        },
+        {
+          "kind": "act",
+          "description": "Press Enter to add it",
+          "selector": "[data-testid=\"text-input\"]",
+          "method": "press",
+          "arguments": ["Enter"]
+        },
+        {
+          "kind": "act",
+          "description": "Type the second todo",
+          "selector": "[data-testid=\"text-input\"]",
+          "method": "fill",
+          "arguments": ["Walk the dog"]
+        },
+        {
+          "kind": "act",
+          "description": "Press Enter to add it",
+          "selector": "[data-testid=\"text-input\"]",
+          "method": "press",
+          "arguments": ["Enter"]
+        },
+        {
+          "kind": "act",
+          "description": "Tick \"Buy milk\"",
+          "selector": "xpath=//li[@data-testid='todo-item'][.//label[normalize-space()='Buy milk']]//input[@data-testid='todo-item-toggle']",
+          "method": "click"
+        },
+        {
+          "kind": "act",
+          "description": "Open the Active filter",
+          "selector": "xpath=//a[@href='#/active']",
+          "method": "click"
+        }
+      ]
+    },
+    {
+      "title": "Edit a todo by double-clicking it",
+      "goal": "Add \"Buy milk\", double-click it and change it to \"Buy oat milk\".",
+      "startUrl": "/",
+      "expectations": [
+        {
+          "kind": "text-visible",
+          "text": "Buy oat milk"
+        },
+        {
+          "kind": "text-visible",
+          "text": "1 item left"
+        }
+      ],
+      "steps": [
+        {
+          "kind": "act",
+          "description": "Type a todo",
+          "selector": "[data-testid=\"text-input\"]",
+          "method": "fill",
+          "arguments": ["Buy milk"]
+        },
+        {
+          "kind": "act",
+          "description": "Press Enter to add it",
+          "selector": "[data-testid=\"text-input\"]",
+          "method": "press",
+          "arguments": ["Enter"]
+        },
+        {
+          "kind": "act",
+          "description": "Double-click the todo to edit it",
+          "selector": "xpath=//label[@data-testid='todo-item-label'][normalize-space()='Buy milk']",
+          "method": "doubleClick"
+        },
+        {
+          "kind": "act",
+          "description": "Type the new text",
+          "selector": "css=li.editing input.edit",
+          "method": "fill",
+          "arguments": ["Buy oat milk"]
+        },
+        {
+          "kind": "act",
+          "description": "Press Enter to save",
+          "selector": "css=li.editing input.edit",
+          "method": "press",
+          "arguments": ["Enter"]
+        }
+      ]
+    },
+    {
+      "title": "Delete a todo with the button that appears on hover",
+      "goal": "Add \"Buy milk\" and \"Walk the dog\", then delete \"Buy milk\" with its delete button.",
+      "startUrl": "/",
+      "expectations": [
+        {
+          "kind": "text-visible",
+          "text": "1 item left"
+        },
+        {
+          "kind": "text-visible",
+          "text": "Walk the dog"
+        },
+        {
+          "kind": "selector-visible",
+          "selector": "xpath=//ul[@data-testid='todo-list'][count(li)=1]"
+        }
+      ],
+      "steps": [
+        {
+          "kind": "act",
+          "description": "Type the first todo",
+          "selector": "[data-testid=\"text-input\"]",
+          "method": "fill",
+          "arguments": ["Buy milk"]
+        },
+        {
+          "kind": "act",
+          "description": "Press Enter to add it",
+          "selector": "[data-testid=\"text-input\"]",
+          "method": "press",
+          "arguments": ["Enter"]
+        },
+        {
+          "kind": "act",
+          "description": "Type the second todo",
+          "selector": "[data-testid=\"text-input\"]",
+          "method": "fill",
+          "arguments": ["Walk the dog"]
+        },
+        {
+          "kind": "act",
+          "description": "Press Enter to add it",
+          "selector": "[data-testid=\"text-input\"]",
+          "method": "press",
+          "arguments": ["Enter"]
+        },
+        {
+          "kind": "act",
+          "description": "Hover \"Buy milk\" so its delete button shows",
+          "selector": "xpath=//li[@data-testid='todo-item'][.//label[normalize-space()='Buy milk']]",
+          "method": "hover"
+        },
+        {
+          "kind": "act",
+          "description": "Click the delete button",
+          "selector": "xpath=//li[@data-testid='todo-item'][.//label[normalize-space()='Buy milk']]//button[@data-testid='todo-item-button']",
+          "method": "click"
+        }
+      ]
+    },
+    {
+      "title": "Clear completed todos",
+      "goal": "Add \"Buy milk\" and \"Walk the dog\", mark \"Buy milk\" as done, then click \"Clear completed\".",
+      "startUrl": "/",
+      "expectations": [
+        {
+          "kind": "text-visible",
+          "text": "1 item left"
+        },
+        {
+          "kind": "text-visible",
+          "text": "Walk the dog"
+        },
+        {
+          "kind": "selector-visible",
+          "selector": "xpath=//ul[@data-testid='todo-list'][count(li)=1]"
+        }
+      ],
+      "steps": [
+        {
+          "kind": "act",
+          "description": "Type the first todo",
+          "selector": "[data-testid=\"text-input\"]",
+          "method": "fill",
+          "arguments": ["Buy milk"]
+        },
+        {
+          "kind": "act",
+          "description": "Press Enter to add it",
+          "selector": "[data-testid=\"text-input\"]",
+          "method": "press",
+          "arguments": ["Enter"]
+        },
+        {
+          "kind": "act",
+          "description": "Type the second todo",
+          "selector": "[data-testid=\"text-input\"]",
+          "method": "fill",
+          "arguments": ["Walk the dog"]
+        },
+        {
+          "kind": "act",
+          "description": "Press Enter to add it",
+          "selector": "[data-testid=\"text-input\"]",
+          "method": "press",
+          "arguments": ["Enter"]
+        },
+        {
+          "kind": "act",
+          "description": "Tick \"Buy milk\"",
+          "selector": "xpath=//li[@data-testid='todo-item'][.//label[normalize-space()='Buy milk']]//input[@data-testid='todo-item-toggle']",
+          "method": "click"
+        },
+        {
+          "kind": "act",
+          "description": "Click \"Clear completed\"",
+          "selector": "xpath=//button[normalize-space()='Clear completed']",
+          "method": "click"
+        }
+      ]
+    }
+  ]
+}
