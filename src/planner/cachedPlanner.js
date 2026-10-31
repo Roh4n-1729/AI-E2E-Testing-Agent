@@ -14,14 +14,16 @@ const PlanFileSchema = z.object({ tests: z.array(TestCaseSchema) });
 
 /**
  * LLM plans differ run to run, which would make every run record fresh tests and never replay.
- * This decorator pins the plan per (url, description, maxTests) so reruns reuse the same tests
- * and their recordings. `replan` forces a fresh plan.
+ * This decorator pins the plan per (url, description, key) so reruns reuse the same tests and their
+ * recordings; the key holds maxTests and the planner's model and version, so a changed planner plans
+ * again. `replan` forces a fresh plan.
  * @implements {Planner}
  */
 export class CachedPlanner {
   /**
    * @param {Planner} inner @param {string} dir
-   * @param {{ replan: boolean, key: string }} opts  `key` should include anything that changes the plan (e.g. maxTests).
+   * @param {{ replan: boolean, key: string, onReuse?: (tests: number) => void }} opts
+   *   key: anything that changes the plan; onReuse: tells the live UI a saved plan is used
    * @param {Logger} logger
    */
   constructor(inner, dir, opts, logger) {
@@ -40,7 +42,10 @@ export class CachedPlanner {
     if (!this.opts.replan) {
       try {
         const { tests } = PlanFileSchema.parse(JSON.parse(await readFile(file, 'utf8')));
-        this.logger.info(`Reusing saved plan (${tests.length} tests). Use --replan for a new one.`);
+        this.logger.info(
+          `Reusing the saved plan (${tests.length} tests) from an earlier run. Use --replan (Plan again) for a new one.`,
+        );
+        this.opts.onReuse?.(tests.length);
         return tests;
       } catch {
         /* no usable saved plan */

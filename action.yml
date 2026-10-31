@@ -24,6 +24,14 @@ inputs:
     description: '"true" lets the agent heal a broken replay step (needs an API key). CI default: a broken step fails.'
     required: false
     default: 'false'
+  agent-engine:
+    description: 'Who drives the browser for new or broken tests: stagehand | loop (own loop, any model; experimental)'
+    required: false
+    default: ''
+  explain:
+    description: '"true" lets the judge model explain each failed test (one call per failure, only with an API key; never changes pass/fail).'
+    required: false
+    default: 'true'
   quality:
     description: 'Web Vitals, accessibility and theme checks: off | warn | fail'
     required: false
@@ -46,6 +54,10 @@ inputs:
     default: ''
   login-success-text:
     description: Text that proves the login worked.
+    required: false
+    default: ''
+  preset:
+    description: 'Models by role when tests need the AI: economy | balanced | best (empty = the action defaults).'
     required: false
     default: ''
   concurrency:
@@ -87,6 +99,8 @@ runs:
         IN_SUITE: ${{ inputs.suite }}
         IN_DESCRIPTION: ${{ inputs.description }}
         IN_HEAL: ${{ inputs.heal }}
+        IN_EXPLAIN: ${{ inputs.explain }}
+        IN_ENGINE: ${{ inputs.agent-engine }}
         IN_QUALITY: ${{ inputs.quality }}
         IN_VISUAL: ${{ inputs.visual }}
         IN_BASELINES: ${{ inputs.baselines-dir }}
@@ -94,6 +108,7 @@ runs:
         IN_LOGIN_URL: ${{ inputs.login-url }}
         IN_LOGIN_TEXT: ${{ inputs.login-success-text }}
         IN_CONCURRENCY: ${{ inputs.concurrency }}
+        IN_PRESET: ${{ inputs.preset }}
         OUT_DIR: ${{ runner.temp }}/aie2e
         CLI: ${{ github.action_path }}/src/cli/main.js
       run: |
@@ -101,9 +116,12 @@ runs:
         [ -n "$IN_SUITE" ] && args+=(--suite "$GITHUB_WORKSPACE/$IN_SUITE")
         [ -n "$IN_DESCRIPTION" ] && args+=(-d "$IN_DESCRIPTION")
         [ "$IN_HEAL" != "true" ] && args+=(--no-heal)
+        [ "$IN_EXPLAIN" = "false" ] && args+=(--no-explain)
+        [ -n "$IN_ENGINE" ] && args+=(--agent-engine "$IN_ENGINE")
         [ -n "$IN_THEME_FROM" ] && args+=(--theme-from "$IN_THEME_FROM")
         [ -n "$IN_LOGIN_URL" ] && args+=(--login-url "$IN_LOGIN_URL")
         [ -n "$IN_LOGIN_TEXT" ] && args+=(--login-success-text "$IN_LOGIN_TEXT")
+        [ -n "$IN_PRESET" ] && args+=(--preset "$IN_PRESET")
         [ -n "$IN_BASELINES" ] && export AIE2E_BASELINES_DIR="$GITHUB_WORKSPACE/$IN_BASELINES"
         status=0
         node "$CLI" "${args[@]}" || status=$?

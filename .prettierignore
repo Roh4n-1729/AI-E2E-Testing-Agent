@@ -4,6 +4,7 @@ node_modules
 docs/diagrams/*.png
 package-lock.json
 ui/dist
-docs/study-guide.html
+ui/dist-demo
 examples/todomvc/app
 examples/saucedemo/app
+deploy/seed

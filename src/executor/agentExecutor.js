@@ -7,6 +7,7 @@ import { actionsToSteps } from './steps.js';
 
 /**
  * @import { BrowserSession } from '../browser/session.js'
+ * @import { AgentClaim } from '../core/types.js'
  * @import { PageHint } from '../browser/hints.js'
  * @import { Config } from '../config/config.js'
  * @import { Executor, TestContext } from '../core/ports.js'
@@ -14,7 +15,14 @@ import { actionsToSteps } from './steps.js';
  */
 
 /** Tools that only look at the page. */
-const OBSERVE = new Set(['screenshot', 'ariaTree', 'extract', 'think', 'appTestIds']);
+const OBSERVE = new Set([
+  'screenshot',
+  'ariaTree',
+  'extract',
+  'think',
+  'appTestIds',
+  'harnessStatus',
+]);
 
 /**
  * An LLM agent (Stagehand) drives the browser toward the test goal, and what it did is captured
@@ -99,12 +107,16 @@ export class AgentExecutor {
         model: { modelName: this.cfg.model, thinkingEffort: this.cfg.agentThinkingEffort },
         tools: {
           hoverAt: hoverAtTool(session),
+          harnessStatus: harnessStatusTool(session),
           ...(useHints ? testIdTools(session) : {}),
         },
       });
+      const instruction = buildInstruction(test, resume, useHints ? hints : [], this.loggedIn);
       const result = await agent.execute({
-        instruction: buildInstruction(test, resume, useHints ? hints : [], this.loggedIn),
+        instruction,
         maxSteps: test.maxSteps ?? this.cfg.maxSteps,
+        // a structured final report instead of prose: shown next to the verdict, never used for it
+        output: FinalReportSchema,
         callbacks: {
           onEvidence: async (event) => {
             if (event.type === 'screenshot') {
@@ -152,7 +164,7 @@ export class AgentExecutor {
       const { steps, recordable } = actionsToSteps(result.actions, prior.length, stable);
       return {
         mode: 'agent',
-        agentClaim: { success: result.success, message: result.message },
+        agentClaim: toClaim(result),
         steps: [...prior, ...steps],
         recordable: recordable && result.success,
         heals: [],
@@ -161,6 +173,7 @@ export class AgentExecutor {
         llmUsage: result.usage
           ? { inputTokens: result.usage.input_tokens, outputTokens: result.usage.output_tokens }
           : undefined,
+        agentInput: { model: this.cfg.model, engine: 'stagehand', instruction },
       };
     } catch (e) {
       return {
@@ -172,6 +185,63 @@ export class AgentExecutor {
       };
     }
   }
+}
+
+/** What the agent reports when it finishes (Stagehand's `output` schema). */
+export const FinalReportSchema = z.object({
+  status: z
+    .enum(['done', 'blocked', 'app-error'])
+    .describe(
+      'done: the goal is achieved. blocked: you could not do it (control missing, unclear goal). app-error: the app itself failed (error page, crash, failed request)',
+    ),
+  summary: z.string().describe('One or two plain sentences: what you did and what happened'),
+  observed: z
+    .array(z.string())
+    .max(6)
+    .describe('Short facts you saw on the page that support your status, e.g. "Cart shows (2)"'),
+  valuesUsed: z
+    .array(z.string())
+    .max(6)
+    .optional()
+    .describe('Test data you typed that the goal did not give you, e.g. "email: test@example.com"'),
+});
+
+/**
+ * The agent's claim, from its structured report when it gave one (older Stagehand results and failed
+ * reports fall back to success + message). Recorded for comparison, never used for the verdict.
+ * @param {{ success: boolean, message: string, output?: Record<string, unknown> }} result
+ * @returns {AgentClaim}
+ */
+export function toClaim(result) {
+  const parsed = FinalReportSchema.safeParse(result.output);
+  if (!parsed.success) return { success: result.success, message: result.message };
+  const r = parsed.data;
+  return {
+    success: result.success && r.status === 'done',
+    message: r.summary || result.message,
+    status: r.status,
+    observed: r.observed,
+    ...(r.valuesUsed?.length ? { valuesUsed: r.valuesUsed } : {}),
+  };
+}
+
+/**
+ * Read-only view of what the harness has seen (console errors, failed requests, an error screen), so the
+ * agent can tell its own mistake from an app failure and stop early instead of retrying. It cannot change
+ * the verdict: the judge reads its own evidence.
+ * @param {BrowserSession} session
+ */
+export function harnessStatusTool(session) {
+  return tool({
+    description:
+      'Read what the test harness has seen so far: current URL, an error screen if the page shows one, and the console ' +
+      'errors and failed network requests since the test started. Call it when the page looks wrong, a step had no ' +
+      'effect, or before you report app-error. It does not change the page.',
+    inputSchema: z.object({
+      why: z.string().describe('What made you check'),
+    }),
+    execute: async () => session.harnessStatus(),
+  });
 }
 
 /** @param {any} result @returns {{ selector?: string, method?: string } | undefined} */
@@ -290,7 +360,7 @@ export function describeAgentStep(e) {
 }
 
 /** @param {TestCase} test @param {ResumeContext} [resume] @param {PageHint[]} [hints] */
-function buildInstruction(test, resume, hints = [], loggedIn = false) {
+export function buildInstruction(test, resume, hints = [], loggedIn = false) {
   const lines = [
     `You are testing a web application starting at ${test.startUrl}.`,
     `Goal: ${test.goal}`,
@@ -299,9 +369,16 @@ function buildInstruction(test, resume, hints = [], loggedIn = false) {
     'and say which values you used; never make up passwords, card numbers or other secrets. If the goal cannot be',
     'achieved, stop and say so plainly: your report will be checked against independent',
     'evidence from the browser, so an inaccurate claim of success will be caught.',
+    'If the page looks broken (an error screen, nothing happens after a click), call harnessStatus: it shows the',
+    'console errors and failed requests the harness saw. When the app itself failed, stop and finish with',
+    'status "app-error" instead of retrying or going back and forth.',
     'Some controls are hidden until the pointer moves or hovers (toolbars in full-screen or presentation',
     'mode, hover menus). If a control you expect is not visible, use the hoverAt tool (usually near an',
     'edge or corner), look again, and only then conclude it does not exist.',
+    'When the page has several controls with the same label (three "Explore Now" buttons), always say which one in',
+    'your action: its section heading or the text next to it, e.g. "click the Explore Now button in the Enhance Your',
+    'Visuals section", never just "click the Explore Now button". After a click, check you reached what the goal',
+    'expects; if you landed somewhere else, say so in your report instead of calling it success.',
     'Prefer finishing the goal in the screen where it naturally belongs: do not wander into other modes.',
     'Take the shortest path: if the app offers a sample or template that gets you to the needed state, use it,',
     'unless the goal is about creating that state.',

@@ -63,7 +63,8 @@ export class AiSdkLlm {
           ],
         },
       ],
-      temperature: 0,
+      // thinking models (the claude 5.5 family) reject a temperature; the SDK would warn on every call
+      ...(fixedTemperature(this.model) ? {} : { temperature: 0 }),
     });
     this.onUsage?.({
       inputTokens: usage?.inputTokens ?? 0,
@@ -71,4 +72,13 @@ export class AiSdkLlm {
     });
     return /** @type {T} */ (object);
   }
+}
+
+/**
+ * Models that always think and ignore `temperature` (the SDK warns on every call otherwise).
+ * @param {import('ai').LanguageModel} model
+ */
+export function fixedTemperature(model) {
+  const id = typeof model === 'string' ? model : model.modelId;
+  return /claude-[a-z]+-5-5/.test(id);
 }

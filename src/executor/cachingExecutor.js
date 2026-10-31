@@ -40,7 +40,10 @@ export class CachingExecutor {
 
     ctx.logger.info(`replaying recording (${recording.steps.length} steps, no LLM)`);
     try {
-      return await this.replay.execute(test, session, ctx, recording);
+      return {
+        ...(await this.replay.execute(test, session, ctx, recording)),
+        recordedAt: recording.recordedAt,
+      };
     } catch (e) {
       if (!(e instanceof ReplayStepError)) throw e;
       if (!this.heal) {
@@ -52,6 +55,7 @@ export class CachingExecutor {
           baseline: e.baseline,
           trace: e.trace,
           failure: e.message,
+          recordedAt: recording.recordedAt,
         };
       }
       ctx.logger.warn(`${e.message}; asking the agent to heal`);
@@ -74,7 +78,14 @@ export class CachingExecutor {
         outcome: 'failed',
       };
       const trace = [...e.trace, ...(out.trace ?? [])].map((t, i) => ({ ...t, index: i }));
-      return { ...out, mode: 'healed', steps: reindex(out.steps), heals: [heal], trace };
+      return {
+        ...out,
+        mode: 'healed',
+        steps: reindex(out.steps),
+        heals: [heal],
+        trace,
+        recordedAt: recording.recordedAt,
+      };
     }
   }
 }

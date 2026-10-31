@@ -1,3 +1,4 @@
+import { explainError } from '../util/explain.js';
 import { writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { Stagehand } from '@browserbasehq/stagehand';
@@ -429,6 +430,34 @@ export class BrowserSession {
     if (!state.audit.themes.length && !state.audit.error) this.#noThemes = true;
     this.#themeStates.push(state);
     return state;
+  }
+
+  /**
+   * What the harness has seen so far, for the agent's read-only harnessStatus tool: the agent cannot see
+   * console errors or failed requests on its own, so it could not tell "I failed" from "the app failed".
+   * Never used for the verdict (the judge reads its own evidence).
+   */
+  async harnessStatus() {
+    const page = this.page;
+    const text = await page
+      .evaluate(() => (document.body?.innerText ?? '').slice(0, 3000))
+      .catch(() => '');
+    const errorScreen =
+      /Application error: a (server|client)-side exception|Internal Server Error|This page could not be found|Something went wrong|\b50[0-4]\b.{0,40}(error|unavailable)/i.exec(
+        text,
+      )?.[0];
+    const errors = this.#consoleLog.filter((c) => c.type === 'error' || c.type === 'pageerror');
+    return {
+      url: page.url(),
+      title: await page.title().catch(() => ''),
+      errorScreen: errorScreen ?? null,
+      consoleErrors: errors.length,
+      recentConsoleErrors: errors.slice(-3).map((c) => explainError(c.text)),
+      failedRequests: this.#networkLog.length,
+      recentFailedRequests: this.#networkLog
+        .slice(-3)
+        .map((n) => `${n.method} ${n.status ?? n.failure ?? 'failed'} ${n.url}`.slice(0, 200)),
+    };
   }
 
   /**

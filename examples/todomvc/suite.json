@@ -7,7 +7,8 @@
       "expectations": [
         {
           "kind": "selector-visible",
-          "selector": "[data-testid=\"text-input\"]"
+          "selector": "[data-testid=\"text-input\"]",
+          "label": "The new-todo box is there"
         }
       ]
     },
@@ -18,15 +19,18 @@
       "expectations": [
         {
           "kind": "text-visible",
-          "text": "Walk the dog"
+          "text": "Walk the dog",
+          "label": "\"Walk the dog\" is in the list"
         },
         {
           "kind": "text-visible",
-          "text": "2 items left"
+          "text": "2 items left",
+          "label": "The counter says 2 items left"
         },
         {
           "kind": "selector-visible",
-          "selector": "xpath=//ul[@data-testid='todo-list'][count(li)=2]"
+          "selector": "xpath=//ul[@data-testid='todo-list'][count(li)=2]",
+          "label": "The list holds 2 todos"
         }
       ],
       "steps": [
@@ -67,19 +71,23 @@
       "expectations": [
         {
           "kind": "url",
-          "pattern": "#/active"
+          "pattern": "#/active",
+          "label": "The Active filter is on"
         },
         {
           "kind": "text-visible",
-          "text": "1 item left"
+          "text": "1 item left",
+          "label": "The counter says 1 item left"
         },
         {
           "kind": "text-visible",
-          "text": "Walk the dog"
+          "text": "Walk the dog",
+          "label": "\"Walk the dog\" is still listed"
         },
         {
           "kind": "selector-visible",
-          "selector": "xpath=//ul[@data-testid='todo-list'][count(li)=1]"
+          "selector": "xpath=//ul[@data-testid='todo-list'][count(li)=1]",
+          "label": "Only 1 todo is shown"
         }
       ],
       "steps": [
@@ -132,11 +140,13 @@
       "expectations": [
         {
           "kind": "text-visible",
-          "text": "Buy oat milk"
+          "text": "Buy oat milk",
+          "label": "The todo now reads \"Buy oat milk\""
         },
         {
           "kind": "text-visible",
-          "text": "1 item left"
+          "text": "1 item left",
+          "label": "The counter says 1 item left"
         }
       ],
       "steps": [
@@ -183,15 +193,18 @@
       "expectations": [
         {
           "kind": "text-visible",
-          "text": "1 item left"
+          "text": "1 item left",
+          "label": "The counter says 1 item left"
         },
         {
           "kind": "text-visible",
-          "text": "Walk the dog"
+          "text": "Walk the dog",
+          "label": "\"Walk the dog\" is still listed"
         },
         {
           "kind": "selector-visible",
-          "selector": "xpath=//ul[@data-testid='todo-list'][count(li)=1]"
+          "selector": "xpath=//ul[@data-testid='todo-list'][count(li)=1]",
+          "label": "The list holds 1 todo"
         }
       ],
       "steps": [
@@ -244,15 +257,18 @@
       "expectations": [
         {
           "kind": "text-visible",
-          "text": "1 item left"
+          "text": "1 item left",
+          "label": "The counter says 1 item left"
         },
         {
           "kind": "text-visible",
-          "text": "Walk the dog"
+          "text": "Walk the dog",
+          "label": "\"Walk the dog\" is still listed"
         },
         {
           "kind": "selector-visible",
-          "selector": "xpath=//ul[@data-testid='todo-list'][count(li)=1]"
+          "selector": "xpath=//ul[@data-testid='todo-list'][count(li)=1]",
+          "label": "The list holds 1 todo"
         }
       ],
       "steps": [

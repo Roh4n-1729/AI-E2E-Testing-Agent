@@ -52,6 +52,11 @@ function readCustomProperties() {
 const BASE = /^(?::root|html|:host|body)$/;
 const CLASS = /^(?::root|html|body)?\.([A-Za-z][\w-]*)$/;
 const ATTR = /^(?::root|html|body)?\[(data-[\w-]+)\s*~?=\s*["']?([\w-]+)["']?\]$/;
+/** CSS frameworks' internal variables (Tailwind's --tw-*): plumbing for utilities, never design tokens. */
+const FRAMEWORK_VAR = /^--tw-/;
+/** Utility class names (Tailwind and similar): they may set variables, but they are never themes. */
+const UTILITY_CLASS =
+  /^(?:[a-z]+:)*(?:bg|text|border|from|via|to|ring|fill|stroke|shadow|outline|decoration|accent|caret|divide|placeholder|opacity|font|p|m|w|h|gap|space)-/;
 const DARK = /prefers-color-scheme:\s*dark/;
 const LIGHT = /prefers-color-scheme:\s*light/;
 
@@ -76,7 +81,12 @@ export function classifyThemes(rules) {
     Object.assign(t.overrides, props);
     themes.set(id, t);
   };
-  for (const r of rules) {
+  for (const raw0 of rules) {
+    const props = Object.fromEntries(
+      Object.entries(raw0.props).filter(([n]) => !FRAMEWORK_VAR.test(n)),
+    );
+    if (!Object.keys(props).length) continue;
+    const r = { ...raw0, props };
     // only rules that also apply on screen
     if (r.media && !/screen|prefers-color-scheme/.test(r.media) && !/^\s*$/.test(r.media)) continue;
     for (const raw of r.selector.split(',')) {
@@ -86,7 +96,7 @@ export function classifyThemes(rules) {
         if (DARK.test(r.media)) add('dark', { type: 'media', scheme: 'dark' }, r.props);
         else if (LIGHT.test(r.media)) add('light', { type: 'media', scheme: 'light' }, r.props);
         else add('base', { type: 'base' }, r.props);
-      } else if ((m = CLASS.exec(sel))) {
+      } else if ((m = CLASS.exec(sel)) && !UTILITY_CLASS.test(/** @type {string} */ (m[1]))) {
         add(
           /** @type {string} */ (m[1]),
           { type: 'class', name: /** @type {string} */ (m[1]) },
@@ -106,16 +116,19 @@ export function classifyThemes(rules) {
   }
   const base = themes.get('base');
   themes.delete('base');
-  // A class or attribute rule is a THEME only when it re-defines variables the base defines (.dark
-  // overriding --bg), or, with no base at all, when its name says so ([data-theme=…], .dark). Otherwise
-  // it is a component-scoped variable (.card { --pad: 8px }).
+  // A class or attribute rule is a THEME when its name says so ([data-theme=…], .dark) and it re-defines
+  // a base variable (or there is no base), or when it re-defines at least two base variables
+  // (.brand-b { --primary; --bg }). One overridden variable on an unnamed class is a component or
+  // utility tweak (.card { --pad }, .bg-white { --opacity }), not a theme.
   const baseNames = new Set(Object.keys(base?.overrides ?? {}));
-  const looksLikeTheme = (/** @type {ThemeDef} */ t) =>
-    t.switch.type === 'media' ||
-    Object.keys(t.overrides).some((n) => baseNames.has(n)) ||
-    (!baseNames.size &&
-      ((t.switch.type === 'attr' && /theme|mode|scheme|color/i.test(t.switch.attr)) ||
-        (t.switch.type === 'class' && /dark|light|theme/i.test(t.switch.name))));
+  const named = (/** @type {ThemeDef} */ t) =>
+    (t.switch.type === 'attr' && /theme|mode|scheme|color/i.test(t.switch.attr)) ||
+    (t.switch.type === 'class' && /dark|light|theme/i.test(t.switch.name));
+  const looksLikeTheme = (/** @type {ThemeDef} */ t) => {
+    if (t.switch.type === 'media') return true;
+    const shared = Object.keys(t.overrides).filter((n) => baseNames.has(n)).length;
+    return named(t) ? shared >= 1 || !baseNames.size : shared >= 2;
+  };
   for (const [id, t] of themes) if (!looksLikeTheme(t)) themes.delete(id);
   names.clear();
   for (const n of baseNames) names.add(n);

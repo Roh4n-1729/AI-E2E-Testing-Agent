@@ -10,6 +10,21 @@ export const ConfigSchema = z.object({
    */
   plannerModel: z.string().min(1).optional(),
   judgeModel: z.string().min(1).optional(),
+  /**
+   * Models by role in one word (see MODEL_PRESETS). Explicit model settings always win. Without a preset
+   * the planner and judge use `model`.
+   */
+  preset: z.enum(['economy', 'balanced', 'best']).optional(),
+  /**
+   * After the verdict, the judge's model reads the evidence of each FAILED test and says what most likely
+   * went wrong (app bug, test problem, environment). Advisory: never changes a verdict; no calls on a green run.
+   */
+  explainFailures: z.boolean().default(true),
+  /**
+   * Who drives the browser for a goal. stagehand: Stagehand 3.7.3's agent() (limited to the models it knows).
+   * loop: our own AI SDK tool loop on Playwright's accessibility snapshot; takes any model id (experimental).
+   */
+  agentEngine: z.enum(['stagehand', 'loop']).default('stagehand'),
   headless: z.boolean().default(true),
   outDir: z.string().default('.aie2e'),
   maxSteps: z.number().int().positive().default(20),
@@ -121,6 +136,41 @@ export const ConfigSchema = z.object({
 });
 
 /** @typedef {z.infer<typeof ConfigSchema>} Config */
+
+/**
+ * Models by role. The agent makes dozens of calls per test, the planner one per run, the judge one per
+ * visual question, so the strong models go where calls are few. The agent is limited to models Stagehand
+ * 3.7.3 knows (see AGENT_MODEL_WARNING); the planner and judge go through the AI SDK and take any model.
+ */
+export const MODEL_PRESETS = /** @type {const} */ ({
+  economy: {
+    model: 'anthropic/claude-haiku-4-5',
+    plannerModel: 'anthropic/claude-haiku-4-5',
+    judgeModel: 'anthropic/claude-haiku-4-5',
+  },
+  balanced: {
+    model: 'anthropic/claude-haiku-4-5',
+    plannerModel: 'anthropic/claude-sonnet-5-5',
+    judgeModel: 'anthropic/claude-sonnet-5-5',
+  },
+  best: {
+    model: 'anthropic/claude-sonnet-4-6',
+    plannerModel: 'anthropic/claude-opus-5-5',
+    judgeModel: 'anthropic/claude-opus-5-5',
+  },
+});
+
+/**
+ * Why a browser-agent model will not work with Stagehand 3.7.3, or undefined. Its agent loop rewrites
+ * earlier messages, which breaks the thinking signatures of Claude models it does not know (the 5.5
+ * family), seen on 29 Oct. The planner and judge are not affected.
+ * @param {string} model
+ */
+export function agentModelWarning(model, engine = 'stagehand') {
+  return engine === 'stagehand' && /claude-[a-z]+-5-5/.test(model)
+    ? `${model} cannot drive the browser agent with Stagehand 3.7.3 (thinking-signature error): use anthropic/claude-sonnet-4-6 or anthropic/claude-opus-4-8 for AIE2E_MODEL, or AIE2E_AGENT_ENGINE=loop (our own loop takes any model); the planner and judge can use it`
+    : undefined;
+}
 /** @typedef {z.input<typeof ConfigSchema>} ConfigInput */
 
 /** @param {string | undefined} v */
@@ -150,6 +200,9 @@ export function loadConfig(overrides = {}, env = process.env) {
     model: env.AIE2E_MODEL || undefined,
     plannerModel: env.AIE2E_PLANNER_MODEL || undefined,
     judgeModel: env.AIE2E_JUDGE_MODEL || undefined,
+    preset: /** @type {ConfigInput['preset']} */ (env.AIE2E_PRESET || undefined),
+    explainFailures: bool(env.AIE2E_EXPLAIN),
+    agentEngine: /** @type {ConfigInput['agentEngine']} */ (env.AIE2E_AGENT_ENGINE || undefined),
     headless: bool(env.AIE2E_HEADLESS),
     outDir: env.AIE2E_OUT_DIR || undefined,
     maxSteps: int(env.AIE2E_MAX_STEPS),
@@ -190,6 +243,17 @@ export function loadConfig(overrides = {}, env = process.env) {
   // nested groups merge, so a CLI flag (--visual fail) keeps the env's settings (AIE2E_BASELINES_DIR)
   for (const k of /** @type {const} */ (['visual', 'quality', 'judge']))
     if (fromEnv[k] && overrides[k]) merged[k] = { ...fromEnv[k], ...defined(overrides[k]) };
+  // A preset chosen for this run (flag or UI) beats the models in .env: picking "best" for a demo must give
+  // the best models even when .env pins cheap ones for development (seen: --preset best ran haiku). Only a
+  // model flag for this run beats it. A preset from .env fills the roles .env does not set.
+  const preset = /** @type {keyof typeof MODEL_PRESETS | undefined} */ (merged.preset);
+  if (preset) {
+    const p = MODEL_PRESETS[preset];
+    const base = overrides.preset ? overrides : merged;
+    merged.model = base.model ?? p.model;
+    merged.plannerModel = base.plannerModel ?? p.plannerModel;
+    merged.judgeModel = base.judgeModel ?? p.judgeModel;
+  }
   return ConfigSchema.parse(merged);
 }
 

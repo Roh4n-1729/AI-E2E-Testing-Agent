@@ -29,6 +29,7 @@ export class StaticPlanner {
         startUrl: target.url,
         expectations,
         tags: goal ? [] : ['smoke'],
+        origin: goal ? 'user' : 'smoke',
       },
     ];
   }

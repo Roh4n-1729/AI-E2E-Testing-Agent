@@ -32,6 +32,40 @@ describe('theme discovery from the build CSS', () => {
     expect(byId.light).toEqual({ type: 'base' });
   });
 
+  it('never mistakes utility classes or framework variables for themes (Asset Sense: 10 "themes")', () => {
+    const { themes, tokenNames } = classifyThemes([
+      {
+        selector: ':root',
+        media: '',
+        props: { '--background': '#fff', '--foreground': '#111', '--tw-bg-opacity': '1' },
+      },
+      {
+        selector: '.dark',
+        media: '',
+        props: { '--background': '#0b0b0b', '--foreground': '#eee' },
+      },
+      // Tailwind utilities that set variables, as built apps ship them
+      { selector: '.bg-slate-100', media: '', props: { '--tw-bg-opacity': '1' } },
+      {
+        selector: '.bg-white',
+        media: '',
+        props: { '--tw-bg-opacity': '1', '--background': '#fff' },
+      },
+      { selector: '.hover\\:bg-violet-600', media: '', props: { '--tw-bg-opacity': '1' } },
+      { selector: '.text-slate-900', media: '', props: { '--foreground': '#0f172a', '--x': '1' } },
+      // one tweaked variable on an unnamed class is a component, not a theme
+      { selector: '.promo', media: '', props: { '--background': '#ff6600' } },
+      // a real brand theme re-defines several tokens
+      {
+        selector: '.brand-b',
+        media: '',
+        props: { '--background': '#f0f9ff', '--foreground': '#082f49' },
+      },
+    ]);
+    expect(themes.map((t) => t.id)).toEqual(['light', 'dark', 'brand-b']);
+    expect(tokenNames.some((n) => n.startsWith('--tw-'))).toBe(false);
+  });
+
   it('reports nothing for a build without theme variables (e.g. Tailwind v3 baked values)', () => {
     expect(
       classifyThemes([{ selector: '.btn', media: '', props: { '--tw-ring': '0' } }]).themes,

@@ -5,11 +5,15 @@
  *
  * Event types and payloads:
  *   run.started    { runId, target: {url, description?, goal?}, config: {model, concurrency, headless, cache} }
- *   phase          { phase: 'crawl'|'plan'|'run'|'report', status: 'running'|'done', detail? }
+ *   phase          { phase: 'login'|'crawl'|'plan'|'run'|'report', status: 'running'|'done', detail? }
+ *   site.ready     { pages: [{ url, title }] }   what the crawler found (first 40)
+ *   plan.review    { found: string[], remaining: string[] }   weak checks the plan review caught
+ *   plan.reused    { tests }   a plan saved by an earlier run is used (no planner call)
  *   plan.ready     { tests: [{ id, title, goal, expectations }] }
  *   test.started   { testId, title, goal }
  *   test.step      { testId, source: 'agent'|'replay', description, ok? }
  *   test.screenshot{ testId, path, url, source: 'agent'|'harness' }
+ *   test.judging   { testId, checks, mode }   the steps are done; the judge is reading the evidence
  *   test.finished  { testId, title, status, reason, mode, durationMs, claimMismatch, heals, llmUsage? }
  *   log            { level, scope, message }
  *   run.finished   { runId, summary }

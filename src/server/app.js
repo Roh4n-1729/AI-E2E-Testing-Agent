@@ -6,7 +6,7 @@ import Fastify from 'fastify';
 import { z } from 'zod';
 import { llmRequirement } from '../app/startRun.js';
 import { resolveChromePath } from '../browser/chrome.js';
-import { loadConfig } from '../config/config.js';
+import { MODEL_PRESETS, agentModelWarning, loadConfig } from '../config/config.js';
 import { RunManager } from './runManager.js';
 import { BaselineStore } from '../visual/baselines.js';
 import { SUITE_NAME, SuiteStore } from './suites.js';
@@ -14,6 +14,8 @@ import { FileRecordStore } from '../storage/recordStore.js';
 import { suiteFromRun } from '../planner/suitePlanner.js';
 import { testFingerprint } from '../storage/recordStore.js';
 import { AuthSchema } from '../auth/login.js';
+import { slugify } from '../util/misc.js';
+import { AccessGate, accessConfig, hostAllowed, targetAllowed } from './access.js';
 
 /** Request body for POST /api/runs. Bounds keep a stray click from launching dozens of browsers. */
 const StartBody = z.object({
@@ -23,6 +25,8 @@ const StartBody = z.object({
   expectUrl: z.string().max(500).optional(),
   expectText: z.array(z.string().max(500)).max(10).optional(),
   model: z.string().max(100).optional(),
+  preset: z.enum(['economy', 'balanced', 'best']).optional(),
+  agentEngine: z.enum(['stagehand', 'loop']).optional(),
   headed: z.boolean().optional(),
   concurrency: z.number().int().min(1).max(4).optional(),
   maxTests: z.number().int().min(1).max(8).optional(),
@@ -36,6 +40,7 @@ const StartBody = z.object({
   quality: z.enum(['off', 'warn', 'fail']).optional(),
   visual: z.enum(['off', 'warn', 'fail']).optional(),
   heal: z.boolean().optional(),
+  explain: z.boolean().optional(),
   /** check the theme against another product's themes */
   themeFrom: z.url({ protocol: /^https?$/ }).optional(),
   /** log in first; credentials come from the server's .env, never from the request */
@@ -44,24 +49,64 @@ const StartBody = z.object({
   suite: z.string().regex(SUITE_NAME).optional(),
 });
 
-const LOCAL_HOSTS = /^(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/;
-
 /**
  * Local-only web server: REST + SSE for the UI, static reports/screenshots, the built UI itself.
  * It launches browsers on this machine, so it (a) should be bound to 127.0.0.1 by the caller and
- * (b) rejects any request whose Host header is not local (guards against DNS rebinding).
+ * (b) rejects any request whose Host header is not local (guards against DNS rebinding). Deployed for
+ * others (README, "Deploying"), it also needs an access code and refuses targets on the owner's network
+ * (`./access.js`).
  *
- * @param {{ outDir: string, uiDir?: string, manager?: RunManager, logger?: boolean }} opts
+ * @param {{ outDir: string, uiDir?: string, manager?: RunManager, logger?: boolean,
+ *   access?: import('./access.js').AccessConfig }} opts
  */
-export async function createServer({ outDir, uiDir, manager, logger = false }) {
+export async function createServer({
+  outDir,
+  uiDir,
+  manager,
+  logger = false,
+  access = accessConfig(),
+}) {
   const runs = manager ?? new RunManager({ outDir });
   const app = Fastify({ logger });
   const root = path.resolve(outDir);
 
+  const gate = access.code ? new AccessGate(access.code) : null;
   app.addHook('onRequest', async (req, reply) => {
-    if (!LOCAL_HOSTS.test(req.headers.host ?? '')) {
+    // the platform's health check may use any host name; it learns nothing but "ok"
+    if (req.url === '/healthz') return reply.send('ok');
+    if (!hostAllowed(req.headers.host ?? '', access)) {
       return reply.code(403).send({ error: 'Only local access is allowed' });
     }
+    // with an access code, everyone needs it (a proxy may present itself as localhost)
+    const guarded = req.url.startsWith('/api/') || req.url.startsWith('/files/');
+    if (
+      gate &&
+      guarded &&
+      !req.url.startsWith('/api/access') &&
+      !gate.hasAccess(req.headers.cookie)
+    ) {
+      return reply.code(401).send({ error: 'Enter the access code', locked: true });
+    }
+  });
+
+  // ---- access code (shared instances) ---------------------------------------------------------
+  app.get('/api/access', async (req) => ({
+    required: !!gate,
+    ok: gate ? gate.hasAccess(req.headers.cookie) : true,
+  }));
+  app.post('/api/access', async (req, reply) => {
+    if (!gate) return { ok: true };
+    const who = String(req.headers['cf-connecting-ip'] ?? req.ip);
+    const secure = req.headers['x-forwarded-proto'] === 'https';
+    const res = gate.tryCode(/** @type {any} */ (req.body)?.code, who, secure);
+    if (!res.ok)
+      return reply.code(res.retryAfterS ? 429 : 401).send({
+        error: res.retryAfterS
+          ? `Too many wrong codes. Try again in ${Math.ceil(res.retryAfterS / 60)} min.`
+          : 'That code is not right',
+      });
+    reply.header('set-cookie', res.cookie);
+    return { ok: true };
   });
 
   // ---- health -------------------------------------------------------------------------------
@@ -73,12 +118,22 @@ export async function createServer({ outDir, uiDir, manager, logger = false }) {
       model: config.model,
       plannerModel: config.plannerModel ?? config.model,
       judgeModel: config.judgeModel ?? config.model,
+      preset: config.preset ?? null,
+      presets: MODEL_PRESETS,
+      agentWarning: agentModelWarning(config.model, config.agentEngine) ?? null,
+      agentEngine: config.agentEngine,
       keyVar: need.keyVar ?? null,
       keyPresent: need.keyPresent,
-      chrome,
+      // local paths stay on this machine when the UI is shared
+      chrome: access.shared ? undefined : chrome,
       chromeOk: !!chrome && existsSync(chrome),
-      outDir: root,
+      outDir: access.shared ? undefined : root,
+      shared: access.shared
+        ? { maxTests: access.maxTests, concurrency: access.concurrency, apps: access.apps }
+        : null,
       active: runs.active?.runId ?? null,
+      // the models the running run uses (a preset picked for it beats .env), for the sidebar
+      activeModels: runs.active ? runModels(runs.active.options, config) : null,
       // whether a login can run (the values themselves never leave the server)
       loginCreds: !!process.env.AIE2E_USERNAME && !!process.env.AIE2E_PASSWORD,
     };
@@ -91,6 +146,33 @@ export async function createServer({ outDir, uiDir, manager, logger = false }) {
       return reply.code(400).send({
         error: parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; '),
       });
+    }
+    if (access.shared) {
+      // a shared instance: no targets on the owner's network, login only on listed origins, fewer tests
+      const suite = parsed.data.suite
+        ? await suites.get(parsed.data.suite).catch(() => null)
+        : null;
+      for (const u of [parsed.data.url, parsed.data.themeFrom, suite?.themeFrom].filter(Boolean)) {
+        const t = await targetAllowed(/** @type {string} */ (u), access);
+        if (!t.ok) return reply.code(403).send({ error: t.reason });
+      }
+      // the owner's password is typed only into a login page of an app the owner listed
+      const auth = parsed.data.auth ?? suite?.auth;
+      if (auth) {
+        const app = new URL(parsed.data.url).origin;
+        const login = new URL(auth.loginUrl, parsed.data.url).origin;
+        if (login !== app || !access.allowedTargets.includes(app))
+          return reply.code(403).send({
+            error:
+              'On a shared instance, logging in with the owner’s account only works on the apps the owner listed.',
+          });
+      }
+      parsed.data.maxTests = Math.min(parsed.data.maxTests ?? access.maxTests, access.maxTests);
+      parsed.data.headed = false;
+      parsed.data.concurrency = Math.min(
+        parsed.data.concurrency ?? access.concurrency,
+        access.concurrency,
+      );
     }
     const need = llmRequirement(parsed.data);
     if (need.needed && !need.keyPresent) {
@@ -150,9 +232,20 @@ export async function createServer({ outDir, uiDir, manager, logger = false }) {
       return reply
         .code(400)
         .send({ error: 'Use lowercase letters, digits and dashes for the name' });
+    const before = await suites.get(name).catch(() => null);
     const res = await suites.save(name, req.body);
     if (!res.ok) return reply.code(400).send({ error: res.issues.join('; '), issues: res.issues });
-    return { name, suite: res.suite };
+    // Saved recordings win over a suite's own steps (they carry heals), so steps edited here would
+    // never replay: drop the saved recording of every test whose steps changed.
+    const cleared = [];
+    for (const id of changedSteps(before, res.suite)) {
+      const file = recFile(id);
+      if (file && existsSync(file)) {
+        await rm(file);
+        cleared.push(id);
+      }
+    }
+    return { name, suite: res.suite, cleared };
   });
   app.delete('/api/suites/:name', async (req, reply) => {
     const name = suiteName(req);
@@ -243,7 +336,9 @@ export async function createServer({ outDir, uiDir, manager, logger = false }) {
       'X-Accel-Buffering': 'no',
     });
     const send = (/** @type {import('../events/runEvents.js').RunEvent} */ e) =>
-      res.write(`id: ${e.seq}\nevent: ${e.type}\ndata: ${JSON.stringify(e.data)}\n\n`);
+      res.write(
+        `id: ${e.seq}\nevent: ${e.type}\ndata: ${JSON.stringify(e.type === 'frame' ? e.data : { ...e.data, at: e.ts })}\n\n`,
+      );
     const wantsFrames = req.query && /** @type {any} */ (req.query).frames !== '0';
     if (wantsFrames) live.events.adjustLiveViewers(1);
     const unsubscribe = live.events.subscribe(send);
@@ -306,4 +401,35 @@ export async function createServer({ outDir, uiDir, manager, logger = false }) {
     );
   }
   return { app, runs };
+}
+
+/**
+ * Test ids whose hand-written steps differ between two versions of a suite.
+ * @param {{ tests: { id?: string, title: string, steps?: unknown[] }[] } | null} before
+ * @param {{ tests: { id?: string, title: string, steps?: unknown[] }[] }} after
+ */
+export function changedSteps(before, after) {
+  const key = (/** @type {{ id?: string, title: string }} */ t) => t.id ?? slugify(t.title);
+  const old = new Map((before?.tests ?? []).map((t) => [key(t), JSON.stringify(t.steps ?? [])]));
+  return after.tests
+    .filter((t) => old.has(key(t)) && old.get(key(t)) !== JSON.stringify(t.steps ?? []))
+    .map(key);
+}
+
+/**
+ * The models a run uses: the preset picked for it, else the ones from .env (D26).
+ * @param {{ preset?: string, agentEngine?: string }} options
+ * @param {{ model: string, plannerModel?: string, judgeModel?: string, agentEngine?: string }} config
+ */
+export function runModels(options, config) {
+  const p = options.preset
+    ? MODEL_PRESETS[/** @type {keyof typeof MODEL_PRESETS} */ (options.preset)]
+    : undefined;
+  return {
+    preset: options.preset ?? null,
+    model: p?.model ?? config.model,
+    plannerModel: p?.plannerModel ?? config.plannerModel ?? config.model,
+    judgeModel: p?.judgeModel ?? config.judgeModel ?? config.model,
+    agentEngine: options.agentEngine ?? config.agentEngine,
+  };
 }

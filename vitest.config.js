@@ -7,5 +7,7 @@ export default defineConfig({
     include: ['tests/**/*.test.js'],
     testTimeout: 60_000,
     hookTimeout: 60_000,
+    // tests never call a real model, even when an API key is set in the shell
+    env: { AIE2E_EXPLAIN: 'false' },
   },
 });

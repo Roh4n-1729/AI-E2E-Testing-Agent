@@ -91,7 +91,7 @@ export function buildPipeline(deps) {
   const phase = (phase, status, detail) => events.emit('phase', { phase, status, detail });
   // Parallelism is capped HERE, not with LangGraph's `maxConcurrency`: in @langchain/langgraph 1.5.3
   // `maxConcurrency: 1` with a Send fan-out silently drops the branches' writes and never reaches
-  // the next node (reproduced; see docs/IMPROVEMENTS.md). Every branch starts, then waits for a slot.
+  // the next node (reproduced in this repo). Every branch starts, then waits for a slot.
   const slots = createLimiter(config.concurrency);
 
   const graph = new StateGraph(PipelineState)
@@ -100,6 +100,9 @@ export function buildPipeline(deps) {
       logger.info(`Crawling ${s.target.url}`);
       phase('crawl', 'running');
       const siteMap = await crawler.crawl(s.target);
+      events.emit('site.ready', {
+        pages: siteMap.pages.slice(0, 40).map((p) => ({ url: p.url, title: p.title })),
+      });
       phase('crawl', 'done', `${siteMap.pages.length} page(s)`);
       return { siteMap };
     })
@@ -144,6 +147,12 @@ export function buildPipeline(deps) {
         targetUrl: s.target.url,
         summary: { ...summarize(results), overhead: deps.overheadUsage?.() },
         results,
+        models: {
+          agent: config.agentEngine === 'loop' ? `${config.model} (own loop)` : config.model,
+          planner: config.plannerModel ?? config.model,
+          judge: config.judgeModel ?? config.model,
+          ...(config.preset ? { preset: config.preset } : {}),
+        },
         ...(deps.auth ? { auth: deps.auth } : {}),
       };
       if (results.some((r) => r.evidence.themeStates?.length)) {

@@ -10,6 +10,9 @@ describe('loadConfig', () => {
     expect(c.crawl).toEqual({ maxPages: 8, maxDepth: 2 });
     expect(c.viewport).toEqual({ width: 1280, height: 800 });
     expect(c.judge.ignoreNetworkPatterns).toContain('favicon\\.ico');
+    // the AI's reading of failures is on by default and can be switched off
+    expect(c.explainFailures).toBe(true);
+    expect(loadConfig({}, { AIE2E_EXPLAIN: 'false' }).explainFailures).toBe(false);
   });
 
   it('prefers overrides over env over defaults', () => {
@@ -91,5 +94,47 @@ describe('known third-party noise', () => {
     ]);
     expect(c.judge.ignoreConsolePatterns).toEqual(['ResizeObserver loop']);
     expect(loadConfig({}, {}).judge.ignoreNetworkPatterns).toEqual(['favicon\\.ico']);
+  });
+});
+
+describe('model presets', () => {
+  it('fills the roles nobody set; a preset for this run beats .env, a model flag beats both', async () => {
+    const { agentModelWarning } = await import('../src/config/config.js');
+    const best = loadConfig({ preset: 'best' }, {});
+    expect([best.model, best.plannerModel, best.judgeModel]).toEqual([
+      'anthropic/claude-sonnet-4-6',
+      'anthropic/claude-opus-5-5',
+      'anthropic/claude-opus-5-5',
+    ]);
+    const mixed = loadConfig(
+      {},
+      { AIE2E_PRESET: 'balanced', AIE2E_MODEL: 'anthropic/claude-opus-4-8' },
+    );
+    expect([mixed.model, mixed.plannerModel]).toEqual([
+      'anthropic/claude-opus-4-8',
+      'anthropic/claude-sonnet-5-5',
+    ]);
+    // a preset chosen for this run beats the models .env pins for development (only a model flag beats it)
+    const devEnv = {
+      AIE2E_MODEL: 'anthropic/claude-haiku-4-5',
+      AIE2E_PLANNER_MODEL: 'anthropic/claude-sonnet-5-5',
+    };
+    const demo = loadConfig({ preset: 'best' }, devEnv);
+    expect([demo.model, demo.plannerModel, demo.judgeModel]).toEqual([
+      'anthropic/claude-sonnet-4-6',
+      'anthropic/claude-opus-5-5',
+      'anthropic/claude-opus-5-5',
+    ]);
+    expect(loadConfig({ preset: 'best', model: 'anthropic/claude-opus-4-8' }, devEnv).model).toBe(
+      'anthropic/claude-opus-4-8',
+    );
+    const none = loadConfig({}, {});
+    expect([none.preset, none.plannerModel]).toEqual([undefined, undefined]);
+    // the browser agent cannot use the 5.5 family on Stagehand 3.7.3; the presets never put it there
+    for (const p of ['economy', 'balanced', 'best'])
+      expect(
+        agentModelWarning(loadConfig({ preset: /** @type {any} */ (p) }, {}).model),
+      ).toBeUndefined();
+    expect(agentModelWarning('anthropic/claude-haiku-5-5')).toContain('Stagehand 3.7.3');
   });
 });

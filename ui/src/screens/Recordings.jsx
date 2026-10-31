@@ -167,8 +167,8 @@ export function Recordings({ id }) {
           second run replay without the AI.
         </EmptyState>
       ) : (
-        <div className="grid gap-6 lg:grid-cols-[300px_minmax(0,1fr)]">
-          <ul className="space-y-1">
+        <div className="grid items-start gap-6 lg:grid-cols-[300px_minmax(0,1fr)]">
+          <ul className="pin-lg space-y-1 lg:pr-1">
             {list.map((r) => (
               <li key={r.testId}>
                 <a

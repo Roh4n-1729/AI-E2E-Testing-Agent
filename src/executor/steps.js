@@ -13,6 +13,7 @@ const NON_MUTATING = new Set([
   'search',
   'fillForm', // its concrete field actions arrive as separate `act` entries
   'appTestIds',
+  'harnessStatus', // read-only: what the harness saw (errors, failed requests)
 ]);
 
 /** Round to 1 decimal: viewport percentages need no more precision. @param {number} n */

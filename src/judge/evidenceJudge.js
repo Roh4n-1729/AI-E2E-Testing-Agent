@@ -1,3 +1,4 @@
+import { explainError } from '../util/explain.js';
 import path from 'node:path';
 import { readFile } from 'node:fs/promises';
 import { z } from 'zod';
@@ -23,6 +24,9 @@ while the test ran. All of them are real captures by the test harness.
 - For a question about a change or an action ("did X change?", "was a slide added?"), compare the
   images, especially the first and the last.
 - Answer true only if the images clearly show it. Unclear, partially shown, or absent = false.
+- You also get the URL, title and visible text of the page NOW. Use the text to confirm what the last image
+  shows (headings, messages, counts) and quote the words you relied on in your reasoning. If the text and the
+  image disagree, trust what a user would see in the image and say so.
 - Do not guess the product's name or assume anything you cannot see.`;
 
 /** Checks whose evidence is deterministic (not an LLM reading pixels). */
@@ -285,7 +289,7 @@ export class EvidenceJudge {
           bad.length === 0,
           bad.length === 0
             ? 'No console errors'
-            : `${bad.length} console error(s): ${bad[0]?.text.slice(0, 120)}`,
+            : `${bad.length} console error(s): ${explainError(bad[0]?.text ?? '')}`,
         );
       }
       case 'no-network-failures': {
@@ -413,26 +417,42 @@ export class EvidenceJudge {
               : 'No theme variables found in the build: nothing to check',
           );
         }
-        /** the same problem on several screens is reported once, with the screens listed */
-        /** @type {Map<string, string[]>} */
+        /** each problem once, with the themes and screens it was seen in */
+        /** @type {Map<string, { themes: Set<string>, screens: Set<string>, count: number, score?: number }>} */
         const problems = new Map();
         /** @type {Map<string, number>} lowest score per theme over all screens */
         const lowest = new Map();
         for (const st of audited) {
-          for (const p of themeProblems(st.audit, exp))
-            problems.set(p, [...(problems.get(p) ?? []), st.label]);
+          for (const p of themeProblems(st.audit, exp)) {
+            const g = problems.get(p.key) ?? { themes: new Set(), screens: new Set(), count: 0 };
+            g.themes.add(p.theme);
+            g.screens.add(st.label);
+            g.count = Math.max(g.count, p.count);
+            if (p.score !== undefined) g.score = Math.min(g.score ?? 1, p.score);
+            problems.set(p.key, g);
+          }
           for (const th of st.audit.themes)
             if (th.score !== null) lowest.set(th.id, Math.min(lowest.get(th.id) ?? 1, th.score));
         }
         const ref = audited.find((st) => st.audit.reference)?.audit.reference;
-        const where = (/** @type {string[]} */ labels) =>
-          audited.length > 1 ? ` [${[...new Set(labels)].join(', ')}]` : '';
         const screens = `${audited.length} screen${audited.length === 1 ? '' : 's'}`;
         const summary = [...lowest].map(([id, sc]) => `${id} ${Math.round(sc * 100)}%`).join(', ');
+        const describe = (
+          /** @type {string} */ key,
+          /** @type {{ themes: Set<string>, screens: Set<string>, count: number, score?: number }} */ g,
+        ) => {
+          const where = [
+            [...g.themes].join(', '),
+            audited.length > 1 ? [...g.screens].join(', ') : '',
+          ].filter(Boolean);
+          const more = g.count > 1 ? ` (+${g.count - 1} similar)` : '';
+          const pct = g.score !== undefined ? ` (lowest ${Math.round(g.score * 100)}%)` : '';
+          return `${key}${pct}${more} [${where.join(' · ')}]`;
+        };
         return result(
           problems.size === 0,
           problems.size
-            ? `Theme conformance${ref ? ` against ${ref}` : ''}: ${[...problems].map(([p, l]) => `${p}${where(l)}`).join('; ')}`
+            ? `Theme conformance${ref ? ` against ${ref}` : ''}: ${problems.size} problem${problems.size === 1 ? '' : 's'}: ${[...problems].map(([k, g]) => describe(k, g)).join('; ')}`
             : `Theme conformance${ref ? ` against ${ref}` : ''}: ${summary || 'n/a'} ${ref ? 'matching' : 'on-theme'} over ${screens}, no leaks`,
         );
       }
@@ -493,10 +513,19 @@ export class EvidenceJudge {
     if (!this.llm) return result(false, `Visual check "${question}" skipped: no LLM configured`);
     try {
       const images = await timeline(session, evidence);
+      // the DOM as context (one call, no tool loop): grounds the answer in text, not only pixels
+      const text = await session.page
+        .evaluate(() => (document.body?.innerText ?? '').replace(/\s+/g, ' ').trim().slice(0, 3000))
+        .catch(() => '');
       const { answer, reasoning } = await this.llm.generateObject({
         schema: VisualAnswerSchema,
         system: VISUAL_SYSTEM,
-        prompt: `${images.length} screenshot(s) in time order (first = before the test acted, last = now).\nQuestion: ${question}`,
+        prompt: [
+          `${images.length} screenshot(s) in time order (first = before the test acted, last = now).`,
+          `Page now: ${session.page.url()} · title "${await session.page.title().catch(() => '')}"`,
+          `Visible text now (first 3000 characters): ${text || '(none)'}`,
+          `Question: ${question}`,
+        ].join('\n'),
         images,
       });
       return result(answer, `Visual: "${question}" -> ${answer ? 'yes' : 'no'}. ${reasoning}`);
@@ -586,32 +615,39 @@ function emptyEvidence(session) {
 }
 
 /**
- * What is wrong with one screen's theme audit, as short sentences (empty = conforms).
- * @param {import('../core/types.js').ThemeAudit} t
- * @param {{ minScore: number, allowLeaks: boolean, allowHardCoded: boolean }} exp
+ * The theme problems of one audit, one entry per problem, keyed by what is wrong (not by theme), so the
+ * same hard-coded colour in light and dark on three screens is reported once.
+ * @param {import('../core/types.js').ThemeAudit} t @param {Extract<Expectation, { kind: 'theme-conformance' }>} exp
+ * @returns {{ key: string, theme: string, count: number, score?: number }[]}
  */
 function themeProblems(t, exp) {
-  /** @type {string[]} */
+  /** @type {{ key: string, theme: string, count: number, score?: number }[]} */
   const out = [];
   for (const th of t.themes) {
-    const pct = th.score === null ? null : Math.round(th.score * 100);
     if (th.score !== null && th.score < exp.minScore) {
       const top = th.findings[0];
-      out.push(
-        `${th.id}: ${pct}% on-theme${top ? ` (${top.kind} ${top.category} ${top.value}${top.examples[0] ? ` in ${top.examples[0].selector}` : ''}${top.declaration?.source ? ` at ${top.declaration.source}` : ''})` : ''}`,
-      );
+      out.push({
+        key: `below ${Math.round(exp.minScore * 100)}% on-theme${top ? ` (mostly ${top.kind} ${top.category} ${top.value}${top.examples[0] ? ` in ${top.examples[0].selector}` : ''}${top.declaration?.source ? ` at ${top.declaration.source}` : ''})` : ''}`,
+        theme: th.id,
+        count: 1,
+        score: th.score,
+      });
     }
     const hard = th.findings.filter((f) => f.kind === 'hard-coded' || f.kind === 'browser-default');
     if (!exp.allowHardCoded && hard.length && (th.score === null || th.score >= exp.minScore)) {
       const f = /** @type {import('../core/types.js').ThemeFinding} */ (hard[0]);
-      out.push(
-        `${th.id}: ${hard.length} value(s) bypass the theme (${f.kind} ${f.category} ${f.value}${f.declaration?.selector ? ` in ${f.declaration.selector}` : f.examples[0] ? ` in ${f.examples[0].selector}` : ''}${f.nearest?.token ? `, nearest ${f.nearest.token}` : ''})`,
-      );
+      out.push({
+        key: `${f.kind} ${f.category} ${f.value}${f.declaration?.selector ? ` in ${f.declaration.selector}` : f.examples[0] ? ` in ${f.examples[0].selector}` : ''}${f.nearest?.token ? `, nearest ${f.nearest.token}` : ''} bypasses the theme`,
+        theme: th.id,
+        count: hard.length,
+      });
     }
     if (!exp.allowLeaks && th.leaks.length)
-      out.push(
-        `${th.id}: ${th.leaks.length} surface(s) ignore the theme (e.g. ${th.leaks[0]?.value} ${th.leaks[0]?.selector})`,
-      );
+      out.push({
+        key: `surface ignores the theme: ${th.leaks[0]?.value} ${th.leaks[0]?.selector}`,
+        theme: th.id,
+        count: th.leaks.length,
+      });
   }
   return out;
 }

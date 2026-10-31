@@ -8,7 +8,7 @@ import { execFile } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { startRun } from '../app/startRun.js';
-import { apiKeyEnvFor, loadConfig } from '../config/config.js';
+import { agentModelWarning, apiKeyEnvFor, loadConfig } from '../config/config.js';
 
 const program = new Command()
   .name('aie2e')
@@ -35,6 +35,10 @@ program
   .option('-s, --suite <file>', 'run a committed test suite (JSON) instead of planning')
   .option('--no-cache', 'always use the AI agent: do not replay or save recordings')
   .option('--no-heal', 'a broken replay is a plain failure; never hand it to the agent (CI)')
+  .option(
+    '--no-explain',
+    'do not ask the judge model to explain failed tests (advisory, 1 call per failure)',
+  )
   .option('--rerecord', 'ignore saved recordings and record them again with the agent')
   .option('--replan', 'ignore the saved AI test plan and plan again')
   .option(
@@ -58,12 +62,19 @@ program
   .option('--login-success-url <part>', 'with --login-url: URL part that proves the login worked')
   .option('--headed', 'show the browser')
   .option('--max-steps <n>', 'max agent steps per test', Number)
-  .option('-m, --model <provider/model>', 'LLM model')
+  .option('-m, --model <provider/model>', 'browser-agent model (overrides the preset)')
+  .option('--preset <name>', 'models by role: economy | balanced | best (AIE2E_PRESET)')
+  .option(
+    '--agent-engine <name>',
+    'who drives the browser: stagehand | loop (own loop, any model; AIE2E_AGENT_ENGINE)',
+  )
   .option('-o, --out <dir>', 'output directory')
   .option('-v, --verbose', 'debug logging')
   .action(async (/** @type {string} */ url, /** @type {Record<string, any>} */ o) => {
     const { report } = await startRun({
       url,
+      preset: o.preset,
+      agentEngine: o.agentEngine,
       description: o.description,
       goal: o.goal,
       expectUrl: o.expectUrl,
@@ -96,6 +107,7 @@ program
       updateBaselines: !!o.updateBaselines,
       suite: o.suite,
       heal: o.heal,
+      explain: o.explain,
     });
     const s = report.summary;
     process.exitCode = s.errored ? 2 : s.failed ? 1 : 0;
@@ -105,10 +117,24 @@ program
   .command('ui')
   .description('open the local web UI: start runs, watch the browser live, browse results')
   .option('-p, --port <n>', 'port', Number, 4173)
+  .option(
+    '--host <address>',
+    'address to listen on (default 127.0.0.1; 0.0.0.0 needs AIE2E_ACCESS_CODE)',
+  )
   .option('-o, --out <dir>', 'output directory')
   .option('--no-open', 'do not open a browser tab')
   .action(async (/** @type {Record<string, any>} */ o) => {
     const config = loadConfig({ outDir: o.out });
+    const host = o.host ?? process.env.AIE2E_HOST ?? '127.0.0.1';
+    const port = o.port;
+    // listening beyond this machine launches browsers with your API key for whoever connects
+    if (!/^(127\.0\.0\.1|localhost|::1)$/.test(host) && !process.env.AIE2E_ACCESS_CODE?.trim()) {
+      console.error(
+        `Listening on ${host} needs an access code: set AIE2E_ACCESS_CODE (see the README, "Deploying").`,
+      );
+      process.exitCode = 2;
+      return;
+    }
     const uiDir = fileURLToPath(new URL('../../ui/dist', import.meta.url));
     if (!existsSync(path.join(uiDir, 'index.html'))) {
       console.error('The UI is not built yet. Run: npm run ui:build   (or use: npm run ui)');
@@ -117,10 +143,10 @@ program
     }
     const { createServer } = await import('../server/app.js');
     const { app } = await createServer({ outDir: config.outDir, uiDir });
-    await app.listen({ host: '127.0.0.1', port: o.port });
-    const url = `http://localhost:${o.port}`;
+    await app.listen({ host, port });
+    const url = `http://localhost:${port}`;
     console.log(`AI E2E Agent UI: ${url}   (Ctrl+C to stop)`);
-    if (o.open) openInBrowser(url);
+    if (o.open && host === '127.0.0.1') openInBrowser(url);
   });
 
 program
@@ -166,6 +192,17 @@ program
       `API key for ${config.model}`,
       keyVar ? !!process.env[keyVar] : true,
       keyVar ?? 'unknown provider: only anthropic/, openai/, google/ are supported',
+    ]);
+    const warning = agentModelWarning(config.model, config.agentEngine);
+    rows.push([
+      'Browser-agent model works with Stagehand 3.7.3',
+      !warning,
+      warning ?? config.model,
+    ]);
+    rows.push([
+      'Planner / judge models',
+      true,
+      `${config.plannerModel ?? config.model} / ${config.judgeModel ?? config.model}${config.preset ? ` (preset ${config.preset})` : ''}`,
     ]);
     for (const [name, ok, detail] of rows)
       console.log(`${ok ? 'OK  ' : 'FAIL'}  ${name}  (${detail})`);

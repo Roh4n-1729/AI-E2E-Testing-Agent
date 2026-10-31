@@ -103,7 +103,7 @@ authenticated flows, load/security testing, exploratory "does this feel right" j
 
 ## 4c. Judging rules added from the 13:19 run, app hints, libraries
 
-See `docs/IMPROVEMENTS.md` for the evidence behind each rule.
+Each rule came from a real run that passed or failed for the wrong reason first.
 
 - **Visual checks see a timeline** (start, up to 3 run frames, now), never a single screenshot.
 - **Asymmetric trust:** a success claim is never trusted; a failure claim is believed unless deterministic
@@ -111,7 +111,7 @@ See `docs/IMPROVEMENTS.md` for the evidence behind each rule.
 - **Settle before evidence:** start screenshots only after the page renders; final evidence only after the app
   goes quiet (text stable, no `aria-busy`, no fetch/XHR in flight).
 - **Heals are labelled by the judge**, not by the agent.
-- **Optional app hints** (`docs/APP_HINTS.md`): test ids become recorded selectors with XPath fallback.
+- **Optional app hints** (README, "Optional app hints"): test ids become recorded selectors with XPath fallback.
 - **Run log (`trace`)**: every agent or replay step with the screenshot taken after it, rendered as the step
   timeline in the UI and the HTML report.
 - **Per-role models:** `AIE2E_PLANNER_MODEL` / `AIE2E_JUDGE_MODEL`; planner and judge tokens reported as overhead.
@@ -147,7 +147,7 @@ START → crawl → plan ──Send(test)──▶ runTest (× N, `concurrency` 
   saved recordings win so heals persist). `aie2e export <runId>` writes one from a run.
 - `--no-heal`: replay failures are verdict "fail" via `outcome.failure`, with no agent involved.
 - `examples/buggy-shop` + `scripts/evaluate.js` (`npm run eval`): clean runs, then one bug at a time; results in
-  `docs/EVALUATION.md`.
+  `.aie2e/eval/EVALUATION.md`.
 
 ## 4e. Theme conformance on every screen, and consistency (30 Oct)
 
@@ -205,11 +205,81 @@ screenshots). Generator → deterministic critic → one revision: bounded cost,
 Suites from third-party apps declare their noise (`ignore: { network, console }`), and seeded-bug runs in the
 evaluation never approve screenshots (`visual.saveNew: false`), so a bug can never become the baseline.
 
+## 4j. Reading a run: insights and UI v2 (30 Oct)
+
+```
+report.json ──▶ reporter/insights.js (pure, no LLM) ──▶ web UI summary + journey
+                 headline, findings, per-test outcome     report.html verdict + findings
+                 and page flow, checks in words           run list headline
+```
+
+`runInsights(report)` derives everything a non-developer reads from the judge's own checks: a headline, findings
+grouped by what they mean (tests stuck on the same page are one finding; console and network errors are grouped by
+message across tests; visual changes, AI-claim disagreements and heals are "review" or "low", never hidden), and
+per test the pages it went through (from the trace URLs, plus the expected pages it never reached), the step that
+broke and any error the page itself shows. Checks are said by their `label` when they have one (D28). Nothing in
+it can change a verdict (D27). The UI shows the summary first and keeps the developer tabs one click away (D29).
+
+After the verdict, failed tests get one more call (D30): `judge/failureExplainer.js` sends the judge's model the
+failed checks in words, the steps by page, the final page text, console errors, failed requests and up to three
+screenshots, and stores `result.explanation` (cause, category, confidence, evidence, suggestion). Insights attach
+it to the matching finding; the UI and `report.html` show it as "AI's reading". The order is the guarantee: the
+verdict exists before the explainer is asked.
+
+### Where AI is used, and where it is not
+
+| Uses a model                                   | Never uses a model                                       |
+| ---------------------------------------------- | -------------------------------------------------------- |
+| Planner (tests and checks, one revision)       | Crawler, login, replay                                   |
+| Browser agent (first runs, heals)              | Every hard check, vacuity, plan review, heal acceptance  |
+| Judge: `visual` questions only                 | Accessibility, Web Vitals, theme audit, pixel comparison |
+| Failure explainer: failed tests only, advisory | Insights and report wording (D27)                        |
+
+### Two agent engines (D31)
+
+`config.agentEngine` picks the executor in `startRun`: `AgentExecutor` (Stagehand `agent()`) or
+`LoopAgentExecutor` (AI SDK `generateText` with tools, `stopWhen: [stepCountIs(maxSteps), hasToolCall('finish')]`).
+Both take the same `(test, session, ctx, resume)` and return the same `ExecutionOutcome`, so replay, healing, the
+judge and the reports do not know which one ran. The loop's tools act on `aria-ref` locators from the latest
+snapshot and record `locator.normalize()` selectors.
+
+## 4k. Watching a run, and who did what (31 Oct)
+
+- **Live stage.** SSE events carry their time (`at`); the browser frame is coloured by state, the current step
+  is laid over it with its actor, and a `test.judging` event (emitted by `testRunner` between the executor and
+  the judge) hands the overlay to the judge. `hooks/useFollow.js` keeps the step list and the run log on the
+  newest line only while the reader is at the bottom.
+- **Run log.** Level filter with counts, "only this test" (logger scope = test id), search, copy, 1000 lines.
+- **Inputs per part.** `testInputs(outcome)` stores what the agent was given (model, engine, instruction) and the
+  steps Playwright ran with their source (`suite`, `recording`, `agent`, `harness`) on each result
+  (`result.inputs`, D33). The journey filters by part; the suite editor is split by part.
+- **Saved plans** are keyed by URL, description, planner model, test count and `PLANNER_VERSION` (a hash of the
+  planner's instructions); a reused plan is announced (`plan.reused`).
+
+## 4l. Deployment (D34)
+
+```
+Render (Docker, 1 CPU / 2 GB)
+└─ deploy/serve.js
+   ├─ Sauce Demo :4500, buggy shop :4300, TodoMVC :4400   (127.0.0.1 only)
+   ├─ copies deploy/seed (baked runs, recordings, plans, baselines) into .aie2e on first start
+   ├─ installs the demo apps' suites
+   └─ node src/cli/main.js ui --host 0.0.0.0 --port $PORT
+        └─ server/access.js: code cookie · host allow-list · no private targets (after DNS)
+                             · .env login only on listed apps · ≤ 4 tests, 1 at a time
+```
+
+`/healthz` answers before the host check (the platform's probe). Locally nothing changes: the server binds to
+127.0.0.1 and refuses to listen elsewhere without `AIE2E_ACCESS_CODE`.
+
 ## 5. Data model
 
 ![data model](diagrams/04-data-model.png)
 
 ## 6. Decisions
+
+The main choices, in short. Every decision, numbered with its reason, and the alternatives that were not
+built are in [DESIGN.md](DESIGN.md).
 
 - UI components are hand-written shadcn-style primitives (Tailwind v4 tokens), not generated by the shadcn CLI (no network in the build sandbox). Same look, no generator dependency.
 
@@ -235,7 +305,7 @@ description}`, surfaced in `AgentResult.actions`; `goto`, `navback` and `wait` c
 2. Agent opens a new tab: `session.page` is "latest open page"; verify on a real flow.
 3. Selectors from `observe()` may be XPath-ish and brittle: acceptable because heal exists, but
    it increases heal frequency on dynamic apps.
-4. Running as root or in containers needs `AIE2E_CHROME_ARGS=--no-sandbox`.
+4. Running as root or in containers: handled since D23 (the agent's Chrome runs without its sandbox on Linux).
 
 ## 8. Day plan mapped to code
 

@@ -4,14 +4,24 @@ import {
   ExternalLink,
   FileText,
   ListChecks,
+  PanelRightClose,
+  PanelRightOpen,
   RotateCcw,
   Square,
   XCircle,
 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { toast } from 'sonner';
-import { api, fileUrl } from '../api.js';
-import { LivePanel, PhaseStepper } from '../components/LiveRun.jsx';
+import { DEMO, api, fileUrl } from '../api.js';
+import {
+  CheckList,
+  LiveStage,
+  PhaseRail,
+  PlanPanel,
+  StageIntro,
+  StepTimeline,
+  TestStrip,
+} from '../components/LiveRun.jsx';
 import { TestDetail } from '../components/TestDetail.jsx';
 import {
   Badge,
@@ -26,6 +36,10 @@ import { go } from '../hooks/useHashRoute.js';
 import { useRunStream } from '../hooks/useRunStream.js';
 import { MODE, STATUS, fmtDuration, fmtTokens, fmtWhen, shortUrl } from '../lib/format.js';
 import { Consistency } from '../components/Consistency.jsx';
+import { RunSummary } from '../components/RunSummary.jsx';
+import { runInsights } from '../../../src/reporter/insights.js';
+import { TestJourney } from './TestJourney.jsx';
+import { RunLog, logCounts } from '../components/RunLog.jsx';
 
 const FILTERS = [
   ['all', 'All', () => true],
@@ -176,74 +190,259 @@ function TestList({ items, selected, onSelect }) {
   );
 }
 
-function Live({ runId, onDone }) {
+const DOCK = [
+  ['steps', 'Steps'],
+  ['checks', 'Checks'],
+  ['log', 'Log'],
+  ['plan', 'Plan'],
+];
+const DOCK_KEY = 'aie2e.live.tab';
+
+/**
+ * The live run as a cockpit: one screen tall, nothing to scroll. The browser is the stage; the steps,
+ * the checks the judge will apply, the log and the plan are tabs beside it, so reading the log never
+ * moves the browser out of view. Keys: 1 to 4 switch tabs, F hides the panel.
+ */
+function Live({ runId, onDone, fromSuite, app, who, target, startedAt }) {
   const { state, frames, connected } = useRunStream(runId);
   const [picked, setPicked] = useState(null);
   const [stopping, setStopping] = useState(false);
+  const [tab, setTabState] = useState(() => {
+    try {
+      return localStorage.getItem(DOCK_KEY) || 'steps';
+    } catch {
+      return 'steps';
+    }
+  });
+  const [focus, setFocus] = useState(false);
+  const setTab = (t) => {
+    setTabState(t);
+    setFocus(false);
+    try {
+      localStorage.setItem(DOCK_KEY, t);
+    } catch {
+      /* private mode */
+    }
+  };
   useEffect(() => {
     if (state.finished) onDone();
   }, [state.finished]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    const onKey = (e) => {
+      const el = e.target;
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      if (
+        el instanceof HTMLElement &&
+        (el.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName))
+      )
+        return;
+      const i = Number(e.key) - 1;
+      if (DOCK[i]) setTab(DOCK[i][0]);
+      else if (e.key === 'f' || e.key === 'F') setFocus((f) => !f);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
+
   const tests = state.order.map((id) => state.tests[id]);
   const running = tests.find((t) => t.status === 'running');
-  const selected = state.tests[picked] ?? running ?? tests[0];
-  const items = tests.map((t) => ({
-    id: t.id,
-    title: t.title,
-    status: t.status,
-    mode: t.result?.mode,
-    durationMs: t.result?.durationMs,
-    claimMismatch: t.result?.claimMismatch,
-  }));
+  const now = useNow(!state.finished);
+  // A test that has just finished stays on stage until the next one has a picture, so its verdict is
+  // seen instead of a blank "connecting" browser.
+  const justDone = tests
+    .filter((t) => t.finishedAt && now - new Date(t.finishedAt).getTime() < 2600)
+    .sort((a, b) => String(b.finishedAt).localeCompare(String(a.finishedAt)))[0];
+  const held = justDone && (!running || !frames[running.id]) ? justDone : null;
+  const selected =
+    state.tests[picked] ??
+    held ??
+    running ??
+    tests.findLast((t) => t.status !== 'pending') ??
+    tests[0];
+  const counts = useMemo(() => logCounts(state.logs), [state.logs]);
+  const badge = {
+    steps: selected?.steps.length || null,
+    checks: selected?.expectations?.length || null,
+    log: counts.error || counts.warn || null,
+    plan: tests.length || null,
+  };
+  const stop = async () => {
+    setStopping(true);
+    await api.stop(runId).catch((e) => toast.error(e.message));
+    toast('Stopping: open browsers are being closed');
+  };
+
   return (
-    <div className="space-y-5">
-      <div className="flex flex-wrap items-center gap-3">
-        <PhaseStepper phases={state.phases} />
-        <div className="ml-auto flex items-center gap-2">
-          {!connected && !state.finished && <Badge tone="warn">reconnecting…</Badge>}
-          <Button
-            variant="danger"
-            busy={stopping}
-            onClick={async () => {
-              setStopping(true);
-              await api.stop(runId).catch((e) => toast.error(e.message));
-              toast('Stopping: open browsers are being closed');
-            }}
+    <div className="flex flex-col gap-3 lg:h-[calc(100dvh-4rem)] lg:min-h-[620px]">
+      <header className="flex flex-wrap items-center gap-x-4 gap-y-2 lg:flex-nowrap">
+        <div className="flex min-w-0 items-center gap-2.5">
+          <a
+            href="#/runs"
+            aria-label="Back to runs"
+            className="flex size-8 shrink-0 items-center justify-center rounded-lg border border-line text-muted hover:bg-subtle hover:text-text"
           >
+            <ArrowLeft size={15} aria-hidden />
+          </a>
+          <div className="min-w-0">
+            <h1 className="truncate text-[17px] font-semibold leading-tight tracking-tight">
+              {app}
+              {who && <span className="font-normal text-muted">, as {who}</span>}
+            </h1>
+            <p className="truncate font-mono text-[11px] text-faint">{shortUrl(target)}</p>
+          </div>
+        </div>
+        <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-ai/10 px-2.5 py-1 text-[12px] font-semibold text-ai">
+          <span className="pulse size-2 rounded-full bg-ai" aria-hidden />
+          {fromSuite ? 'Testing' : 'AI is testing'}
+          {startedAt && (
+            <span className="font-normal text-ai/80">
+              <Elapsed since={startedAt} />
+            </span>
+          )}
+        </span>
+        <div className="min-w-0 overflow-x-auto lg:flex-1">
+          <PhaseRail state={state} />
+        </div>
+        <div className="ml-auto flex shrink-0 items-center gap-2">
+          {state.config && (
+            <span className="hidden text-[12px] text-muted 2xl:inline">
+              {state.config.preset ? `${state.config.preset} · ` : ''}
+              {String(state.config.model).replace(/^[a-z]+\//, '')}
+            </span>
+          )}
+          {!connected && !state.finished && <Badge tone="warn">reconnecting…</Badge>}
+          {focus && (
+            <Button variant="secondary" onClick={() => setFocus(false)}>
+              <PanelRightOpen size={14} aria-hidden /> Steps and log
+              {counts.error > 0 && (
+                <span className="rounded-full bg-bad px-1.5 text-[11px] text-white">
+                  {counts.error}
+                </span>
+              )}
+            </Button>
+          )}
+          <Button variant="danger" busy={stopping} onClick={stop}>
             <Square size={12} aria-hidden /> Stop run
           </Button>
         </div>
-      </div>
+      </header>
+
       {state.error && (
         <p role="alert" className="rounded-lg bg-bad-bg px-3 py-2 text-[13px] text-bad">
           {state.error}
         </p>
       )}
-      {tests.length === 0 ? (
-        <div className="grid gap-6 lg:grid-cols-[300px_minmax(0,1fr)]">
-          <div className="space-y-2">
-            {[0, 1, 2].map((i) => (
-              <Skeleton key={i} className="h-14" />
-            ))}
-          </div>
-          <div className="space-y-3">
-            <p className="text-[13px] text-muted">Exploring the app and planning tests…</p>
-            <Skeleton className="aspect-[16/10] w-full" />
-          </div>
-        </div>
-      ) : (
-        <div className="grid gap-6 lg:grid-cols-[300px_minmax(0,1fr)]">
-          <TestList items={items} selected={selected?.id} onSelect={setPicked} />
-          <LivePanel test={selected} frame={selected ? frames[selected.id] : null} />
-        </div>
-      )}
-      {state.logs.length > 0 && (
-        <details className="text-[12px]">
-          <summary className="cursor-pointer text-muted">Log ({state.logs.length})</summary>
-          <pre className="mt-2 max-h-48 overflow-auto rounded-lg border border-line bg-panel p-3 font-mono text-[11px] leading-relaxed">
-            {state.logs.map((l) => `${l.scope ? `[${l.scope}] ` : ''}${l.message}`).join('\n')}
-          </pre>
-        </details>
-      )}
+      <TestStrip tests={tests} selected={selected?.id} onSelect={setPicked} />
+
+      <div
+        className={`grid min-h-0 flex-1 gap-3 ${focus ? '' : 'lg:grid-cols-[minmax(0,1fr)_360px] xl:grid-cols-[minmax(0,1fr)_400px]'}`}
+      >
+        {selected ? (
+          <LiveStage
+            test={selected}
+            frame={frames[selected.id]}
+            index={tests.indexOf(selected) + 1}
+            total={tests.length}
+            now={now}
+            onFollow={
+              picked && running && selected.id !== running.id ? () => setPicked(null) : undefined
+            }
+          />
+        ) : (
+          <StageIntro state={state} />
+        )}
+        {!focus && (
+          <aside
+            aria-label="Run details"
+            className="flex h-[520px] min-h-0 flex-col overflow-hidden rounded-2xl border border-line bg-panel lg:h-auto"
+          >
+            <div
+              role="tablist"
+              aria-label="Details"
+              className="flex items-center border-b border-line px-1.5"
+            >
+              {DOCK.map(([id, label], i) => (
+                <button
+                  key={id}
+                  role="tab"
+                  type="button"
+                  id={`dock-${id}`}
+                  aria-selected={tab === id}
+                  aria-controls="dock-panel"
+                  title={`${label} (${i + 1})`}
+                  onClick={() => setTab(id)}
+                  className={`relative inline-flex items-center gap-1.5 px-2.5 py-2.5 text-[13px] ${
+                    tab === id ? 'font-semibold text-text' : 'text-muted hover:text-text'
+                  }`}
+                >
+                  {label}
+                  {badge[id] != null && (
+                    <span
+                      className={`rounded-full px-1.5 text-[11px] tabular-nums ${
+                        id === 'log' && counts.error
+                          ? 'bg-bad-bg font-semibold text-bad'
+                          : id === 'log'
+                            ? 'bg-warn-bg font-semibold text-warn'
+                            : 'bg-subtle text-muted'
+                      }`}
+                    >
+                      {badge[id]}
+                    </span>
+                  )}
+                  {tab === id && (
+                    <span
+                      className="absolute inset-x-2 -bottom-px h-0.5 rounded-full bg-text"
+                      aria-hidden
+                    />
+                  )}
+                </button>
+              ))}
+              <Tooltip content="Hide this panel (F)">
+                <button
+                  type="button"
+                  onClick={() => setFocus(true)}
+                  aria-label="Hide the panel"
+                  className="ml-auto hidden size-7 items-center justify-center rounded-md text-faint hover:bg-subtle hover:text-text lg:flex"
+                >
+                  <PanelRightClose size={15} aria-hidden />
+                </button>
+              </Tooltip>
+            </div>
+            <div
+              role="tabpanel"
+              id="dock-panel"
+              aria-labelledby={`dock-${tab}`}
+              className="flex min-h-0 flex-1 flex-col"
+            >
+              {tab === 'steps' &&
+                (selected ? (
+                  <StepTimeline test={selected} />
+                ) : (
+                  <p className="px-4 py-3 text-[13px] text-muted">
+                    The steps appear once the first test starts.
+                  </p>
+                ))}
+              {tab === 'checks' &&
+                (selected ? (
+                  <CheckList test={selected} />
+                ) : (
+                  <p className="px-4 py-3 text-[13px] text-muted">
+                    Each test&apos;s checks appear once the plan is ready.
+                  </p>
+                ))}
+              {tab === 'log' && <RunLog logs={state.logs} test={selected ?? null} />}
+              {tab === 'plan' && (
+                <PlanPanel
+                  state={state}
+                  planned={!fromSuite}
+                  selected={selected?.id}
+                  onSelect={setPicked}
+                />
+              )}
+            </div>
+          </aside>
+        )}
+      </div>
     </div>
   );
 }
@@ -272,8 +471,8 @@ function Results({ runId, report, review, onReview }) {
     <div className="space-y-6">
       <Summary summary={report.summary} durationMs={duration} />
       {report.consistency?.states > 0 && <Consistency consistency={report.consistency} />}
-      <div className="grid gap-6 lg:grid-cols-[300px_minmax(0,1fr)]">
-        <div className="lg:sticky lg:top-6 lg:self-start">
+      <div className="grid items-start gap-6 lg:grid-cols-[300px_minmax(0,1fr)]">
+        <div className="pin-lg lg:self-start lg:pr-1">
           <TestList items={items} selected={selected} onSelect={setSelected} />
         </div>
         <div className="min-w-0">
@@ -292,9 +491,33 @@ function Results({ runId, report, review, onReview }) {
   );
 }
 
-export function RunView({ id }) {
+const VIEW_KEY = 'aie2e.runView';
+const readView = () => {
+  try {
+    return localStorage.getItem(VIEW_KEY) === 'developer' ? 'developer' : 'summary';
+  } catch {
+    return 'summary';
+  }
+};
+
+/** "Swag Labs" from the pages' own title when every test agrees on it, else the host. */
+function appName(info) {
+  const titles = new Set(
+    (info.report?.results ?? []).map((r) => r.evidence.title?.trim()).filter(Boolean),
+  );
+  if (titles.size === 1) return [...titles][0];
+  const target = info.report?.targetUrl ?? info.options?.url;
+  try {
+    return new URL(target).host;
+  } catch {
+    return shortUrl(target);
+  }
+}
+
+export function RunView({ id, test, visual }) {
   const [info, setInfo] = useState(null);
   const [error, setError] = useState(null);
+  const [view, setView] = useState(readView);
   const refetch = useCallback(() => {
     api
       .run(id)
@@ -306,6 +529,15 @@ export function RunView({ id }) {
     setError(null);
     refetch();
   }, [refetch]);
+  const insights = useMemo(() => (info?.report ? runInsights(info.report) : null), [info?.report]);
+  const switchView = (v) => {
+    setView(v);
+    try {
+      localStorage.setItem(VIEW_KEY, v);
+    } catch {
+      /* private mode: the choice lasts for this page only */
+    }
+  };
 
   if (error)
     return (
@@ -321,12 +553,62 @@ export function RunView({ id }) {
     return (
       <div className="space-y-4">
         <Skeleton className="h-8 w-80" />
-        <Skeleton className="h-24 w-full" />
+        <Skeleton className="h-36 w-full" />
+        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+          {[0, 1, 2, 3].map((i) => (
+            <Skeleton key={i} className="h-20" />
+          ))}
+        </div>
       </div>
     );
 
   const target = info.report?.targetUrl ?? info.options?.url;
   const running = info.status === 'running';
+  const app = appName(info);
+  const who = info.report?.auth?.username;
+  const runTitle = who ? `${app}, ${who}` : app;
+  const onReview = async (body) => {
+    try {
+      const { review } = await api.reviewVisual(id, body);
+      setInfo((cur) => (cur ? { ...cur, review } : cur));
+      toast.success(
+        body.action === 'approve'
+          ? 'Approved: this screenshot is the new baseline'
+          : 'Kept the old baseline: this change counts as a bug',
+      );
+    } catch (e) {
+      toast.error(e.message);
+    }
+  };
+
+  if (test && info.report && insights)
+    return (
+      <TestJourney
+        runId={id}
+        info={info}
+        report={info.report}
+        insights={insights}
+        testId={test}
+        focusVisual={visual}
+        review={info.review ?? {}}
+        onReview={DEMO ? undefined : onReview}
+        runTitle={runTitle}
+      />
+    );
+
+  if (running)
+    return (
+      <Live
+        runId={id}
+        onDone={refetch}
+        fromSuite={!!info.options?.suite}
+        app={app}
+        who={who}
+        target={target}
+        startedAt={info.startedAt}
+      />
+    );
+
   const rerun = async () => {
     try {
       // a UI suite is stored by path; the API takes its name. "Record again" and "Plan again" were
@@ -342,123 +624,123 @@ export function RunView({ id }) {
       toast.error(e.message);
     }
   };
+  const total = info.report?.summary.total;
   return (
-    <div className="space-y-6">
-      <div>
-        <a
-          href="#/runs"
-          className="inline-flex items-center gap-1 text-[12px] text-muted hover:text-text"
-        >
-          <ArrowLeft size={13} aria-hidden /> Runs
-        </a>
-        <div className="mt-2 flex flex-col gap-3 sm:flex-row sm:items-start sm:gap-4">
-          <div className="min-w-0 flex-1">
-            <div className="flex flex-wrap items-center gap-2.5">
-              <h1 className="truncate text-[24px] font-semibold tracking-tight">
-                {shortUrl(target)}
-              </h1>
-              <Badge
-                tone={
-                  running
-                    ? 'ai'
-                    : info.status === 'done'
-                      ? info.report?.summary.failed || info.report?.summary.errored
-                        ? 'bad'
-                        : 'ok'
-                      : 'warn'
-                }
+    <div className="flex flex-col gap-6">
+      <header className="flex flex-wrap items-end justify-between gap-4">
+        <div className="flex min-w-0 flex-col gap-1.5">
+          <nav aria-label="Breadcrumb" className="text-[13px] text-muted">
+            <a href="#/runs" className="inline-flex items-center gap-1 hover:text-text">
+              <ArrowLeft size={13} aria-hidden /> Runs
+            </a>{' '}
+            / {app}
+          </nav>
+          <h1 className="truncate text-[26px] font-semibold leading-tight tracking-tight sm:text-[28px]">
+            {app}
+            {who && <span className="text-muted">, logged in as {who}</span>}
+          </h1>
+          <p className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[13px] text-muted">
+            <span className="font-mono">{shortUrl(target)}</span>
+            {info.options && <span aria-hidden>·</span>}
+            {!info.options ? null : info.options.suiteName ? (
+              <a className="hover:text-text" href={`#/suites/${info.options.suiteName}`}>
+                suite {info.options.suiteName}
+              </a>
+            ) : info.options?.suite ? (
+              <span>suite {String(info.options.suite).split(/[\\/]/).slice(-2).join('/')}</span>
+            ) : (
+              <span>{info.options?.goal ? 'one goal' : 'tests planned by AI'}</span>
+            )}
+            {total != null && (
+              <>
+                <span aria-hidden>·</span>
+                <span>
+                  {total} test{total === 1 ? '' : 's'}
+                </span>
+              </>
+            )}
+            <span aria-hidden>·</span>
+            <span>{fmtWhen(info.startedAt)}</span>
+            {info.report?.models?.preset && (
+              <>
+                <span aria-hidden>·</span>
+                <span>{info.report.models.preset} models</span>
+              </>
+            )}
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          {info.report && (
+            <>
+              <div
+                role="radiogroup"
+                aria-label="View"
+                className="flex h-9 rounded-lg border border-line bg-subtle p-0.5 text-[13px]"
               >
-                {running
-                  ? 'Running'
-                  : info.status === 'done'
-                    ? info.report?.summary.failed || info.report?.summary.errored
-                      ? 'Has failures'
-                      : 'All passed'
-                    : info.status}
-              </Badge>
-            </div>
-            <p className="mt-1 text-[12px] text-muted">
-              Started {fmtWhen(info.startedAt)}
-              {running && (
-                <>
-                  {' '}
-                  · running for <Elapsed since={info.startedAt} />
-                </>
-              )}{' '}
-              · <span className="font-mono">{id}</span>
-              {info.options?.suiteName && (
-                <>
-                  {' '}
-                  · suite{' '}
-                  <a
-                    className="font-mono hover:text-text"
-                    href={`#/suites/${info.options.suiteName}`}
+                {[
+                  ['summary', 'Summary'],
+                  ['developer', 'Developer view'],
+                ].map(([v, label]) => (
+                  <button
+                    key={v}
+                    role="radio"
+                    aria-checked={view === v}
+                    onClick={() => switchView(v)}
+                    className={`rounded-md px-3 font-medium ${view === v ? 'bg-panel text-text shadow-sm' : 'text-muted hover:text-text'}`}
                   >
-                    {info.options.suiteName}
-                  </a>
-                </>
-              )}
-              {info.report?.auth && <> · logged in as {info.report.auth.username}</>}
-            </p>
-          </div>
-          {!running && (
-            <div className="flex flex-wrap gap-2">
-              {info.report && (
-                <>
-                  <LinkButton href={fileUrl(id, 'report.html')} target="_blank" rel="noreferrer">
-                    <FileText size={14} aria-hidden /> HTML report{' '}
-                    <ExternalLink size={12} className="text-faint" aria-hidden />
-                  </LinkButton>
-                  <LinkButton href={fileUrl(id, 'report.json')} target="_blank" rel="noreferrer">
-                    <Braces size={14} aria-hidden /> JSON
-                  </LinkButton>
-                  <Button
-                    variant="secondary"
-                    onClick={async () => {
-                      try {
-                        const { name } = await api.suiteFromRun(id);
-                        toast.success('Saved as a suite: edit the tests, then run them any time');
-                        go(`#/suites/${name}`);
-                      } catch (e) {
-                        toast.error(e.message);
-                      }
-                    }}
-                  >
-                    <ListChecks size={14} aria-hidden /> Save as suite
-                  </Button>
-                </>
-              )}
-              {info.options && (
-                <Button variant="primary" onClick={rerun}>
-                  <RotateCcw size={14} aria-hidden /> Run again
+                    {label}
+                  </button>
+                ))}
+              </div>
+              <LinkButton href={fileUrl(id, 'report.html')} target="_blank" rel="noreferrer">
+                <FileText size={14} aria-hidden /> Report{' '}
+                <ExternalLink size={12} className="text-faint" aria-hidden />
+              </LinkButton>
+              {!info.options?.suiteName && !DEMO && (
+                <Button
+                  variant="secondary"
+                  onClick={async () => {
+                    try {
+                      const { name } = await api.suiteFromRun(id);
+                      toast.success('Saved as a suite: edit the tests, then run them any time');
+                      go(`#/suites/${name}`);
+                    } catch (e) {
+                      toast.error(e.message);
+                    }
+                  }}
+                >
+                  <ListChecks size={14} aria-hidden /> Save as suite
                 </Button>
               )}
-            </div>
+            </>
+          )}
+          {info.options && !DEMO && (
+            <Button variant="accent" onClick={rerun}>
+              <RotateCcw size={14} aria-hidden /> Run again
+            </Button>
           )}
         </div>
-      </div>
+      </header>
 
-      {running ? (
-        <Live runId={id} onDone={refetch} />
-      ) : info.report ? (
-        <Results
-          runId={id}
-          report={info.report}
-          review={info.review ?? {}}
-          onReview={async (body) => {
-            try {
-              const { review } = await api.reviewVisual(id, body);
-              setInfo((cur) => (cur ? { ...cur, review } : cur));
-              toast.success(
-                body.action === 'approve'
-                  ? 'Approved: this screenshot is the new baseline'
-                  : 'Rejected: the old baseline stays',
-              );
-            } catch (e) {
-              toast.error(e.message);
-            }
-          }}
-        />
+      {info.report && insights ? (
+        view === 'summary' ? (
+          <RunSummary runId={id} report={info.report} insights={insights} />
+        ) : (
+          <div className="flex flex-col gap-3">
+            <div className="flex flex-wrap items-center gap-3 text-[12px] text-muted">
+              <LinkButton href={fileUrl(id, 'report.json')} target="_blank" rel="noreferrer">
+                <Braces size={14} aria-hidden /> report.json
+              </LinkButton>
+              <span className="font-mono">{id}</span>
+            </div>
+            <Results
+              runId={id}
+              report={info.report}
+              review={info.review ?? {}}
+              onReview={onReview}
+            />
+          </div>
+        )
       ) : (
         <EmptyState
           icon={info.status === 'stopped' ? Square : XCircle}
@@ -469,4 +751,15 @@ export function RunView({ id }) {
       )}
     </div>
   );
+}
+
+/** The current time, ticking every second while `on`, for the live timer. @param {boolean} on */
+function useNow(on) {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (!on) return undefined;
+    const t = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, [on]);
+  return now;
 }

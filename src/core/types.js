@@ -6,20 +6,26 @@ import { z } from 'zod';
  */
 
 // ---------- Expectations (what the judge verifies) ----------
+/**
+ * Every check may carry a `label`: what it proves, in words a non-developer understands ("The cart
+ * shows 2 products"). Reports show the label; the judge only ever uses the other fields.
+ * @template {z.ZodRawShape} T @param {T} shape
+ */
+const check = (shape) => z.object({ ...shape, label: z.string().max(160).optional() });
 export const ExpectationSchema = z.discriminatedUnion('kind', [
-  z.object({
+  check({
     kind: z.literal('url'),
     pattern: z.string(),
     mode: z.enum(['includes', 'regex']).default('includes'),
   }),
-  z.object({ kind: z.literal('text-visible'), text: z.string() }),
-  z.object({ kind: z.literal('selector-visible'), selector: z.string() }),
-  z.object({ kind: z.literal('no-console-errors') }),
-  z.object({ kind: z.literal('no-network-failures') }),
+  check({ kind: z.literal('text-visible'), text: z.string() }),
+  check({ kind: z.literal('selector-visible'), selector: z.string() }),
+  check({ kind: z.literal('no-console-errors') }),
+  check({ kind: z.literal('no-network-failures') }),
   /** An LLM answers `question` from the harness screenshot, never from the agent's words. */
-  z.object({ kind: z.literal('visual'), question: z.string() }),
+  check({ kind: z.literal('visual'), question: z.string() }),
   /** The page made a matching fetch/XHR call (observed by the harness, not reported by the agent). */
-  z.object({
+  check({
     kind: z.literal('api-call'),
     /** Substring of the request URL, or a regex. */
     urlPattern: z.string(),
@@ -29,11 +35,11 @@ export const ExpectationSchema = z.discriminatedUnion('kind', [
     maxDurationMs: z.number().positive().optional(),
   }),
   /** The browser started a file download (optionally with a matching file name). */
-  z.object({ kind: z.literal('download'), filenamePattern: z.string().optional() }),
+  check({ kind: z.literal('download'), filenamePattern: z.string().optional() }),
   /** Text that appeared in a toast / live region / alert at ANY moment, even if it is gone by the end. */
-  z.object({ kind: z.literal('text-appeared'), text: z.string() }),
+  check({ kind: z.literal('text-appeared'), text: z.string() }),
   /** Core Web Vitals budgets (any omitted metric is not checked). */
-  z.object({
+  check({
     kind: z.literal('web-vitals'),
     lcpMs: z.number().positive().optional(),
     cls: z.number().positive().optional(),
@@ -45,7 +51,7 @@ export const ExpectationSchema = z.discriminatedUnion('kind', [
    * The page uses the themes its own build ships (CSS variables) in every theme: at least `minScore` of the
    * checked colours/radii/fonts come from theme tokens, and no surface ignores the theme switch.
    */
-  z.object({
+  check({
     kind: z.literal('theme-conformance'),
     minScore: z.number().min(0).max(1).default(0.9),
     allowLeaks: z.boolean().default(false),
@@ -56,12 +62,12 @@ export const ExpectationSchema = z.discriminatedUnion('kind', [
    * Screenshots look like their approved baselines (the final screen, each replayed step, each theme).
    * Areas marked data-aie2e-mask are blanked first. Auto-added under the visual gate.
    */
-  z.object({
+  check({
     kind: z.literal('visual-baseline'),
     maxDiffRatio: z.number().min(0).max(1).default(0.001),
   }),
   /** axe-core found no accessibility violations at or above `minImpact` on the final page. */
-  z.object({
+  check({
     kind: z.literal('no-a11y-violations'),
     minImpact: z.enum(['minor', 'moderate', 'serious', 'critical']).default('serious'),
   }),
@@ -77,6 +83,11 @@ export const TestCaseSchema = z.object({
   expectations: z.array(ExpectationSchema),
   maxSteps: z.number().int().positive().optional(),
   tags: z.array(z.string()).default([]),
+  /**
+   * Who wrote the test (its goal and checks): the AI planner, a suite (a person, or a run saved as a suite), a
+   * person on the command line or the New run form, or the built-in smoke check. Shown in reports, never judged.
+   */
+  origin: z.enum(['planner', 'suite', 'user', 'smoke']).optional(),
 });
 
 // ---------- Recorded (replayable) steps: the Saturday contract ----------
@@ -253,7 +264,11 @@ export const RecordingSchema = z.object({
 
 // ---------- Execution ----------
 /** @typedef {'agent' | 'replay' | 'healed' | 'deterministic'} ExecutionMode */
-/** @typedef {{ success: boolean, message: string }} AgentClaim */
+/**
+ * What the agent SAID happened. `status`, `observed` and `valuesUsed` come from its structured final report
+ * (absent in older reports).
+ * @typedef {{ success: boolean, message: string, status?: 'done' | 'blocked' | 'app-error', observed?: string[], valuesUsed?: string[] }} AgentClaim
+ */
 /**
  * @typedef {object} HealEvent
  * @property {string} testId
@@ -276,6 +291,22 @@ export const RecordingSchema = z.object({
  * @property {Baseline} [baseline]  Start-page snapshot used by the judge to spot vacuous expectations.
  * @property {boolean} [recordable]  True when `steps` fully capture what the agent did, so they can be replayed.
  * @property {TraceEntry[]} [trace]  Run log for the report.
+ * @property {AgentInput} [agentInput]  what the AI agent was told (when it ran)
+ * @property {string} [recordedAt]  replay: when the recording was made ('suite' = the suite's own steps)
+ */
+/**
+ * @typedef {object} AgentInput
+ * @property {string} model
+ * @property {'stagehand' | 'loop'} engine
+ * @property {string} instruction  the full instruction the agent received (goal included)
+ */
+/**
+ * What each part of the tool was given for one test, for the "who did what" view. The judge's input is the
+ * test's own checks (`test.expectations`) plus the checks the tool adds (quality, visual), see the verdict.
+ * @typedef {object} TestInputs
+ * @property {AgentInput} [agent]  absent when no AI drove the browser (replay, smoke check)
+ * @property {{ steps: RecordedStep[], source: 'suite' | 'recording' | 'agent' | 'harness', recordedAt?: string }} playwright
+ *   the steps Playwright ran (replay) or recorded from the agent's actions; source = who wrote them
  */
 
 // ---------- Results ----------
@@ -291,6 +322,19 @@ export const RecordingSchema = z.object({
  * @property {number} durationMs
  * @property {{ inputTokens: number, outputTokens: number }} [llmUsage]  Browser-agent tokens for this test.
  * @property {TraceEntry[]} [trace]  What happened, step by step, with screenshots.
+ * @property {Explanation} [explanation]  the AI's reading of a failure; advisory, written after the verdict
+ * @property {TestInputs} [inputs]  what the AI agent, Playwright and the judge were each given
+ */
+/**
+ * Why a failed test most likely failed, read by the judge's model from the evidence after the verdict.
+ * Shown as "the AI's reading"; never used for the verdict.
+ * @typedef {object} Explanation
+ * @property {string} cause
+ * @property {'app-bug' | 'test-problem' | 'environment' | 'unclear'} category
+ * @property {'high' | 'medium' | 'low'} confidence
+ * @property {string[]} evidence
+ * @property {string} suggestion
+ * @property {string} model
  */
 /**
  * @typedef {object} RunSummary
@@ -316,6 +360,7 @@ export const RecordingSchema = z.object({
  * @property {TestResult[]} results
  * @property {Consistency} [consistency]  how consistently the same kinds of element look across screens
  * @property {{ loginUrl: string, username: string, landedOn: string }} [auth]  the run logged in first (never the password)
+ * @property {{ agent: string, planner: string, judge: string, preset?: string }} [models]  which model did which job
  */
 /**
  * @typedef {object} ConsistencyStyle

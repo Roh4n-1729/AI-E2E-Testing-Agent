@@ -103,10 +103,19 @@ export class ReplayExecutor {
   }
 }
 
-/** @param {Page} page @param {string} selector */
+/**
+ * Recorded selectors: XPath (Stagehand), CSS and test ids, and Playwright's own role/test-id locators from
+ * the loop agent (`internal:role=button[name="Buy"i]`). Anything else is an XPath without its prefix.
+ * @param {Page} page @param {string} selector
+ */
 const toLocator = (page, selector) =>
   page
-    .locator(/^(xpath=|css=|text=|#|\.|\/|\[)/.test(selector) ? selector : `xpath=${selector}`)
+    .locator(
+      /^(xpath=|css=|text=|internal:|role=|#|\.|\/|\[)/.test(selector) ||
+        selector.includes('internal:')
+        ? selector
+        : `xpath=${selector}`,
+    )
     .first();
 
 /**

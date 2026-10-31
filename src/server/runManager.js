@@ -1,3 +1,4 @@
+import { runInsights } from '../reporter/insights.js';
 import { mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { startRun } from '../app/startRun.js';
@@ -28,6 +29,9 @@ import { newRunId } from '../util/misc.js';
  * @property {string} startedAt
  * @property {string} targetUrl
  * @property {RunSummary} [summary]
+ * @property {string} [headline]  plain-English verdict ("4 problems found"), from runInsights
+ * @property {string} [app]  the app's own name when every page agrees on it
+ * @property {string} [username]  who the run logged in as
  */
 
 /**
@@ -109,6 +113,7 @@ export class RunManager {
           startedAt: report.startedAt,
           targetUrl: report.targetUrl,
           summary: report.summary,
+          ...listFacts(report),
         });
       }
     }
@@ -119,6 +124,7 @@ export class RunManager {
         startedAt: r.startedAt,
         targetUrl: r.options.url,
         summary: r.report?.summary ?? items.get(r.runId)?.summary,
+        ...(r.report ? listFacts(r.report) : {}),
       });
     }
     return [...items.values()].sort((a, b) => b.startedAt.localeCompare(a.startedAt));
@@ -156,4 +162,20 @@ async function safeReaddir(dir) {
   } catch {
     return [];
   }
+}
+
+/** What the run list shows about a finished run, beyond its numbers. @param {RunReport} report */
+function listFacts(report) {
+  const titles = new Set(report.results.map((r) => r.evidence.title?.trim()).filter(Boolean));
+  let headline;
+  try {
+    headline = runInsights(report).headline;
+  } catch {
+    headline = undefined; // an old or partial report must never break the list
+  }
+  return {
+    headline,
+    app: titles.size === 1 ? [...titles][0] : undefined,
+    username: report.auth?.username,
+  };
 }
