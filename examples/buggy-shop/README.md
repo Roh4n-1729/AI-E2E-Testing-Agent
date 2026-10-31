@@ -28,5 +28,5 @@ aie2e run http://localhost:4300 --suite examples/buggy-shop/suite.json --no-heal
 ```
 
 `npm run eval` runs the clean app several times and then every bug on its own, and writes
-`docs/EVALUATION.md`. `npm run eval -- --mode explore --heal` lets the AI explore and plan its own tests
+`.aie2e/eval/EVALUATION.md`. `npm run eval -- --mode explore --heal` lets the AI explore and plan its own tests
 instead of using the suite (needs an API key).

@@ -1,4 +1,4 @@
-# AI E2E Agent, deployed (docs/DEPLOY.md). Two stages: build the UI with the dev tools, then a runtime
+# AI E2E Agent, deployed (README, "Deploying"). Two stages: build the UI with the dev tools, then a runtime
 # with only production packages and Playwright's Chromium (version from package-lock.json).
 
 FROM node:22-bookworm-slim AS build

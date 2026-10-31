@@ -3,7 +3,7 @@ import { lookup } from 'node:dns/promises';
 import { isIP } from 'node:net';
 
 /**
- * Deploying the UI for others (docs/DEPLOY.md). It launches browsers on this machine with the owner's
+ * Deploying the UI for others (README, "Deploying"). It launches browsers on this machine with the owner's
  * API key, so a shared instance needs three guards on top of the local-only defaults:
  *   1. an access code (AIE2E_ACCESS_CODE) for every API call and run file; without it no public host
  *      name is accepted at all;

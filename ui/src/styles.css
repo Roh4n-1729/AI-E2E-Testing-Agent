@@ -23,6 +23,12 @@
   --bad: #c2303b;
   --bad-bg: #fbe9ea;
   --shadow: 0 1px 2px rgb(20 22 27 / 0.06), 0 8px 24px -12px rgb(20 22 27 / 0.18);
+  /* the live stage: a dark room in both themes, so the browser is the brightest thing on screen */
+  --stage: #151b27;
+  --stage-2: #1e2533;
+  --stage-line: rgb(255 255 255 / 0.09);
+  --stage-text: #eef0f5;
+  --stage-muted: #9aa3b5;
   color-scheme: light;
 }
 .dark {
@@ -44,6 +50,9 @@
   --bad: #ff7a83;
   --bad-bg: #3a161c;
   --shadow: 0 1px 2px rgb(0 0 0 / 0.4), 0 12px 32px -12px rgb(0 0 0 / 0.6);
+  --stage: #080b12;
+  --stage-2: #121826;
+  --stage-line: rgb(255 255 255 / 0.07);
   color-scheme: dark;
 }
 
@@ -68,6 +77,11 @@
   --color-bad: var(--bad);
   --color-bad-bg: var(--bad-bg);
   --shadow-pop: var(--shadow);
+  --color-stage: var(--stage);
+  --color-stage-2: var(--stage-2);
+  --color-stage-line: var(--stage-line);
+  --color-stage-text: var(--stage-text);
+  --color-stage-muted: var(--stage-muted);
 }
 
 html,
@@ -148,4 +162,61 @@ body {
     overscroll-behavior: contain;
     scrollbar-gutter: stable;
   }
+}
+
+/* Live stage. The browser window keeps 16:10 and grows to whichever of the stage's width or height runs
+   out first; the glow is the colour of who is acting (AI agent, Playwright, judge) or of the verdict. */
+.stage-room {
+  background:
+    radial-gradient(120% 80% at 50% 0%, rgb(255 255 255 / 0.05), transparent 60%),
+    radial-gradient(circle at 1px 1px, rgb(255 255 255 / 0.05) 1px, transparent 0) 0 0 / 22px 22px,
+    var(--stage);
+}
+@media (min-width: 1024px) {
+  .stage-fit {
+    container-type: size;
+  }
+  .stage-window {
+    width: min(100cqw, calc((100cqh - 2.25rem) * 1.6));
+  }
+}
+.glow {
+  box-shadow:
+    0 0 0 1px color-mix(in oklab, var(--glow) 60%, transparent),
+    0 0 20px -6px color-mix(in oklab, var(--glow) 30%, transparent);
+  transition: box-shadow 400ms ease;
+}
+@keyframes stamp {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(1.5) rotate(-6deg);
+  }
+  14% {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1) rotate(-6deg);
+  }
+  80% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(0.96) rotate(-6deg);
+  }
+}
+.stamp {
+  animation: stamp 2.4s cubic-bezier(0.2, 0.9, 0.3, 1.2) forwards;
+}
+@keyframes sweep {
+  from {
+    background-position: -120% 0;
+  }
+  to {
+    background-position: 220% 0;
+  }
+}
+.sweep {
+  background-image: linear-gradient(90deg, transparent, rgb(255 255 255 / 0.55), transparent);
+  background-size: 50% 100%;
+  background-repeat: no-repeat;
+  animation: sweep 1.6s linear infinite;
 }

@@ -131,7 +131,7 @@ export function AppShell({ route, health, children }) {
 function ModelsBox({ health }) {
   const run = health.activeModels;
   const m = run ?? health;
-  const preset = run ? run.preset : health.preset;
+  const preset = run ? (run.preset ?? health.preset) : health.preset;
   const loop = (run?.agentEngine ?? health.agentEngine) === 'loop';
   const agent = loop ? 'agent (own loop)' : 'agent';
   const rows =

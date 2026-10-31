@@ -17,7 +17,7 @@ import { createShop } from '../examples/buggy-shop/server.js';
  * Method (seeded-bug shop): run the CLEAN app N times (false positives, flakiness), then switch on
  * ONE known bug at a time and run again. A bug counts as detected when a test that passes on the
  * clean app fails, or a new quality warning appears. Attribution is exact because only one bug
- * differs between the runs. Results go to docs/EVALUATION.md and a JSON file next to the runs.
+ * differs between the runs. Results go to .aie2e/eval/EVALUATION.md and a JSON file next to the runs.
  */
 
 const { values: args } = parseArgs({
@@ -30,7 +30,7 @@ const { values: args } = parseArgs({
     concurrency: { type: 'string', default: '3' },
     heal: { type: 'boolean', default: false },
     hints: { type: 'boolean', default: false },
-    report: { type: 'string', default: 'docs/EVALUATION.md' },
+    report: { type: 'string', default: '.aie2e/eval/EVALUATION.md' },
     model: { type: 'string' },
     engine: { type: 'string' },
   },

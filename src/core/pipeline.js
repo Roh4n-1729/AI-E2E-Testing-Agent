@@ -91,7 +91,7 @@ export function buildPipeline(deps) {
   const phase = (phase, status, detail) => events.emit('phase', { phase, status, detail });
   // Parallelism is capped HERE, not with LangGraph's `maxConcurrency`: in @langchain/langgraph 1.5.3
   // `maxConcurrency: 1` with a Send fan-out silently drops the branches' writes and never reaches
-  // the next node (reproduced; see docs/IMPROVEMENTS.md). Every branch starts, then waits for a slot.
+  // the next node (reproduced in this repo). Every branch starts, then waits for a slot.
   const slots = createLimiter(config.concurrency);
 
   const graph = new StateGraph(PipelineState)

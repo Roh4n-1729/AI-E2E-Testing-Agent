@@ -1,7 +1,7 @@
-# CLAUDE.md
+# Contributing
 
-Guidance for AI coding assistants (and new humans) working in this repo. Read `docs/ARCHITECTURE.md`
-for the design and `docs/DECISIONS.md` for why it is this way.
+How to work on this repo, for people and AI coding assistants alike. Read `docs/ARCHITECTURE.md` for how
+the parts fit together and `docs/DESIGN.md` for why it is built this way.
 
 ## What this is
 
@@ -18,7 +18,7 @@ npm run check        # tsc --checkJs on src + the JSX attribute types
 npm run lint         # eslint
 npm run format       # prettier --write (CI runs prettier --check)
 npm test             # vitest; browser tests skip if Chromium is missing
-npm run eval         # seeded-bug evaluation, writes docs/EVALUATION.md (no LLM)
+npm run eval         # seeded-bug evaluation, writes .aie2e/eval/EVALUATION.md (no LLM)
 npm run shop         # demo app with switchable bugs, :4300
 npm run todomvc      # third-party demo app, :4400
 npm run saucedemo    # Sauce Demo with login, :4500 (AIE2E_USERNAME=<user>, AIE2E_PASSWORD=secret_sauce)
@@ -43,31 +43,30 @@ containers work with no flags; `AIE2E_CHROME_SANDBOX=true` keeps it.
 
 ## Where things go
 
-| Change                     | Place                                                                                                    |
-| -------------------------- | -------------------------------------------------------------------------------------------------------- |
-| New expectation kind       | `core/types.js` schema → `judge/evidenceJudge.js` case → `ui/src/screens/Suites.jsx` `KINDS` → test      |
-| New evidence from the page | `browser/collectors.js` or `browser/session.js#collectEvidence`                                          |
-| New recorded step method   | `executor/replayExecutor.js#runStep` + `executor/steps.js`                                               |
-| New config option          | `config/config.js` (schema + env var) + `.env.example`                                                   |
-| Plain-English report text  | `reporter/insights.js` (pure; used by the UI, `report.html` and the run list) + `tests/insights.test.js` |
-| Deployed instance          | `Dockerfile`, `deploy/serve.js`, guards in `server/access.js` + `tests/access.test.js`, `docs/DEPLOY.md` |
-| New CLI flag               | `cli/main.js` → `app/startRun.js` options; mirror in `server/app.js` `StartBody` and `action.yml`        |
+| Change                     | Place                                                                                                      |
+| -------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| New expectation kind       | `core/types.js` schema → `judge/evidenceJudge.js` case → `ui/src/screens/Suites.jsx` `KINDS` → test        |
+| New evidence from the page | `browser/collectors.js` or `browser/session.js#collectEvidence`                                            |
+| New recorded step method   | `executor/replayExecutor.js#runStep` + `executor/steps.js`                                                 |
+| New config option          | `config/config.js` (schema + env var) + `.env.example`                                                     |
+| Plain-English report text  | `reporter/insights.js` (pure; used by the UI, `report.html` and the run list) + `tests/insights.test.js`   |
+| Deployed instance          | `Dockerfile`, `deploy/serve.js`, guards in `server/access.js` + `tests/access.test.js`, README "Deploying" |
+| New CLI flag               | `cli/main.js` → `app/startRun.js` options; mirror in `server/app.js` `StartBody` and `action.yml`          |
 
 ## Docs to keep current
 
-`docs/IMPROVEMENTS.md` (dated log of what changed and what was found), `docs/ROADMAP.md`,
-`docs/ARCHITECTURE.md`, `docs/DECISIONS.md`, and the study guide (`docs/STUDY_GUIDE.md` and
-`docs/study-guide.html`): every feature gets a short explanation there.
+`README.md` (what it does, how to run it), `docs/ARCHITECTURE.md` (the parts and where they live) and
+`docs/DESIGN.md` (a numbered decision with its reason for every choice that shapes the code; a changed decision
+is marked superseded, never deleted).
 
-## Current status (update when it changes)
+## What exists (update when it changes)
 
 - Done: record/replay/heal, strict judge, crawler, planner (+ plan review), LangGraph, web UI v2 (summary, test
   journeys, live run; developer view kept), suites with plain-words labels, login, quality, theme, visual
   baselines, GitHub Action, 3 demo apps, model presets, agent tools (`harnessStatus`, structured report), the AI's
   reading of failures (`judge/failureExplainer.js`), our own agent loop (`AIE2E_AGENT_ENGINE=loop`, opt-in),
   who-did-what inputs per test (`result.inputs`, actor filter, suite editor per part), read-only showcase
-  (`demo:export`, `demo:build`).
-- Pending: deploy the showcase; demo GIF; final CI.
+  (`demo:export`, `demo:build`), live run cockpit (stage + Steps/Checks/Log/Plan tabs), deployed instance on Render (`Dockerfile`, `deploy/`, D34).
 
 ## Gotchas
 

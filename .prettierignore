@@ -5,7 +5,6 @@ docs/diagrams/*.png
 package-lock.json
 ui/dist
 ui/dist-demo
-docs/study-guide.html
 examples/todomvc/app
 examples/saucedemo/app
 deploy/seed

@@ -53,7 +53,7 @@ const StartBody = z.object({
  * Local-only web server: REST + SSE for the UI, static reports/screenshots, the built UI itself.
  * It launches browsers on this machine, so it (a) should be bound to 127.0.0.1 by the caller and
  * (b) rejects any request whose Host header is not local (guards against DNS rebinding). Deployed for
- * others (docs/DEPLOY.md), it also needs an access code and refuses targets on the owner's network
+ * others (README, "Deploying"), it also needs an access code and refuses targets on the owner's network
  * (`./access.js`).
  *
  * @param {{ outDir: string, uiDir?: string, manager?: RunManager, logger?: boolean,

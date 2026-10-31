@@ -130,7 +130,7 @@ program
     // listening beyond this machine launches browsers with your API key for whoever connects
     if (!/^(127\.0\.0\.1|localhost|::1)$/.test(host) && !process.env.AIE2E_ACCESS_CODE?.trim()) {
       console.error(
-        `Listening on ${host} needs an access code: set AIE2E_ACCESS_CODE (see docs/DEPLOY.md).`,
+        `Listening on ${host} needs an access code: set AIE2E_ACCESS_CODE (see the README, "Deploying").`,
       );
       process.exitCode = 2;
       return;

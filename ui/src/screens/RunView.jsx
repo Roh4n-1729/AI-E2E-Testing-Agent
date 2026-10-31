@@ -4,6 +4,8 @@ import {
   ExternalLink,
   FileText,
   ListChecks,
+  PanelRightClose,
+  PanelRightOpen,
   RotateCcw,
   Square,
   XCircle,
@@ -12,12 +14,13 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { toast } from 'sonner';
 import { DEMO, api, fileUrl } from '../api.js';
 import {
-  CrawledPages,
+  CheckList,
   LiveStage,
+  PhaseRail,
+  PlanPanel,
+  StageIntro,
   StepTimeline,
-  PlanReview,
-  PlannedTests,
-  ProgressStrip,
+  TestStrip,
 } from '../components/LiveRun.jsx';
 import { TestDetail } from '../components/TestDetail.jsx';
 import {
@@ -36,7 +39,7 @@ import { Consistency } from '../components/Consistency.jsx';
 import { RunSummary } from '../components/RunSummary.jsx';
 import { runInsights } from '../../../src/reporter/insights.js';
 import { TestJourney } from './TestJourney.jsx';
-import { RunLog } from '../components/RunLog.jsx';
+import { RunLog, logCounts } from '../components/RunLog.jsx';
 
 const FILTERS = [
   ['all', 'All', () => true],
@@ -187,52 +190,153 @@ function TestList({ items, selected, onSelect }) {
   );
 }
 
-function Live({ runId, onDone, fromSuite }) {
+const DOCK = [
+  ['steps', 'Steps'],
+  ['checks', 'Checks'],
+  ['log', 'Log'],
+  ['plan', 'Plan'],
+];
+const DOCK_KEY = 'aie2e.live.tab';
+
+/**
+ * The live run as a cockpit: one screen tall, nothing to scroll. The browser is the stage; the steps,
+ * the checks the judge will apply, the log and the plan are tabs beside it, so reading the log never
+ * moves the browser out of view. Keys: 1 to 4 switch tabs, F hides the panel.
+ */
+function Live({ runId, onDone, fromSuite, app, who, target, startedAt }) {
   const { state, frames, connected } = useRunStream(runId);
   const [picked, setPicked] = useState(null);
   const [stopping, setStopping] = useState(false);
+  const [tab, setTabState] = useState(() => {
+    try {
+      return localStorage.getItem(DOCK_KEY) || 'steps';
+    } catch {
+      return 'steps';
+    }
+  });
+  const [focus, setFocus] = useState(false);
+  const setTab = (t) => {
+    setTabState(t);
+    setFocus(false);
+    try {
+      localStorage.setItem(DOCK_KEY, t);
+    } catch {
+      /* private mode */
+    }
+  };
   useEffect(() => {
     if (state.finished) onDone();
   }, [state.finished]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    const onKey = (e) => {
+      const el = e.target;
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      if (
+        el instanceof HTMLElement &&
+        (el.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName))
+      )
+        return;
+      const i = Number(e.key) - 1;
+      if (DOCK[i]) setTab(DOCK[i][0]);
+      else if (e.key === 'f' || e.key === 'F') setFocus((f) => !f);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
+
   const tests = state.order.map((id) => state.tests[id]);
   const running = tests.find((t) => t.status === 'running');
-  const selected = state.tests[picked] ?? running ?? tests[0];
   const now = useNow(!state.finished);
+  // A test that has just finished stays on stage until the next one has a picture, so its verdict is
+  // seen instead of a blank "connecting" browser.
+  const justDone = tests
+    .filter((t) => t.finishedAt && now - new Date(t.finishedAt).getTime() < 2600)
+    .sort((a, b) => String(b.finishedAt).localeCompare(String(a.finishedAt)))[0];
+  const held = justDone && (!running || !frames[running.id]) ? justDone : null;
+  const selected =
+    state.tests[picked] ??
+    held ??
+    running ??
+    tests.findLast((t) => t.status !== 'pending') ??
+    tests[0];
+  const counts = useMemo(() => logCounts(state.logs), [state.logs]);
+  const badge = {
+    steps: selected?.steps.length || null,
+    checks: selected?.expectations?.length || null,
+    log: counts.error || counts.warn || null,
+    plan: tests.length || null,
+  };
+  const stop = async () => {
+    setStopping(true);
+    await api.stop(runId).catch((e) => toast.error(e.message));
+    toast('Stopping: open browsers are being closed');
+  };
+
   return (
-    <div className="flex flex-col gap-5">
-      <div className="flex flex-wrap items-center gap-3">
-        <span className="inline-flex items-center gap-1.5 rounded-full bg-ai/10 px-2.5 py-1 text-[13px] font-semibold text-ai">
-          <span className="pulse size-2 rounded-full bg-ai" aria-hidden />{' '}
-          {fromSuite ? 'Testing' : 'AI is testing'}
-        </span>
-        {state.config && (
-          <span className="text-[13px] text-muted">
-            {state.config.preset ? `${state.config.preset} models · ` : ''}agent{' '}
-            {String(state.config.model).replace(/^[a-z]+\//, '')}
-          </span>
-        )}
-        <div className="ml-auto flex items-center gap-2">
-          {!connected && !state.finished && <Badge tone="warn">reconnecting…</Badge>}
-          <Button
-            variant="danger"
-            busy={stopping}
-            onClick={async () => {
-              setStopping(true);
-              await api.stop(runId).catch((e) => toast.error(e.message));
-              toast('Stopping: open browsers are being closed');
-            }}
+    <div className="flex flex-col gap-3 lg:h-[calc(100dvh-4rem)] lg:min-h-[620px]">
+      <header className="flex flex-wrap items-center gap-x-4 gap-y-2 lg:flex-nowrap">
+        <div className="flex min-w-0 items-center gap-2.5">
+          <a
+            href="#/runs"
+            aria-label="Back to runs"
+            className="flex size-8 shrink-0 items-center justify-center rounded-lg border border-line text-muted hover:bg-subtle hover:text-text"
           >
+            <ArrowLeft size={15} aria-hidden />
+          </a>
+          <div className="min-w-0">
+            <h1 className="truncate text-[17px] font-semibold leading-tight tracking-tight">
+              {app}
+              {who && <span className="font-normal text-muted">, as {who}</span>}
+            </h1>
+            <p className="truncate font-mono text-[11px] text-faint">{shortUrl(target)}</p>
+          </div>
+        </div>
+        <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-ai/10 px-2.5 py-1 text-[12px] font-semibold text-ai">
+          <span className="pulse size-2 rounded-full bg-ai" aria-hidden />
+          {fromSuite ? 'Testing' : 'AI is testing'}
+          {startedAt && (
+            <span className="font-normal text-ai/80">
+              <Elapsed since={startedAt} />
+            </span>
+          )}
+        </span>
+        <div className="min-w-0 overflow-x-auto lg:flex-1">
+          <PhaseRail state={state} />
+        </div>
+        <div className="ml-auto flex shrink-0 items-center gap-2">
+          {state.config && (
+            <span className="hidden text-[12px] text-muted 2xl:inline">
+              {state.config.preset ? `${state.config.preset} · ` : ''}
+              {String(state.config.model).replace(/^[a-z]+\//, '')}
+            </span>
+          )}
+          {!connected && !state.finished && <Badge tone="warn">reconnecting…</Badge>}
+          {focus && (
+            <Button variant="secondary" onClick={() => setFocus(false)}>
+              <PanelRightOpen size={14} aria-hidden /> Steps and log
+              {counts.error > 0 && (
+                <span className="rounded-full bg-bad px-1.5 text-[11px] text-white">
+                  {counts.error}
+                </span>
+              )}
+            </Button>
+          )}
+          <Button variant="danger" busy={stopping} onClick={stop}>
             <Square size={12} aria-hidden /> Stop run
           </Button>
         </div>
-      </div>
-      <ProgressStrip state={state} />
+      </header>
+
       {state.error && (
         <p role="alert" className="rounded-lg bg-bad-bg px-3 py-2 text-[13px] text-bad">
           {state.error}
         </p>
       )}
-      <div className="grid items-start gap-6 xl:grid-cols-[minmax(0,1fr)_380px]">
+      <TestStrip tests={tests} selected={selected?.id} onSelect={setPicked} />
+
+      <div
+        className={`grid min-h-0 flex-1 gap-3 ${focus ? '' : 'lg:grid-cols-[minmax(0,1fr)_360px] xl:grid-cols-[minmax(0,1fr)_400px]'}`}
+      >
         {selected ? (
           <LiveStage
             test={selected}
@@ -240,34 +344,105 @@ function Live({ runId, onDone, fromSuite }) {
             index={tests.indexOf(selected) + 1}
             total={tests.length}
             now={now}
+            onFollow={
+              picked && running && selected.id !== running.id ? () => setPicked(null) : undefined
+            }
           />
         ) : (
-          <div className="flex flex-col gap-3">
-            <p className="text-[14px] text-muted">
-              {state.phases.login?.status === 'running'
-                ? 'Logging in…'
-                : state.phases.plan?.status === 'running'
-                  ? 'Planning the tests…'
-                  : 'Exploring the app…'}
-            </p>
-            <Skeleton className="aspect-[16/10] w-full" />
-          </div>
+          <StageIntro state={state} />
         )}
-        <aside aria-label="Plan" className="pin-xl flex min-w-0 flex-col gap-3.5 xl:pr-1">
-          {selected && <StepTimeline test={selected} />}
-          <PlannedTests
-            tests={tests}
-            selected={selected?.id}
-            onSelect={setPicked}
-            planned={!fromSuite && !!state.phases.plan}
-            frames={frames}
-            reused={state.planReused}
-          />
-          <PlanReview review={state.review} />
-          {!fromSuite && <CrawledPages pages={state.site} />}
-        </aside>
+        {!focus && (
+          <aside
+            aria-label="Run details"
+            className="flex h-[520px] min-h-0 flex-col overflow-hidden rounded-2xl border border-line bg-panel lg:h-auto"
+          >
+            <div
+              role="tablist"
+              aria-label="Details"
+              className="flex items-center border-b border-line px-1.5"
+            >
+              {DOCK.map(([id, label], i) => (
+                <button
+                  key={id}
+                  role="tab"
+                  type="button"
+                  id={`dock-${id}`}
+                  aria-selected={tab === id}
+                  aria-controls="dock-panel"
+                  title={`${label} (${i + 1})`}
+                  onClick={() => setTab(id)}
+                  className={`relative inline-flex items-center gap-1.5 px-2.5 py-2.5 text-[13px] ${
+                    tab === id ? 'font-semibold text-text' : 'text-muted hover:text-text'
+                  }`}
+                >
+                  {label}
+                  {badge[id] != null && (
+                    <span
+                      className={`rounded-full px-1.5 text-[11px] tabular-nums ${
+                        id === 'log' && counts.error
+                          ? 'bg-bad-bg font-semibold text-bad'
+                          : id === 'log'
+                            ? 'bg-warn-bg font-semibold text-warn'
+                            : 'bg-subtle text-muted'
+                      }`}
+                    >
+                      {badge[id]}
+                    </span>
+                  )}
+                  {tab === id && (
+                    <span
+                      className="absolute inset-x-2 -bottom-px h-0.5 rounded-full bg-text"
+                      aria-hidden
+                    />
+                  )}
+                </button>
+              ))}
+              <Tooltip content="Hide this panel (F)">
+                <button
+                  type="button"
+                  onClick={() => setFocus(true)}
+                  aria-label="Hide the panel"
+                  className="ml-auto hidden size-7 items-center justify-center rounded-md text-faint hover:bg-subtle hover:text-text lg:flex"
+                >
+                  <PanelRightClose size={15} aria-hidden />
+                </button>
+              </Tooltip>
+            </div>
+            <div
+              role="tabpanel"
+              id="dock-panel"
+              aria-labelledby={`dock-${tab}`}
+              className="flex min-h-0 flex-1 flex-col"
+            >
+              {tab === 'steps' &&
+                (selected ? (
+                  <StepTimeline test={selected} />
+                ) : (
+                  <p className="px-4 py-3 text-[13px] text-muted">
+                    The steps appear once the first test starts.
+                  </p>
+                ))}
+              {tab === 'checks' &&
+                (selected ? (
+                  <CheckList test={selected} />
+                ) : (
+                  <p className="px-4 py-3 text-[13px] text-muted">
+                    Each test&apos;s checks appear once the plan is ready.
+                  </p>
+                ))}
+              {tab === 'log' && <RunLog logs={state.logs} test={selected ?? null} />}
+              {tab === 'plan' && (
+                <PlanPanel
+                  state={state}
+                  planned={!fromSuite}
+                  selected={selected?.id}
+                  onSelect={setPicked}
+                />
+              )}
+            </div>
+          </aside>
+        )}
       </div>
-      <RunLog logs={state.logs} test={selected ?? null} />
     </div>
   );
 }
@@ -421,6 +596,19 @@ export function RunView({ id, test, visual }) {
       />
     );
 
+  if (running)
+    return (
+      <Live
+        runId={id}
+        onDone={refetch}
+        fromSuite={!!info.options?.suite}
+        app={app}
+        who={who}
+        target={target}
+        startedAt={info.startedAt}
+      />
+    );
+
   const rerun = async () => {
     try {
       // a UI suite is stored by path; the API takes its name. "Record again" and "Plan again" were
@@ -472,15 +660,7 @@ export function RunView({ id, test, visual }) {
               </>
             )}
             <span aria-hidden>·</span>
-            <span>
-              {fmtWhen(info.startedAt)}
-              {running && (
-                <>
-                  {' '}
-                  · running for <Elapsed since={info.startedAt} />
-                </>
-              )}
-            </span>
+            <span>{fmtWhen(info.startedAt)}</span>
             {info.report?.models?.preset && (
               <>
                 <span aria-hidden>·</span>
@@ -489,64 +669,60 @@ export function RunView({ id, test, visual }) {
             )}
           </p>
         </div>
-        {!running && (
-          <div className="flex flex-wrap gap-2">
-            {info.report && (
-              <>
-                <div
-                  role="radiogroup"
-                  aria-label="View"
-                  className="flex h-9 rounded-lg border border-line bg-subtle p-0.5 text-[13px]"
-                >
-                  {[
-                    ['summary', 'Summary'],
-                    ['developer', 'Developer view'],
-                  ].map(([v, label]) => (
-                    <button
-                      key={v}
-                      role="radio"
-                      aria-checked={view === v}
-                      onClick={() => switchView(v)}
-                      className={`rounded-md px-3 font-medium ${view === v ? 'bg-panel text-text shadow-sm' : 'text-muted hover:text-text'}`}
-                    >
-                      {label}
-                    </button>
-                  ))}
-                </div>
-                <LinkButton href={fileUrl(id, 'report.html')} target="_blank" rel="noreferrer">
-                  <FileText size={14} aria-hidden /> Report{' '}
-                  <ExternalLink size={12} className="text-faint" aria-hidden />
-                </LinkButton>
-                {!info.options?.suiteName && !DEMO && (
-                  <Button
-                    variant="secondary"
-                    onClick={async () => {
-                      try {
-                        const { name } = await api.suiteFromRun(id);
-                        toast.success('Saved as a suite: edit the tests, then run them any time');
-                        go(`#/suites/${name}`);
-                      } catch (e) {
-                        toast.error(e.message);
-                      }
-                    }}
+        <div className="flex flex-wrap gap-2">
+          {info.report && (
+            <>
+              <div
+                role="radiogroup"
+                aria-label="View"
+                className="flex h-9 rounded-lg border border-line bg-subtle p-0.5 text-[13px]"
+              >
+                {[
+                  ['summary', 'Summary'],
+                  ['developer', 'Developer view'],
+                ].map(([v, label]) => (
+                  <button
+                    key={v}
+                    role="radio"
+                    aria-checked={view === v}
+                    onClick={() => switchView(v)}
+                    className={`rounded-md px-3 font-medium ${view === v ? 'bg-panel text-text shadow-sm' : 'text-muted hover:text-text'}`}
                   >
-                    <ListChecks size={14} aria-hidden /> Save as suite
-                  </Button>
-                )}
-              </>
-            )}
-            {info.options && !DEMO && (
-              <Button variant="accent" onClick={rerun}>
-                <RotateCcw size={14} aria-hidden /> Run again
-              </Button>
-            )}
-          </div>
-        )}
+                    {label}
+                  </button>
+                ))}
+              </div>
+              <LinkButton href={fileUrl(id, 'report.html')} target="_blank" rel="noreferrer">
+                <FileText size={14} aria-hidden /> Report{' '}
+                <ExternalLink size={12} className="text-faint" aria-hidden />
+              </LinkButton>
+              {!info.options?.suiteName && !DEMO && (
+                <Button
+                  variant="secondary"
+                  onClick={async () => {
+                    try {
+                      const { name } = await api.suiteFromRun(id);
+                      toast.success('Saved as a suite: edit the tests, then run them any time');
+                      go(`#/suites/${name}`);
+                    } catch (e) {
+                      toast.error(e.message);
+                    }
+                  }}
+                >
+                  <ListChecks size={14} aria-hidden /> Save as suite
+                </Button>
+              )}
+            </>
+          )}
+          {info.options && !DEMO && (
+            <Button variant="accent" onClick={rerun}>
+              <RotateCcw size={14} aria-hidden /> Run again
+            </Button>
+          )}
+        </div>
       </header>
 
-      {running ? (
-        <Live runId={id} onDone={refetch} fromSuite={!!info.options?.suite} />
-      ) : info.report && insights ? (
+      {info.report && insights ? (
         view === 'summary' ? (
           <RunSummary runId={id} report={info.report} insights={insights} />
         ) : (

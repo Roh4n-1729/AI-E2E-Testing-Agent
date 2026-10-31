@@ -6,7 +6,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 /**
- * Container entry point (Dockerfile, docs/DEPLOY.md). Starts the three demo apps next to the UI so a
+ * Container entry point (Dockerfile; README, "Deploying"). Starts the three demo apps next to the UI so a
  * visitor has something to test, copies the baked-in runs into an empty output folder, then starts the
  * UI on $PORT for everyone, behind the access code.
  *
@@ -19,7 +19,7 @@ const env = { ...process.env };
 
 if (!env.AIE2E_ACCESS_CODE?.trim()) {
   console.error(
-    'AIE2E_ACCESS_CODE is not set. A deployed instance needs one (see docs/DEPLOY.md).',
+    'AIE2E_ACCESS_CODE is not set. A deployed instance needs one (see the README, "Deploying").',
   );
   process.exit(2);
 }

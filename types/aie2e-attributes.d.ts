@@ -1,7 +1,7 @@
 /**
  * Optional attributes ai-e2e-agent understands. Copy this file into your app (e.g. src/types/aie2e.d.ts)
  * to get autocomplete and value checks in JSX. Nothing here is required: the tester works without any of it,
- * and every attribute only makes tests faster, more exact or quieter. Full guide: docs/APP_HINTS.md.
+ * and every attribute only makes tests faster, more exact or quieter. Full guide: the README, "Optional app hints".
  */
 import 'react';
 
