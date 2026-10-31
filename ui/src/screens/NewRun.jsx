@@ -186,6 +186,16 @@ export function NewRun({ health }) {
   const [busy, setBusy] = useState(false);
   const [advanced, setAdvanced] = useState(false);
   const set = (patch) => setForm((f) => ({ ...f, ...patch }));
+  // a deployed instance has lower limits than the values this browser remembers: show what will run
+  const limits = health?.shared;
+  useEffect(() => {
+    if (!limits) return;
+    setForm((f) => ({
+      ...f,
+      concurrency: Math.min(Number(f.concurrency) || 1, limits.concurrency ?? 1),
+      maxTests: Math.min(Number(f.maxTests) || limits.maxTests, limits.maxTests),
+    }));
+  }, [limits?.concurrency, limits?.maxTests]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const needsAi = form.mode !== 'smoke';
   const noChrome = !DEMO && health && !health.chromeOk;
