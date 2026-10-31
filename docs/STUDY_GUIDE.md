@@ -293,6 +293,9 @@ on-theme on each screen and still drift, I also compare the same component acros
 - Live view: Chromium → CDP `Page.screencastFrame` → server → Server-Sent Events → UI. Frames are only captured while
   someone watches. Progress cards (Log in, Explore, Plan, Test, Report), the planned tests, what the plan review
   fixed (`plan.review` event) and the pages the crawl found (`site.ready`).
+- **Live stage (Sat 31 Oct):** the browser frame is coloured by state, the current step is laid over it with
+  its actor, then the judge takes over (`test.judging`). Lists follow new lines only while you are at the bottom
+  (`useFollow`); the run log has level filters, search, copy and timestamps (SSE events carry `at`).
 - **Run summary (UI v2, for anyone):** a verdict sentence, four numbers, "What is wrong" cards ranked by severity,
   and a tests table with "What happened" in one line. All of it comes from `reporter/insights.js`, a pure function
   of the report: no LLM, so every sentence traces back to a judge check.

@@ -106,7 +106,20 @@ Open the rehearsal run for **problem_user** from the history.
 - **Looks different**: approved vs now vs changed pixels; _Approve new look_ / _Keep the old one_.
 - "Sauce Labs built these bugs into their demo; we did not write them. 0 tokens: it is all replay."
 
-## Act 4: a real deployed app (2 min)
+## Act 4: real deployed apps (2 min)
+
+**The presentation builder** (`ai-presentation-builder-eosin.vercel.app`, Best models, 8 planned tests; rehearsal run
+`20261031031448-f7d8` or newer):
+
+- The planner covered 8 features from one start page and a description: generate, suggestion, sample deck, blank
+  deck, edit, add a slide, theme, present.
+- The headline problem: _"A server request fails and breaks 4 flows that otherwise work"_. `POST /api/describe`
+  returns 502 after the sample deck opens. Four flows did their job; the judge still fails them, and the summary
+  names the one cause.
+- _Start a blank deck_: the AI's reading says it is a problem with the test (the app makes an empty deck by
+  design), so it is listed to review, not as an app bug.
+
+**Asset Sense:**
 
 Open the rehearsal **Asset Sense** run (`asset-sense-6fom.vercel.app`, Best models).
 
@@ -159,9 +172,9 @@ A link the interviewer can open before or after the call: the same UI over real 
 Nothing can be started there, so it cannot fail and holds no keys.
 
 ```powershell
-# 1. pick the runs (ids are in the UI's URL: #/runs/<id>); e.g. Asset Sense (best), TodoMVC (both engines),
-#    Sauce Demo as standard_user and problem_user, the shop with dark-leak
-npm run demo:export -- --runs 20261030111859-a09b,20261030105506-e080,20261030105946-f2c7,<sauce standard>,<sauce problem>
+# 1. pick the runs (ids are in the UI's URL: #/runs/<id>): the presentation builder and Asset Sense (Best),
+#    TodoMVC (both engines), Sauce Demo as standard_user and problem_user
+npm run demo:export -- --runs 20261031031448-f7d8,20261030111859-a09b,20261030105506-e080,20261030105946-f2c7,<sauce standard>,<sauce problem>
 # 2. build the UI in showcase mode (reads .aie2e/showcase, writes ui/dist-demo)
 npm run demo:build
 # 3. deploy the folder (first time: log in and accept the project name)

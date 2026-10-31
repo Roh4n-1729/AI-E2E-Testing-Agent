@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { TestCaseSchema } from '../core/types.js';
-import { slugify } from '../util/misc.js';
+import { sha256, slugify } from '../util/misc.js';
 import { StaticPlanner } from './staticPlanner.js';
 
 /**
@@ -57,7 +57,8 @@ Rules:
 - Propose distinct, valuable USER FLOWS (navigation, search, forms, content visible after an action), not page-load checks.
 - Every goal must be achievable by an agent that starts at the start URL and clicks/types like a real user.
 - Name every control so it is unambiguous: its visible label plus where it is ("the Explore Now button in the Contribute to the Community section"), never by position ("the third Explore Now button").
-- Ground everything in the crawl summary. Never invent pages, button labels or credentials.
+- Ground everything in the crawl summary. Never invent page URLs, exact button labels or credentials.
+- Cover the app's features broadly: each test exercises a DIFFERENT feature (create, browse, edit, change a setting, export, search...), not variations of one flow. Many apps (single-page apps, generators, editors) show most features only after a first action, so the crawl sees just the start page: features named by the app description or the app's own text (e.g. "edit, theme and export your deck") are still worth testing. Reach them through the flow that leads there, describe controls you have not seen by what they do ("open the theme options"), and check the outcome with a visual question.
 - When a goal fills in a form, write the exact test values into the goal (e.g. name "Ada Lovelace", email "ada@example.com", address "1 Test Street"): the agent types only what it is given. Use obviously fake data, never real people, passwords or card numbers.
 - Check the EFFECT of every action in the goal, not only that the last page opened: if a test adds two products, check the cart count that matches (the crawl shows "Cart (0)", so expect "Cart (2)") or ask a visual question about the cart; if the page shows a number the action changes (count, total, quantity), check that number. A goal with three actions and one check on the final URL proves almost nothing.
 - Text that is already on the start page proves nothing and is discarded by the judge: product names listed on the home page cannot prove they reached the cart.
@@ -73,6 +74,12 @@ Rules:
 - Keep each test fast and cheap: if the app offers a sample, template or demo that reaches the needed state, have the goal use it, unless the test is about creating that state.
 - When a test checks that something CHANGED (theme applied, slide added, item removed), phrase the visual question as a change ("Did the slide colours change compared with the start?"): the judge compares the first and last screenshots.
 - Keep tests independent of each other.`;
+
+/**
+ * Changes whenever the planner's instructions change, so plans saved by an older planner are not reused
+ * (CachedPlanner keys on it).
+ */
+export const PLANNER_VERSION = sha256(SYSTEM).slice(0, 8);
 
 /** @param {SiteMap} siteMap */
 function summarizeSiteMap(siteMap) {
@@ -227,7 +234,7 @@ export class LlmPlanner {
     const prompt = [
       `Start URL: ${target.url}`,
       target.description ? `App description: ${target.description}` : '',
-      `Propose at most ${this.opts.maxTests} tests.`,
+      `Propose ${this.opts.maxTests} tests, each on a different feature. Propose fewer only when the app clearly has fewer distinct features.`,
       '',
       'Crawl summary:',
       summarizeSiteMap(siteMap),
@@ -266,6 +273,11 @@ export class LlmPlanner {
       for (const i of review.issues) this.logger.warn(`planner: repaired a weak check: ${i}`);
       this.opts.onReview?.({ found, remaining: review.issues });
     }
+    const planned = review.tests.filter((t) => t.origin === 'planner').length;
+    if (planned < this.opts.maxTests)
+      this.logger.info(
+        `planner: proposed ${planned} of up to ${this.opts.maxTests} tests (raise "Planned tests" or add a description of the app's features for more)`,
+      );
     return review.tests;
   }
 

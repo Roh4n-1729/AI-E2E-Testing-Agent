@@ -13,7 +13,8 @@ import { toast } from 'sonner';
 import { DEMO, api, fileUrl } from '../api.js';
 import {
   CrawledPages,
-  LivePanel,
+  LiveStage,
+  StepTimeline,
   PlanReview,
   PlannedTests,
   ProgressStrip,
@@ -35,6 +36,7 @@ import { Consistency } from '../components/Consistency.jsx';
 import { RunSummary } from '../components/RunSummary.jsx';
 import { runInsights } from '../../../src/reporter/insights.js';
 import { TestJourney } from './TestJourney.jsx';
+import { RunLog } from '../components/RunLog.jsx';
 
 const FILTERS = [
   ['all', 'All', () => true],
@@ -195,6 +197,7 @@ function Live({ runId, onDone, fromSuite }) {
   const tests = state.order.map((id) => state.tests[id]);
   const running = tests.find((t) => t.status === 'running');
   const selected = state.tests[picked] ?? running ?? tests[0];
+  const now = useNow(!state.finished);
   return (
     <div className="flex flex-col gap-5">
       <div className="flex flex-wrap items-center gap-3">
@@ -231,7 +234,13 @@ function Live({ runId, onDone, fromSuite }) {
       )}
       <div className="grid items-start gap-6 xl:grid-cols-[minmax(0,1fr)_380px]">
         {selected ? (
-          <LivePanel test={selected} frame={frames[selected.id]} />
+          <LiveStage
+            test={selected}
+            frame={frames[selected.id]}
+            index={tests.indexOf(selected) + 1}
+            total={tests.length}
+            now={now}
+          />
         ) : (
           <div className="flex flex-col gap-3">
             <p className="text-[14px] text-muted">
@@ -245,24 +254,20 @@ function Live({ runId, onDone, fromSuite }) {
           </div>
         )}
         <aside aria-label="Plan" className="pin-xl flex min-w-0 flex-col gap-3.5 xl:pr-1">
+          {selected && <StepTimeline test={selected} />}
           <PlannedTests
             tests={tests}
             selected={selected?.id}
             onSelect={setPicked}
             planned={!fromSuite && !!state.phases.plan}
+            frames={frames}
+            reused={state.planReused}
           />
           <PlanReview review={state.review} />
           {!fromSuite && <CrawledPages pages={state.site} />}
         </aside>
       </div>
-      {state.logs.length > 0 && (
-        <details className="text-[12px]">
-          <summary className="cursor-pointer text-muted">Log ({state.logs.length})</summary>
-          <pre className="mt-2 max-h-48 overflow-auto rounded-lg border border-line bg-panel p-3 font-mono text-[11px] leading-relaxed">
-            {state.logs.map((l) => `${l.scope ? `[${l.scope}] ` : ''}${l.message}`).join('\n')}
-          </pre>
-        </details>
-      )}
+      <RunLog logs={state.logs} test={selected ?? null} />
     </div>
   );
 }
@@ -570,4 +575,15 @@ export function RunView({ id, test, visual }) {
       )}
     </div>
   );
+}
+
+/** The current time, ticking every second while `on`, for the live timer. @param {boolean} on */
+function useNow(on) {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (!on) return undefined;
+    const t = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, [on]);
+  return now;
 }

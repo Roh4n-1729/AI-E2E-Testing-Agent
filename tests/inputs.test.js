@@ -78,3 +78,23 @@ describe('suite steps edited in the UI', () => {
     expect(changedSteps(null, after)).toEqual([]);
   });
 });
+
+describe('the sidebar during a run', () => {
+  it('shows the preset the run picked, not the defaults from .env', async () => {
+    const { runModels } = await import('../src/server/app.js');
+    const env = {
+      model: 'anthropic/claude-haiku-4-5',
+      plannerModel: 'anthropic/claude-sonnet-5-5',
+    };
+    expect(runModels({ preset: 'best' }, env)).toMatchObject({
+      preset: 'best',
+      model: 'anthropic/claude-sonnet-4-6',
+      judgeModel: 'anthropic/claude-opus-5-5',
+    });
+    expect(runModels({}, env)).toMatchObject({
+      preset: null,
+      model: 'anthropic/claude-haiku-4-5',
+      judgeModel: 'anthropic/claude-haiku-4-5',
+    });
+  });
+});

@@ -1,5 +1,5 @@
-import { Bot, Check, Loader2, X } from 'lucide-react';
-import { useEffect, useRef } from 'react';
+import { ArrowDown, Bot, Check, Gavel, Loader2, MousePointerClick, X } from 'lucide-react';
+import { useFollow } from '../hooks/useFollow.js';
 import { pathOf, shortUrl } from '../lib/format.js';
 
 /**
@@ -27,7 +27,9 @@ export function ProgressStrip({ state }) {
       : state.phases.crawl?.detail,
     plan:
       state.phases.plan?.status === 'done'
-        ? `${tests.length} tests${fixed ? ` · ${fixed} check${fixed === 1 ? '' : 's'} fixed` : ''}`
+        ? state.planReused
+          ? `${tests.length} tests, saved plan`
+          : `${tests.length} tests${fixed ? `, ${fixed} check${fixed === 1 ? '' : 's'} fixed` : ''}`
         : undefined,
     run: tests.length ? `${done} of ${tests.length} done` : undefined,
   };
@@ -35,7 +37,7 @@ export function ProgressStrip({ state }) {
   return (
     <ol
       aria-label="Progress"
-      className="grid gap-2 sm:grid-cols-[repeat(auto-fit,minmax(150px,1fr))]"
+      className="grid grid-cols-2 gap-2 sm:grid-cols-[repeat(auto-fit,minmax(150px,1fr))]"
     >
       {steps.map(([key, label, hint]) => {
         const p = state.phases[key];
@@ -71,27 +73,79 @@ export function ProgressStrip({ state }) {
   );
 }
 
-/** The browser the agent is driving, streamed live, with what it is doing now. */
-export function LivePanel({ test, frame }) {
-  const listRef = useRef(null);
-  useEffect(() => {
-    const el = listRef.current;
-    if (el) el.scrollTop = el.scrollHeight;
-  }, [test?.steps.length]);
+/** Who did a step, from its source: the AI agent, or Playwright replaying / the harness. */
+const ACTOR = {
+  agent: { label: 'AI agent', Icon: Bot, chip: 'bg-ai/15 text-ai', dot: 'bg-ai' },
+  replay: {
+    label: 'Playwright',
+    Icon: MousePointerClick,
+    chip: 'bg-user/12 text-user',
+    dot: 'bg-user',
+  },
+};
+const actorOf = (/** @type {any} */ s) => (s?.source === 'agent' ? ACTOR.agent : ACTOR.replay);
+/** Recorded steps often start with their own number ("3. Open the cart"); the UI numbers them. */
+const words = (/** @type {string} */ d = '') => d.replace(/^\s*\d+[.)]\s+/, '');
+
+/** "1:05" from milliseconds. @param {number} ms */
+const mmss = (ms) => {
+  const s = Math.max(0, Math.floor(ms / 1000));
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+};
+/** Time from the test's start to a moment. */
+const since = (/** @type {string} */ start, /** @type {string | number} */ at) =>
+  start && at ? new Date(at).getTime() - new Date(start).getTime() : 0;
+
+const FRAME = {
+  running: 'border-ai/60 ring-4 ring-ai/15',
+  pass: 'border-ok/60 ring-4 ring-ok/15',
+  fail: 'border-bad/60 ring-4 ring-bad/15',
+  error: 'border-warn/60 ring-4 ring-warn/15',
+  pending: 'border-line',
+};
+const VERDICT = {
+  pass: ['Passed', 'bg-ok text-white'],
+  fail: ['Failed', 'bg-bad text-white'],
+  error: ['Error', 'bg-warn text-white'],
+};
+
+/**
+ * The browser the test is driving, streamed live: the frame is the stage, framed in the colour of what
+ * is happening (AI working, passed, failed), with the step being done right now laid over it.
+ */
+export function LiveStage({ test, frame, index, total, now }) {
   if (!test) return null;
   const url = test.screenshots[test.screenshots.length - 1]?.url;
   const last = test.steps.at(-1);
   const live = test.status === 'running';
+  const verdict = VERDICT[test.status];
+  const elapsed = test.startedAt ? since(test.startedAt, live ? now : (test.finishedAt ?? now)) : 0;
+  const a = actorOf(last);
   return (
     <section aria-labelledby="live-h" className="flex min-w-0 flex-col gap-3">
-      <div>
-        <h2 id="live-h" className="text-[18px] font-semibold tracking-tight">
-          {test.title}
-          {live && <span className="font-medium text-ai"> · live</span>}
-        </h2>
-        {test.goal && <p className="mt-0.5 max-w-3xl text-[13px] text-muted">{test.goal}</p>}
+      <div className="flex flex-wrap items-end justify-between gap-x-4 gap-y-1">
+        <div className="min-w-0">
+          <p className="text-[12px] font-medium text-muted">
+            Test {index} of {total}
+            {live && <span className="text-ai"> · running now</span>}
+          </p>
+          <h2 id="live-h" className="text-[20px] font-semibold leading-tight tracking-tight">
+            {test.title}
+          </h2>
+          {test.goal && <p className="mt-1 max-w-3xl text-[13px] text-muted">{test.goal}</p>}
+        </div>
+        {test.startedAt && (
+          <span
+            className="font-mono text-[20px] tabular-nums text-muted"
+            aria-label={`Time ${mmss(elapsed)}`}
+          >
+            {mmss(elapsed)}
+          </span>
+        )}
       </div>
-      <div className="overflow-hidden rounded-xl border border-line bg-panel shadow-pop">
+      <div
+        className={`overflow-hidden rounded-xl border-2 bg-panel shadow-pop transition-[border-color,box-shadow] ${FRAME[test.status] ?? FRAME.pending}`}
+      >
         <div className="flex items-center gap-2 border-b border-line bg-subtle px-3 py-2">
           <span className="flex gap-1.5" aria-hidden>
             <span className="size-2.5 rounded-full bg-line-strong" />
@@ -101,12 +155,17 @@ export function LivePanel({ test, frame }) {
           <span className="ml-2 min-w-0 flex-1 truncate rounded-md bg-panel px-2.5 py-1 font-mono text-[11px] text-muted">
             {url ? shortUrl(url) : 'about:blank'}
           </span>
+          {live && (
+            <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-ai">
+              <span className="pulse size-1.5 rounded-full bg-ai" aria-hidden /> Live
+            </span>
+          )}
         </div>
-        <div className="aspect-[16/10] bg-canvas">
+        <div className="relative aspect-[16/10] bg-canvas">
           {frame ? (
             <img
               src={frame}
-              alt="Live view of the browser the AI is driving"
+              alt="Live view of the browser the test is driving"
               className="h-full w-full object-contain"
             />
           ) : (
@@ -118,46 +177,154 @@ export function LivePanel({ test, frame }) {
                   : 'Finished. The full evidence appears when the run completes.'}
             </div>
           )}
+          {verdict && (
+            <span
+              className={`pop-in absolute right-3 top-3 rounded-full px-3 py-1 text-[13px] font-semibold shadow-pop ${verdict[1]}`}
+            >
+              {verdict[0]}
+            </span>
+          )}
+          {live && test.judging ? (
+            <div className="absolute inset-x-3 bottom-3">
+              <div className="pop-in flex items-start gap-2.5 rounded-lg border border-line-strong bg-panel/95 px-3 py-2.5 shadow-pop backdrop-blur">
+                <span className="mt-px inline-flex shrink-0 items-center gap-1 rounded-md bg-subtle px-1.5 py-0.5 text-[11px] font-semibold text-text">
+                  <Gavel size={11} aria-hidden /> Judge
+                </span>
+                <span className="min-w-0 text-[14px] leading-snug">
+                  Checking the evidence: the final page, the URL, the console, failed requests and
+                  screenshots{test.judging.checks ? `, against ${test.judging.checks} checks` : ''}.
+                </span>
+              </div>
+            </div>
+          ) : (
+            last && (
+              <div className="absolute inset-x-3 bottom-3">
+                <div
+                  key={test.steps.length}
+                  className={`pop-in flex items-start gap-2.5 rounded-lg border bg-panel/95 px-3 py-2.5 shadow-pop backdrop-blur ${last.ok === false ? 'border-bad/50' : 'border-line'}`}
+                >
+                  <span
+                    className={`mt-px inline-flex shrink-0 items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] font-semibold ${a.chip}`}
+                  >
+                    <a.Icon size={11} aria-hidden /> {a.label}
+                  </span>
+                  <span
+                    className={`min-w-0 text-[14px] leading-snug ${last.ok === false ? 'text-bad' : ''}`}
+                  >
+                    <span className="text-muted">Step {test.steps.length}: </span>
+                    {words(last.description)}
+                  </span>
+                </div>
+              </div>
+            )
+          )}
         </div>
       </div>
-      {last && (
-        <div
-          className={`flex items-start gap-2.5 rounded-xl border px-3.5 py-2.5 text-[14px] ${live ? 'border-ai/30 bg-ai/[0.07]' : 'border-line bg-panel'}`}
-        >
-          <span
-            className={`mt-px inline-flex shrink-0 items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] font-semibold ${last.source === 'replay' ? 'bg-user/10 text-user' : 'bg-ai/15 text-ai'}`}
-          >
-            {last.source === 'replay' ? (
-              'Replay'
-            ) : (
-              <>
-                <Bot size={11} aria-hidden /> AI
-              </>
-            )}{' '}
-            · step {test.steps.length}
-          </span>
-          <span className={`min-w-0 break-words ${last.ok === false ? 'text-bad' : ''}`}>
-            {last.description}
-          </span>
-        </div>
-      )}
-      {test.steps.length > 1 && (
+    </section>
+  );
+}
+
+/** Every step of the test on screen, newest last; follows new steps unless you scrolled up. */
+export function StepTimeline({ test }) {
+  const steps = test?.steps ?? [];
+  const { ref, onScroll, unseen, jump } = useFollow(steps.length + (test?.judging ? 1 : 0));
+  if (!test) return null;
+  const live = test.status === 'running';
+  const agent = steps.filter((s) => s.source === 'agent').length;
+  return (
+    <section className="rounded-xl border border-line bg-panel">
+      <div className="flex items-baseline justify-between gap-3 px-4 pb-2 pt-3.5">
+        <h2 className="text-[15px] font-semibold">Steps in this test</h2>
+        <span className="text-[12px] text-muted">
+          {steps.length === 0
+            ? 'none yet'
+            : agent === steps.length
+              ? `${steps.length} by the AI agent`
+              : agent === 0
+                ? `${steps.length} replayed by Playwright`
+                : `${agent} AI, ${steps.length - agent} Playwright`}
+        </span>
+      </div>
+      <div className="relative">
         <ol
-          ref={listRef}
-          className="flex max-h-56 flex-col gap-1.5 overflow-auto px-1 text-[13px] text-muted"
+          ref={/** @type {any} */ (ref)}
+          onScroll={onScroll}
+          className="max-h-[340px] overflow-auto overscroll-contain px-2 pb-2"
         >
-          {test.steps.slice(0, -1).map((s, i) => (
-            <li key={i} className="flex items-start gap-2">
-              {s.ok === false ? (
-                <X size={14} className="mt-0.5 shrink-0 text-bad" aria-label="failed" />
-              ) : (
-                <Check size={14} className="mt-0.5 shrink-0 text-ok" aria-label="done" />
-              )}
-              <span className="min-w-0 break-words">{s.description}</span>
+          {steps.map((s, i) => {
+            const now = live && !test.judging && i === steps.length - 1;
+            const a = actorOf(s);
+            return (
+              <li
+                key={i}
+                className={`grid grid-cols-[22px_minmax(0,1fr)_auto] items-start gap-2 rounded-lg px-2 py-1.5 text-[13px] ${now ? 'bg-ai/[0.08]' : ''}`}
+              >
+                <span className="flex h-5 items-center justify-center">
+                  {s.ok === false ? (
+                    <X size={14} className="text-bad" aria-label="failed" />
+                  ) : now ? (
+                    <Loader2 size={13} className="animate-spin text-ai" aria-label="in progress" />
+                  ) : (
+                    <span className={`size-2 rounded-full ${a.dot}`} title={a.label} />
+                  )}
+                </span>
+                <span
+                  className={`min-w-0 break-words ${s.ok === false ? 'text-bad' : now ? 'font-medium' : 'text-muted'}`}
+                >
+                  {words(s.description)}
+                </span>
+                <span className="font-mono text-[11px] tabular-nums text-faint">
+                  {test.startedAt && s.at ? `+${mmss(since(test.startedAt, s.at))}` : i + 1}
+                </span>
+              </li>
+            );
+          })}
+          {live && test.judging && (
+            <li className="grid grid-cols-[22px_minmax(0,1fr)_auto] items-start gap-2 rounded-lg bg-subtle px-2 py-1.5 text-[13px]">
+              <span className="flex h-5 items-center justify-center">
+                <Gavel size={13} className="text-text" aria-hidden />
+              </span>
+              <span className="font-medium">The judge is checking the evidence</span>
+              <span className="font-mono text-[11px] tabular-nums text-faint">
+                {test.startedAt && test.judging.at
+                  ? `+${mmss(since(test.startedAt, test.judging.at))}`
+                  : ''}
+              </span>
             </li>
-          ))}
+          )}
+          {steps.length === 0 && (
+            <li className="px-2 py-1.5 text-[13px] text-muted">
+              {!test.goal?.trim()
+                ? 'No steps: this test checks the page as it opens.'
+                : live
+                  ? 'Starting the browser…'
+                  : 'This test has not started yet.'}
+            </li>
+          )}
         </ol>
-      )}
+        {unseen > 0 && (
+          <div className="absolute bottom-2 left-1/2 -translate-x-1/2">
+            <button
+              type="button"
+              onClick={jump}
+              className="pop-in inline-flex items-center gap-1 rounded-full bg-text px-2.5 py-1 text-[12px] font-medium text-bg shadow-pop"
+            >
+              <ArrowDown size={12} aria-hidden /> {unseen} new
+            </button>
+          </div>
+        )}
+      </div>
+      <div className="flex gap-4 border-t border-line px-4 py-2 text-[11px] text-muted">
+        <span className="inline-flex items-center gap-1.5">
+          <span className="size-2 rounded-full bg-ai" aria-hidden /> AI agent
+        </span>
+        <span className="inline-flex items-center gap-1.5">
+          <span className="size-2 rounded-full bg-user" aria-hidden /> Playwright
+        </span>
+        <span className="inline-flex items-center gap-1.5">
+          <Gavel size={11} aria-hidden /> Judge
+        </span>
+      </div>
     </section>
   );
 }
@@ -170,12 +337,24 @@ const PILL = {
   pending: ['Queued', 'text-faint'],
 };
 
-export function PlannedTests({ tests, selected, onSelect, planned }) {
+export function PlannedTests({ tests, selected, onSelect, planned, frames = {}, reused = false }) {
+  const done = tests.filter((t) => ['pass', 'fail', 'error'].includes(t.status)).length;
   return (
     <section className="rounded-xl border border-line bg-panel p-4">
-      <h2 className="mb-2 text-[15px] font-semibold">
-        {planned ? 'Tests the AI planned' : 'Tests'}
-      </h2>
+      <div className="mb-2 flex items-baseline justify-between gap-3">
+        <h2 className="text-[15px] font-semibold">{planned ? 'Tests the AI planned' : 'Tests'}</h2>
+        {tests.length > 0 && (
+          <span className="text-[12px] text-muted">
+            {done} of {tests.length} done
+          </span>
+        )}
+      </div>
+      {reused && (
+        <p className="mb-2 rounded-lg bg-subtle px-3 py-2 text-[12px] text-muted">
+          The same tests as an earlier run on this URL, so their recordings replay. For a new plan,
+          switch on <span className="font-medium text-text">Plan again</span> in Run settings.
+        </p>
+      )}
       {tests.length === 0 ? (
         <p className="text-[13px] text-muted">The tests appear here once the plan is ready.</p>
       ) : (
@@ -191,10 +370,19 @@ export function PlannedTests({ tests, selected, onSelect, planned }) {
                   aria-current={on ? 'true' : undefined}
                   className={`flex w-full items-center justify-between gap-3 rounded-lg px-1.5 py-1.5 text-left text-[13px] ${on ? 'bg-subtle' : 'hover:bg-subtle/60'}`}
                 >
-                  <span
-                    className={`min-w-0 truncate ${t.status === 'running' ? 'font-semibold' : ''}`}
-                  >
-                    {t.title}
+                  <span className="flex min-w-0 items-center gap-2.5">
+                    {t.status === 'running' && frames[t.id] && (
+                      <img
+                        src={frames[t.id]}
+                        alt=""
+                        className="h-9 w-14 shrink-0 rounded border border-ai/40 object-cover"
+                      />
+                    )}
+                    <span
+                      className={`min-w-0 truncate ${t.status === 'running' ? 'font-semibold' : ''}`}
+                    >
+                      {t.title}
+                    </span>
                   </span>
                   <span className={`shrink-0 text-[12px] ${cls}`}>
                     {t.status === 'running' && <span className="pulse">● </span>}

@@ -142,6 +142,12 @@ export class TestRunner {
       onAbort = () => void s.close();
       signal?.addEventListener('abort', onAbort, { once: true });
       const outcome = await executor.execute(test, session, ctx);
+      // the live view shows the hand-off: the steps are done, the judge now reads the evidence
+      events.emit('test.judging', {
+        testId: test.id,
+        checks: test.expectations.length,
+        mode: outcome.mode,
+      });
       const { verdict, evidence } = await judge.judge(test, session, outcome, ctx);
       const claimMismatch =
         outcome.agentClaim !== undefined &&

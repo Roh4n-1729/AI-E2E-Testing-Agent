@@ -6,6 +6,65 @@ teaches us something: it is the honest history of how the judge got stricter.
 
 ---
 
+## 2026-10-31 (Saturday, 09:20): the presentation builder with the new planner
+
+- **Seen (run `f7d8`, Best, 8 planned):** the planner now covers 8 different features (generate from a description,
+  from a suggestion, sample deck, blank deck, edit text, add a slide, change the theme, present), up from 3. 2
+  pass. 4 do what they should but fail on the same server bug: `POST /api/describe` returns 502 after the sample
+  deck opens. 1 is a real app failure (the AI stream closed before any slide was made). The AI's reading calls
+  "Start a blank deck" a problem with the test (the app makes a deck with no slides by design), and "Add a
+  slide" was added but scrolled out of the final screenshot.
+- **Change (summary):** a failed request that also shows as a console error is reported once, on the request;
+  when it is the only reason two or more flows fail, it is high severity: "A server request fails and breaks 4
+  flows that otherwise work". A failure the AI's reading calls a test problem is listed as something to review,
+  and is not counted as the agent misreporting. Tested.
+
+---
+
+## 2026-10-31 (Saturday, 08:40): a saved plan hid the planner change
+
+- **Seen:** run `1992` on the presentation builder had the same 3 tests as the run before, although the planner
+  had been changed to cover more features. The saved plan for a URL was keyed by description, planner model and
+  test count, so a changed planner kept getting its old plan, and the UI did not say so.
+- **Change:** the key also holds `PLANNER_VERSION` (a hash of the planner's instructions), so a new planner
+  plans again. A reused plan is now visible: the Plan card says "saved plan" and the test list says why the tests
+  are the same and how to get new ones (`plan.reused` event, tested).
+
+---
+
+## 2026-10-31 (Saturday, 08:45): the live run as a stage, the log as a console
+
+- **Seen:** the live view did not feel live: a plain screenshot box, the step list jumped to the bottom on every
+  step (fighting anyone scrolling), and the log was a 200-line `<pre>` in a closed `<details>`.
+- **Change:** the browser is the stage. Its frame is coloured by what is happening (AI working, passed, failed),
+  the step being done right now is laid over it with who is doing it (AI agent or Playwright), a timer runs,
+  and when the steps end the overlay hands over to the judge ("Checking the evidence…", new `test.judging`
+  event). Beside it: every step of the test with its time, and the test list with live thumbnails of the tests
+  running in parallel.
+- **Log:** a console with All / Warnings / Errors (with counts), "only this test", search, copy, timestamps
+  (events now carry their time), 1000 lines, resizable. Both lists follow new lines only while you are at the
+  bottom; scroll up and they stay put with an "N new lines" button (`hooks/useFollow.js`).
+- Checked on live Sauce Demo runs in light, dark and at phone width.
+
+---
+
+## 2026-10-31 (Saturday, 08:15): fewer tests on the presentation builder; the sidebar's models
+
+- **Seen:** the same app (`ai-presentation-builder-eosin.vercel.app`, Planned tests 8) planned 8 tests on 29 Oct
+  (5 passed, 4 failed, 712k tokens) and 3 on 31 Oct with Best models (all passed, 72k tokens). The crawl sees one
+  page; everything else appears after generating a deck. Since the 29th the planner was told to ground every
+  check in the crawl and never require UI it has not seen, so opus-5-5 only planned flows it could see: the
+  editor, theme and export tests disappeared. That is fewer false failures, but too little coverage.
+- **Change:** the planner is asked for N tests on different features, and told that features named in the
+  description or the app's own text are worth testing even when the crawl could not reach their screen (reach
+  them through the flow, describe unseen controls by what they do, check with a visual question). A run that
+  plans fewer than asked logs it and suggests adding a description.
+- **Seen:** the sidebar kept showing the `.env` models while a Best run was going. **Change:** health reports the
+  running run's models (`runModels`, tested), the sidebar shows "This run: Best" while it runs and "Default
+  models" otherwise.
+
+---
+
 ## 2026-10-31 (Saturday, 09:00): who did what, steps by hand, a landing page that explains the run
 
 - **Each test shows what each part was given.** A filter on the journey (All, AI agent, Playwright, Judge) shows

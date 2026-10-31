@@ -13,12 +13,23 @@ import { Suites } from './screens/Suites.jsx';
 export function App() {
   const route = useHashRoute();
   const [health, setHealth] = useState(null);
+  // refreshed on every screen change and every few seconds while a run is going, so the sidebar shows
+  // the running run's models and goes back to the defaults when it ends
+  const active = health?.active;
   useEffect(() => {
-    api
-      .health()
-      .then(setHealth)
-      .catch(() => setHealth(null));
-  }, []);
+    let live = true;
+    const load = () =>
+      api
+        .health()
+        .then((h) => live && setHealth(h))
+        .catch(() => live && setHealth(null));
+    load();
+    const timer = active ? setInterval(load, 5000) : undefined;
+    return () => {
+      live = false;
+      clearInterval(timer);
+    };
+  }, [route.name, route.id, active]);
 
   return (
     <AppShell route={route} health={health}>

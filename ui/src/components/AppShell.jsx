@@ -90,47 +90,7 @@ export function AppShell({ route, health, children }) {
           {NAV.map((n) => link(n, false))}
         </nav>
         <div className="mt-auto space-y-3 px-1">
-          {health && !DEMO && (
-            <div className="space-y-1.5 rounded-xl border border-line bg-panel px-3 py-2.5 text-[12px] text-muted">
-              <div className="flex items-center justify-between gap-2">
-                <span className="font-semibold text-text">
-                  Models
-                  {health.preset
-                    ? ` · ${health.preset[0].toUpperCase()}${health.preset.slice(1)}`
-                    : ''}
-                </span>
-                <Tooltip
-                  content={
-                    health.keyPresent
-                      ? `${health.keyVar ?? 'API key'} is set`
-                      : `Set ${health.keyVar ?? 'an API key'} in .env`
-                  }
-                >
-                  <span
-                    className={`size-1.5 rounded-full ${health.keyPresent ? 'bg-ok' : 'bg-warn'}`}
-                    aria-label={health.keyPresent ? 'API key found' : 'No API key'}
-                  />
-                </Tooltip>
-              </div>
-              {(health.plannerModel === health.judgeModel
-                ? [
-                    [health.agentEngine === 'loop' ? 'agent (own loop)' : 'agent', health.model],
-                    ['planner and judge', health.plannerModel],
-                  ]
-                : [
-                    [health.agentEngine === 'loop' ? 'agent (own loop)' : 'agent', health.model],
-                    ['planner', health.plannerModel],
-                    ['judge', health.judgeModel],
-                  ]
-              ).map(([role, m]) => (
-                <div key={role} className="min-w-0" title={m}>
-                  <div className="text-[11px]">{role}</div>
-                  <div className="truncate font-mono text-[11px] text-text">{short(m)}</div>
-                </div>
-              ))}
-              {!health.keyPresent && <div className="text-warn">No API key: replays only</div>}
-            </div>
-          )}
+          {health && !DEMO && <ModelsBox health={health} />}
           <ThemeSwitch />
         </div>
       </aside>
@@ -160,6 +120,65 @@ export function AppShell({ route, health, children }) {
           {children}
         </main>
       </div>
+    </div>
+  );
+}
+
+/**
+ * The models in use: the running run's (its preset beats .env), or the defaults new runs start with.
+ * @param {{ health: any }} props
+ */
+function ModelsBox({ health }) {
+  const run = health.activeModels;
+  const m = run ?? health;
+  const preset = run ? run.preset : health.preset;
+  const loop = (run?.agentEngine ?? health.agentEngine) === 'loop';
+  const agent = loop ? 'agent (own loop)' : 'agent';
+  const rows =
+    m.plannerModel === m.judgeModel
+      ? [
+          [agent, m.model],
+          ['planner and judge', m.plannerModel],
+        ]
+      : [
+          [agent, m.model],
+          ['planner', m.plannerModel],
+          ['judge', m.judgeModel],
+        ];
+  const name = preset ? `${preset[0].toUpperCase()}${preset.slice(1)}` : 'from .env';
+  return (
+    <div className="space-y-1.5 rounded-xl border border-line bg-panel px-3 py-2.5 text-[12px] text-muted">
+      <div className="flex items-center justify-between gap-2">
+        <span className="font-semibold text-text">
+          {run ? (
+            <a href={`#/runs/${health.active}`} className="hover:underline">
+              This run: {name}
+            </a>
+          ) : (
+            <>Default models: {name}</>
+          )}
+        </span>
+        <Tooltip
+          content={
+            health.keyPresent
+              ? `${health.keyVar ?? 'API key'} is set`
+              : `Set ${health.keyVar ?? 'an API key'} in .env`
+          }
+        >
+          <span
+            className={`size-1.5 rounded-full ${health.keyPresent ? 'bg-ok' : 'bg-warn'}`}
+            aria-label={health.keyPresent ? 'API key found' : 'No API key'}
+          />
+        </Tooltip>
+      </div>
+      {rows.map(([role, model]) => (
+        <div key={role} className="min-w-0" title={model}>
+          <div className="text-[11px]">{role}</div>
+          <div className="truncate font-mono text-[11px] text-text">{short(model)}</div>
+        </div>
+      ))}
+      {!run && <div className="text-[11px]">A run can pick other models in Run settings.</div>}
+      {!health.keyPresent && <div className="text-warn">No API key: replays only</div>}
     </div>
   );
 }

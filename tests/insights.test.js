@@ -360,4 +360,76 @@ describe('insights', () => {
     // the agent was right about the goal: not an AI-honesty finding
     expect(i.findings.some((f) => f.category === 'agent')).toBe(false);
   });
+
+  it('reports a failing request once, as the cause of the flows it breaks', () => {
+    const broken = (/** @type {string} */ id) =>
+      result({
+        id,
+        agentClaim: { success: true, message: 'done' },
+        claimMismatch: true,
+        verdict: {
+          status: 'fail',
+          reason: '',
+          warnings: [],
+          checks: [
+            { expectation: { kind: 'visual', question: 'Is it open?' }, passed: true, detail: '' },
+            {
+              expectation: { kind: 'no-console-errors' },
+              passed: false,
+              detail:
+                '1 console error(s): Failed to load resource: the server responded with a status of 502 ()',
+            },
+            {
+              expectation: { kind: 'no-network-failures' },
+              passed: false,
+              detail: '1 failed request(s): 502 https://shop.test/api/describe',
+            },
+          ],
+        },
+        evidence: {
+          ...result({ id: 'x' }).evidence,
+          networkFailures: [{ url: `${base}/api/describe`, method: 'POST', status: 502, ts: '' }],
+        },
+      });
+    const wrong = result({
+      id: 'blank',
+      explanation: {
+        cause: 'The app makes an empty deck by design',
+        category: 'test-problem',
+        confidence: 'high',
+        evidence: [],
+        suggestion: 'Check for "No slides yet"',
+        model: 'judge',
+      },
+      agentClaim: { success: true, message: 'done' },
+      claimMismatch: true,
+      verdict: {
+        status: 'fail',
+        reason: '',
+        warnings: [],
+        checks: [
+          {
+            expectation: {
+              kind: 'visual',
+              question: 'Is a blank slide shown?',
+              label: 'A blank slide is shown',
+            },
+            passed: false,
+            detail: 'no',
+          },
+        ],
+      },
+    });
+    const i = runInsights(report([broken('a'), broken('b'), wrong]));
+    const errors = i.findings.filter((f) => f.category === 'errors');
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toMatchObject({
+      severity: 'high',
+      title: 'A server request fails and breaks 2 flows that otherwise work',
+      testIds: ['a', 'b'],
+    });
+    // the AI's reading says the test was wrong: something to review, and not an AI-honesty case
+    expect(i.findings.find((f) => f.testIds?.includes('blank'))?.severity).toBe('review');
+    expect(i.findings.some((f) => f.category === 'agent')).toBe(false);
+  });
 });

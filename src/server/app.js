@@ -87,6 +87,8 @@ export async function createServer({ outDir, uiDir, manager, logger = false }) {
       chromeOk: !!chrome && existsSync(chrome),
       outDir: root,
       active: runs.active?.runId ?? null,
+      // the models the running run uses (a preset picked for it beats .env), for the sidebar
+      activeModels: runs.active ? runModels(runs.active.options, config) : null,
       // whether a login can run (the values themselves never leave the server)
       loginCreds: !!process.env.AIE2E_USERNAME && !!process.env.AIE2E_PASSWORD,
     };
@@ -262,7 +264,9 @@ export async function createServer({ outDir, uiDir, manager, logger = false }) {
       'X-Accel-Buffering': 'no',
     });
     const send = (/** @type {import('../events/runEvents.js').RunEvent} */ e) =>
-      res.write(`id: ${e.seq}\nevent: ${e.type}\ndata: ${JSON.stringify(e.data)}\n\n`);
+      res.write(
+        `id: ${e.seq}\nevent: ${e.type}\ndata: ${JSON.stringify(e.type === 'frame' ? e.data : { ...e.data, at: e.ts })}\n\n`,
+      );
     const wantsFrames = req.query && /** @type {any} */ (req.query).frames !== '0';
     if (wantsFrames) live.events.adjustLiveViewers(1);
     const unsubscribe = live.events.subscribe(send);
@@ -338,4 +342,22 @@ export function changedSteps(before, after) {
   return after.tests
     .filter((t) => old.has(key(t)) && old.get(key(t)) !== JSON.stringify(t.steps ?? []))
     .map(key);
+}
+
+/**
+ * The models a run uses: the preset picked for it, else the ones from .env (D26).
+ * @param {{ preset?: string, agentEngine?: string }} options
+ * @param {{ model: string, plannerModel?: string, judgeModel?: string, agentEngine?: string }} config
+ */
+export function runModels(options, config) {
+  const p = options.preset
+    ? MODEL_PRESETS[/** @type {keyof typeof MODEL_PRESETS} */ (options.preset)]
+    : undefined;
+  return {
+    preset: options.preset ?? null,
+    model: p?.model ?? config.model,
+    plannerModel: p?.plannerModel ?? config.plannerModel ?? config.model,
+    judgeModel: p?.judgeModel ?? config.judgeModel ?? config.model,
+    agentEngine: options.agentEngine ?? config.agentEngine,
+  };
 }

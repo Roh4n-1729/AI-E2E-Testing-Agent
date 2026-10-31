@@ -492,8 +492,10 @@ export function runInsights(report) {
       continue;
     }
     const more = outcomes.slice(1).map((x) => x.expected);
+    // the AI's reading says the test itself is wrong: still shown, but as something to review, not an app bug
+    const testProblem = r.explanation?.category === 'test-problem';
     add({
-      severity: 'medium',
+      severity: testProblem ? 'review' : 'medium',
       category: 'functional',
       area: pageName(r.evidence.finalUrl),
       title: `Expected: ${lower(outcomes[0].expected)}`,
@@ -524,15 +526,37 @@ export function runInsights(report) {
       errs.set(key, e);
     }
   }
-  for (const e of errs.values())
+  // A failed request usually also shows up as a console error ("a request failed with HTTP 502"): one
+  // problem, reported once, on the request.
+  const sameIds = (/** @type {string[]} */ a, /** @type {string[]} */ b) =>
+    a.length === b.length && a.every((x) => b.includes(x));
+  for (const [key, e] of errs) {
+    const status = /^a request failed with HTTP (\d{3})$/i.exec(e.detail)?.[1];
+    if (!key.startsWith('no-console-errors|') || !status) continue;
+    const net = [...errs.entries()].find(
+      ([k, n]) =>
+        k.startsWith('no-network-failures|') && n.detail.includes(status) && sameIds(n.ids, e.ids),
+    );
+    if (net) errs.delete(key);
+  }
+  for (const e of errs.values()) {
+    // flows that did what they should but failed only because of this error: the error is the cause
+    const blocked = e.ids.filter((id) => {
+      const r = results.find((x) => x.test.id === id);
+      return r && reachedButErrors(r);
+    }).length;
     add({
-      severity: 'medium',
+      severity: blocked >= 2 ? 'high' : 'medium',
       category: 'errors',
       area: e.area,
-      title: e.title,
+      title:
+        blocked >= 2
+          ? `${e.title.startsWith('Requests') ? 'A server request fails' : 'An app error'} and breaks ${blocked} flows that otherwise work`
+          : e.title,
       detail: e.detail,
       testIds: e.ids,
     });
+  }
 
   // 4. The AI said it succeeded; the evidence disagreed. Worth seeing: it is why the judge exists.
   // only where the goal itself was not reached: an agent that reached it on an app that logs errors was right
@@ -541,7 +565,9 @@ export function runInsights(report) {
       r.claimMismatch &&
       r.agentClaim?.success &&
       r.verdict.status !== 'pass' &&
-      !reachedButErrors(r),
+      !reachedButErrors(r) &&
+      // when the AI's reading says the test was wrong, the agent may well have been right
+      r.explanation?.category !== 'test-problem',
   );
   if (lied.length)
     add({

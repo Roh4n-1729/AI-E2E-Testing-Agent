@@ -12,7 +12,7 @@ import { ReplayExecutor } from '../executor/replayExecutor.js';
 import { EvidenceJudge } from '../judge/evidenceJudge.js';
 import { AiSdkLlm } from '../llm/aiSdkLlm.js';
 import { CachedPlanner } from '../planner/cachedPlanner.js';
-import { LlmPlanner } from '../planner/llmPlanner.js';
+import { LlmPlanner, PLANNER_VERSION } from '../planner/llmPlanner.js';
 import { StaticPlanner } from '../planner/staticPlanner.js';
 import { SeededRecordStore, SuitePlanner, loadSuite } from '../planner/suitePlanner.js';
 import { CompositeReporter } from '../reporter/compositeReporter.js';
@@ -181,7 +181,8 @@ export async function startRun(o, { events = new RunEvents(), signal } = {}) {
           path.join(config.outDir, 'plans'),
           {
             replan: !!o.replan || !cache,
-            key: `${config.plannerModel ?? config.model}|${config.maxTests}`,
+            key: `${config.plannerModel ?? config.model}|${config.maxTests}|${PLANNER_VERSION}`,
+            onReuse: (tests) => events.emit('plan.reused', { tests }),
           },
           logger,
         )
