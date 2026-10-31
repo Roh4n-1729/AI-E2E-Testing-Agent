@@ -6,12 +6,32 @@ teaches us something: it is the honest history of how the judge got stricter.
 
 ---
 
+## 2026-10-31 (Saturday, 11:20): first AI run on the deployed instance (buggy shop, all bugs on)
+
+- **Seen (run `7730`, Render, Balanced, 4 planned tests, one at a time, 3 min 25 s, about 340k tokens):** with no
+  suite and no hints, it found 7 of the 12 seeded bugs: the dead Notebook button (the AI's reading named it), the
+  cart page's JavaScript error, missing alt text, the hard-coded Subscribe blue, the white newsletter card in
+  dark mode, the 7px off-scale radius and the checkout button drift. Not found: the wrong total (blocked behind
+  the dead button), the fake subscribe, checkout without email, the slow search and the cramped grid (needs an
+  approved baseline; this instance had none). Those are caught by the shop's committed suite and evaluation.
+- **One false alarm:** "Search for a product" expected the list to narrow to the Notebook, but this shop shows
+  "Found: Notebook" above the full list by design. The planner assumed how the result is shown, and the AI's
+  reading called it an app bug. Left as is for now (a planner change replans every app); a known limit to say
+  out loud: planned checks can encode a wrong assumption, which is why suites are reviewed and the reading is
+  advisory.
+
+---
+
 ## 2026-10-31 (Saturday, 11:00, later): one test at a time on the deployed instance
 
 - **Seen (Render metrics, first runs):** memory peaked near 50% of 2 GB, but the 1 CPU sat at 100% with two
   browsers and the live stream, which is how waits run out on slow pages.
 - **Change:** a shared instance runs one test at a time (`AIE2E_SHARED_CONCURRENCY`, default 1, enforced by the
   server); the New run form and its notice follow it.
+- **Seen:** every redeploy asked for the code again (the cookie was signed with a key made at start), and Test
+  suites was empty (the CLI runs used the example suite files, so none was saved to bake in). **Change:** the
+  cookie key is derived from the code, so unlocking survives redeploys; the container installs the demo apps'
+  suites on start. The New run form also lowers remembered settings to the instance's limits.
 
 ---
 

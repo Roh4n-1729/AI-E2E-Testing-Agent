@@ -1,4 +1,4 @@
-import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
+import { createHash, createHmac, timingSafeEqual } from 'node:crypto';
 import { lookup } from 'node:dns/promises';
 import { isIP } from 'node:net';
 
@@ -145,7 +145,9 @@ async function defaultResolve(host) {
 export class AccessGate {
   /** @param {string} code */
   constructor(code) {
-    this.secret = randomBytes(32);
+    // derived from the code, so a visitor stays unlocked across restarts and redeploys; a new code
+    // logs everyone out
+    this.secret = createHash('sha256').update(`aie2e-access:${code}`).digest();
     this.token = this.#sign(code);
     /** @type {Map<string, { n: number, until: number }>} */
     this.failures = new Map();

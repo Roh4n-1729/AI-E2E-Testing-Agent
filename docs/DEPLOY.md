@@ -75,6 +75,10 @@ the code widely.
 
 - Runs made on the instance disappear when it restarts or redeploys (no paid disk); the baked-in runs come
   back each time.
+- The demo apps' suites (`swag-labs`, `buggy-shop`, `todomvc`) are installed on start, ready under **Test
+  suites**.
+- Unlocking lasts 12 hours and survives redeploys; changing `AIE2E_ACCESS_CODE` logs everyone out.
+- More planned tests per run: add `AIE2E_SHARED_MAX_TESTS` (up to 8) in the Environment tab; saving redeploys.
 - Everyone shares one queue: a second run waits for the first ("A run is already in progress").
 - The app's own `.env` is not used; Render's environment variables replace it.
 

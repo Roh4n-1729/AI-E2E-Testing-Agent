@@ -50,6 +50,13 @@ describe('a deployed (shared) instance', () => {
     ).toEqual({ ok: true });
   });
 
+  it('keeps a visitor unlocked across restarts while the code stays the same', () => {
+    const before = new AccessGate('open-sesame-42').tryCode('open-sesame-42', 'a');
+    const cookie = before.ok ? before.cookie.split(';')[0] : '';
+    expect(new AccessGate('open-sesame-42').hasAccess(cookie)).toBe(true);
+    expect(new AccessGate('a-new-code-99').hasAccess(cookie)).toBe(false);
+  });
+
   it('checks the code in constant time and slows down guessing', () => {
     const gate = new AccessGate('open-sesame-42');
     const ok = gate.tryCode('open-sesame-42', 'a', true);

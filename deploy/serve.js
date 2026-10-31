@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { spawn } from 'node:child_process';
-import { cp, mkdir, readdir } from 'node:fs/promises';
+import { cp, mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -56,6 +56,23 @@ await mkdir(outDir, { recursive: true });
 if (existsSync(seed) && (await readdir(outDir)).length === 0) {
   await cp(seed, outDir, { recursive: true });
   console.log(`Copied the baked-in runs into ${outDir}`);
+}
+
+// The demo apps' own suites, ready to run from Test suites (a suite saved in the UI wins).
+const suitesDir = path.resolve(root, env.AIE2E_SUITES_DIR || path.join(outDir, 'suites'));
+await mkdir(suitesDir, { recursive: true });
+for (const [name, file, port] of /** @type {[string, string, number][]} */ ([
+  ['swag-labs', 'examples/saucedemo/suite.json', 4500],
+  ['buggy-shop', 'examples/buggy-shop/suite.json', 4300],
+  ['todomvc', 'examples/todomvc/suite.json', 4400],
+])) {
+  const target = path.join(suitesDir, `${name}.json`);
+  if (existsSync(target)) continue;
+  const suite = JSON.parse(await readFile(path.join(root, file), 'utf8'));
+  await writeFile(
+    target,
+    `${JSON.stringify({ ...suite, url: `http://localhost:${port}` }, null, 2)}\n`,
+  );
 }
 
 // the platform's port (Render sets PORT, default 10000)
