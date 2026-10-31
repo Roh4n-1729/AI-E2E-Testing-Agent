@@ -6,10 +6,15 @@ evidence the agent cannot fake**: the page, the URL, network calls, downloads, t
 and screenshots. Tests that pass are recorded and **replayed with plain Playwright and no LLM**. When a
 replay breaks, the agent heals it, and every heal is logged.
 
-> Final-round interview project (deadline 2 Nov 2026). Status: working end to end, tested on three apps (one with
-> seeded bugs, two we did not write), checked in CI on every push. [docs/EVALUATION.md](docs/EVALUATION.md) has the measured
-> results, [docs/IMPROVEMENTS.md](docs/IMPROVEMENTS.md) what real runs taught us, and [docs/DEMO.md](docs/DEMO.md)
-> the 8-minute demo.
+> Final-round interview project (deadline 2 Nov 2026). Status: working end to end, tested on three local apps (one
+> with seeded bugs, two we did not write) and a real deployed one, checked in CI on every push.
+> [docs/EVALUATION.md](docs/EVALUATION.md) has the measured results, [docs/IMPROVEMENTS.md](docs/IMPROVEMENTS.md) what
+> real runs taught us, and [docs/DEMO.md](docs/DEMO.md) the 10-minute demo.
+
+**Try it without installing:** a read-only showcase of real runs (Vercel) is built with `npm run demo:export` and
+`npm run demo:build`; see [docs/DEMO.md](docs/DEMO.md#the-showcase-vercel-read-only).
+
+![Run summary: a verdict sentence, four numbers, the problems found in plain words with screenshots](docs/images/ui-summary.png)
 
 ## How it works
 
@@ -17,9 +22,13 @@ replay breaks, the agent heals it, and every heal is logged.
 START → crawl → plan ──(one LangGraph branch per test)──▶ run test → write report → END
 
 run test:   recording? ──yes──▶ replay with Playwright (no LLM) ──step breaks──▶ agent heals from here
-               └──no──▶ AI agent (Stagehand) drives the browser ──passes──▶ saved as a recording
+               └──no──▶ AI agent drives the browser ──passes──▶ saved as a recording
             then: strict judge, from harness evidence only → pass / fail / error
+                  failed? the judge's model explains the likely cause (advisory, after the verdict)
 ```
+
+The AI agent is Stagehand 3.7's `agent()` by default, or our own loop (`--agent-engine loop`): the AI SDK's tool loop
+on Playwright's accessibility tree, which takes any model and clicks the exact element it saw.
 
 - **Strict judge.** It never trusts the agent's claim of success. It ignores checks that were already true
   before the agent acted. Visual checks compare the start, the run and the end. If the agent says it
@@ -38,15 +47,47 @@ run test:   recording? ──yes──▶ replay with Playwright (no LLM) ──
 - **Your own tests, and apps behind a login.** Write suites in the UI (a goal in plain English plus checks), save
   any run as a suite, and run the same JSON in CI. Runs can log in first: credentials stay in `.env`, the session
   is shared by every test, and the AI never sees the password.
-- **Watch it live.** A local web UI streams the browser (CDP screencast) with a visible cursor, then shows
-  each test as a step timeline with screenshots, checks, network, quality and the agent's own claim.
+- **A report anyone can read.** The run summary says what works and what is wrong in plain words ("2 flows get stuck
+  on Checkout step one. The page shows 'Error: Last Name is required'"), ranked by severity, with the screenshot that
+  shows it. Each test is a journey: the pages the user went through, where it got stuck, the steps by page, and why
+  it failed. Engineers get the full evidence one click away (Developer view).
+- **Watch it live.** A local web UI streams the browser (CDP screencast) with a visible cursor while the run moves
+  through log in, explore, plan, test and report.
+
+## What you see
+
+| Test journey: where the user went and where it broke | Live run: the browser the agent is driving |
+| ---------------------------------------------------- | ------------------------------------------ |
+| ![Test journey](docs/images/ui-journey-stuck.png)    | ![Live run](docs/images/ui-live.png)       |
+
+More screens: [the journey's flow strip](docs/images/ui-journey.png),
+[problems by severity](docs/images/ui-summary-findings.png), [dark theme](docs/images/ui-journey-dark.png),
+[what each part was given](docs/images/ui-who-did-what.png), [the New run page](docs/images/ui-new-run.png).
+
+## Where AI is used, and where it is not
+
+| Uses a model                                                                              | Never uses a model                                                             |
+| ----------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------ |
+| **Planner**: tests and their checks from the crawl (one review round, then fixed by code) | Crawler, login, **replay** (plain Playwright)                                  |
+| **Browser agent**: first runs and heals                                                   | **The verdict**: every hard check, "already true before the test acted", heals |
+| **Judge**, only for `visual` questions about screenshots                                  | Accessibility, Web Vitals, theme audit, pixel comparison                       |
+| **The AI's reading** of a failed test: likely cause, app bug or test problem, next step   | The report wording (plain English from the judge's own checks, no LLM)         |
+
+Every test shows who did what: a filter on the journey (AI agent, Playwright, Judge) shows that part's steps and
+its input, such as the exact instruction the agent got, the steps Playwright replayed and who wrote them, and the
+checks the judge used. The suite editor is split the same way, so you can write the goal, the steps or the checks
+yourself.
+
+Model presets put strong models where calls are few: `economy` (haiku everywhere, for building), `balanced` (haiku
+agent, sonnet-5-5 planner and judge) and `best` (sonnet-4-6 agent, opus-5-5 planner and judge, for demos). A preset
+picked for a run beats the models in `.env`; every run logs its models first.
 
 ## Quick start
 
 ```bash
 npm install
 npm run browsers            # Playwright's Chromium (or it uses your installed Chrome/Edge)
-cp .env.example .env        # add ANTHROPIC_API_KEY (default model: anthropic/claude-haiku-4-5)
+cp .env.example .env        # add ANTHROPIC_API_KEY; AIE2E_PRESET=economy keeps development cheap
 npm run doctor              # checks Node, Chromium, API key
 
 npm run ui                  # web UI at http://localhost:4173: start runs, watch live, browse results
@@ -68,8 +109,11 @@ npm start -- run http://localhost:4500 --suite examples/saucedemo/suite.json --n
 CLI:
 
 ```bash
-# AI explores and plans (the first run records, later runs replay)
-npm start -- run https://your-app.test -d "What the app is, in one sentence" -c 2
+# AI explores and plans (the first run records, later runs replay); best models for this run
+npm start -- run https://your-app.test -d "What the app is, in one sentence" -c 2 --preset best
+
+# our own agent loop with any model as the agent
+npm start -- run https://your-app.test --agent-engine loop --model anthropic/claude-sonnet-5-5
 
 # one flow, in plain English
 npm start -- run https://your-app.test --goal "Add a product to the cart and check out" --expect-text "Thank you"
@@ -117,6 +161,17 @@ bugs depend on who logs in. The same 6-test suite passes as `standard_user` and 
 `locked_out_user` stops at login. 0 tokens after the first recording: see
 [examples/saucedemo/README.md](examples/saucedemo/README.md).
 
+**The AI path** (planner + agent) varies from run to run and costs tokens. Measured on the seeded-bug shop before the
+plan review existed: 2/6 seeded bugs, 3 false positives ([docs/EVALUATION_AI.md](docs/EVALUATION_AI.md)); the plan
+review, section-named controls and plain-words checks were built from exactly those failures, and a rerun is
+pending. On a real deployed app (Asset Sense, `--preset best`), the planner named each "Explore Now" by its section,
+the agent reached the right pages, and the run found the app's own bugs: React hydration errors on every page, a
+request to `/[object Module]` that returns 404, and a community page that never loads. When the agent clicked the
+wrong one of three identical buttons and called it success, the judge failed it from the URL and the screenshots,
+and the AI's reading said it was a problem with the test, not the app. On TodoMVC both agent engines pass the same
+goal; Stagehand + haiku-4-5 used 47k tokens, the own loop + sonnet-5-5 106k (it recovered from its own mistake and
+said so).
+
 CI runs every demo suite on each push: the clean apps must pass, and a seeded regression in each (the shop's
 wrong total, TodoMVC's broken "Clear completed", Sauce Demo's `problem_user`) must fail. See
 `.github/workflows/ci.yml`. Other repos can use the tool as a GitHub Action
@@ -136,10 +191,10 @@ packages:
 
 | Library                                       | Used for                                    | Licence    |
 | --------------------------------------------- | ------------------------------------------- | ---------- |
-| Stagehand 3.7                                 | the AI browser agent                        | MIT        |
+| Stagehand 3.7                                 | the AI browser agent (default engine)       | MIT        |
 | Playwright 1.64                               | browser control, replay, evidence           | Apache-2.0 |
 | LangGraph JS 1.5                              | orchestration (crawl → plan → run → report) | MIT        |
-| Vercel AI SDK 5 (+ Anthropic, OpenAI, Google) | structured LLM calls (planner, judge)       | Apache-2.0 |
+| Vercel AI SDK 5 (+ Anthropic, OpenAI, Google) | planner, judge, explainer, own agent loop   | Apache-2.0 |
 | zod 4                                         | schemas for suites, recordings, reports     | MIT        |
 | axe-core 4                                    | accessibility checks                        | MPL-2.0    |
 | web-vitals 5                                  | Core Web Vitals                             | Apache-2.0 |
@@ -164,9 +219,10 @@ packages:
   until a suite declares it in `ignore`; the requests still show in the evidence.
 - On Linux the agent's Chrome runs without Chrome's own sandbox, as Playwright's browsers do by default (CI runners
   cannot start it otherwise). Test apps you trust, or set `AIE2E_CHROME_SANDBOX=true` where the sandbox works.
-- Stagehand 3.7.3 does not support `claude-haiku-5-5` in its agent loop (thinking-signature error). Use
-  `claude-haiku-4-5` for the agent, and optionally a stronger model for the planner and judge
-  (`AIE2E_PLANNER_MODEL`, `AIE2E_JUDGE_MODEL`).
+- Stagehand 3.7.3's agent cannot drive the 5.5 models (thinking-signature error): the presets use haiku-4-5 or
+  sonnet-4-6 there. Our own loop (`--agent-engine loop`) takes any model but is newer: one real comparison so far.
+- The AI's reading of a failure is an LLM's interpretation: it is labelled, it never changes a result, and it costs
+  one call per failed test (none on a green run; `--no-explain` turns it off).
 
 ## Docs
 

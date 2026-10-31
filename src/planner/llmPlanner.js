@@ -311,6 +311,7 @@ export class LlmPlanner {
         goal: raw.goal,
         startUrl: target.url,
         expectations: [...outcome, { kind: 'no-console-errors' }, { kind: 'no-network-failures' }],
+        origin: 'planner',
       });
       if (!parsed.success) {
         this.logger.warn(`planner: dropped invalid test "${raw.title}": ${parsed.error.message}`);

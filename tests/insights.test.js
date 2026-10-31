@@ -322,4 +322,42 @@ describe('insights', () => {
       /^8 errors in the console, first: React error #425: text rendered/,
     );
   });
+
+  it('tells a flow that reached its goal but hit app errors apart from a broken flow', () => {
+    const r = result({
+      id: 'tagging',
+      agentClaim: { success: true, message: 'Opened the tagging page' },
+      claimMismatch: true,
+      evidence: { ...result({ id: 'x' }).evidence, finalUrl: `${base}/tagging` },
+      verdict: {
+        status: 'fail',
+        reason: '',
+        warnings: [],
+        checks: [
+          {
+            expectation: {
+              kind: 'url',
+              pattern: '/tagging',
+              mode: 'includes',
+              label: 'The tagging page opens',
+            },
+            passed: true,
+            detail: '',
+          },
+          {
+            expectation: { kind: 'no-console-errors' },
+            passed: false,
+            detail: '8 console error(s): Minified React error #425',
+          },
+        ],
+      },
+    });
+    const i = runInsights(report([r]));
+    expect(i.tests.tagging.outcome).toMatch(/^Goal reached, but 8 errors in the console/);
+    expect(i.sentence).toBe(
+      '0 of 1 flow work. 1 more reaches its goal but fails because the app logs errors or requests fail.',
+    );
+    // the agent was right about the goal: not an AI-honesty finding
+    expect(i.findings.some((f) => f.category === 'agent')).toBe(false);
+  });
 });

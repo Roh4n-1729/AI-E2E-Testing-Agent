@@ -304,8 +304,42 @@ on-theme on each screen and still drift, I also compare the same component acros
 - **Developer view:** the original list + tabs layout, one toggle away (remembered per browser).
 - The standalone `report.html` shows the same verdict and findings, with no dependencies.
 
+- **AI's reading of failures:** after the verdict, the judge's model gets the evidence of each failed test (checks
+  in words, steps, page text, errors, three screenshots) and says the likely cause, whether it looks like an app
+  bug, a problem with the test or the environment, and what to check next. Labelled, advisory, 0 calls on a green
+  run (`--no-explain` to switch off).
+
 **Interview line:** "The judge decides, the insights module explains. It is deterministic on purpose: a summary
 written by an LLM could contradict the verdict, and it would cost tokens on a run that replayed for free."
+
+### Who did what (added Sat 31 Oct)
+
+- Each result carries `inputs` (`core/testRunner.js#testInputs`): `agent` (model, engine, the exact instruction
+  built by `buildInstruction` or the loop's prompt) and `playwright` (the steps, and their source: `suite` = written
+  in the suite, `recording` = saved by the agent on an earlier run, `agent` = this run's agent, `harness` = the
+  tool's own steps). The judge's input is the test's checks plus the guards the tool adds.
+- The journey's filter (All, AI agent, Playwright, Judge) shows that part's steps and its input panel
+  (`components/WhoDidWhat.jsx`). The suite editor is split into "For the AI agent", "For Playwright" (hand-written
+  steps) and "For the judge".
+- Saved recordings win over a suite's own steps (they include heals), so saving changed steps in the UI deletes
+  that test's saved recording (`server/app.js#changedSteps`).
+- The New run page shows the same hand-offs before a run starts ("What happens when you start"), filled in from the
+  form.
+
+**Interview line:** "The AI writes, Playwright does, the judge decides, and the UI shows each one's input. You can
+check where the AI ends, and replace any part of its work with your own."
+
+### Two engines for the browser agent (added Fri 30 Oct)
+
+- **stagehand** (default): Stagehand 3.7.3's `agent()`; the model picks actions, Stagehand finds elements with
+  its own LLM call. Limited to the models it knows.
+- **loop** (`AIE2E_AGENT_ENGINE=loop`, experimental): our own AI SDK tool loop. The model reads Playwright's
+  accessibility snapshot (`- button "Add to cart" [ref=e12]`) and acts by ref, so no second model call is needed
+  to find an element and any model id works. Each action is saved as Playwright's own locator, so replay and
+  healing are unchanged. This is how Playwright MCP lets agents drive a browser.
+
+**Interview line:** "Stagehand 4 dropped `agent()`, so the agent loop had to become ours. Owning it means the model
+is a setting, the tools are ours, and the recordings are Playwright locators a human can read."
 
 ## 12 Libraries
 

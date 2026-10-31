@@ -60,12 +60,13 @@ containers work with no flags; `AIE2E_CHROME_SANDBOX=true` keeps it.
 
 ## Current status (update when it changes)
 
-- Done: record/replay/heal, strict judge, crawler, planner, LangGraph, web UI, suites, login, quality,
-  theme (every screen, consistency, `--theme-from`), visual baselines, GitHub Action, 3 demo apps
-  (buggy-shop eval 12/12, TodoMVC 6/6, Sauce Demo: every broken user caught), decision docs, CI green
-  pending the push of the Linux Chrome fix.
-- Pending: CI run #2 (fix pushed by Rohan); full-AI eval (`--mode explore --heal`); demo rehearsal with
-  `docs/DEMO.md`; demo GIF. The Presentation Builder run was dropped (its own AI spends tokens per test).
+- Done: record/replay/heal, strict judge, crawler, planner (+ plan review), LangGraph, web UI v2 (summary, test
+  journeys, live run; developer view kept), suites with plain-words labels, login, quality, theme, visual
+  baselines, GitHub Action, 3 demo apps, model presets, agent tools (`harnessStatus`, structured report), the AI's
+  reading of failures (`judge/failureExplainer.js`), our own agent loop (`AIE2E_AGENT_ENGINE=loop`, opt-in),
+  who-did-what inputs per test (`result.inputs`, actor filter, suite editor per part), read-only showcase
+  (`demo:export`, `demo:build`).
+- Pending: deploy the showcase; demo GIF; final CI.
 
 ## Gotchas
 

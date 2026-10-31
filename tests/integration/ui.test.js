@@ -45,7 +45,7 @@ describe.skipIf(!hasChromium || !built)('web UI (real browser; needs `npm run ui
     await page.goto(`${ui}/#/new`);
     await page.getByPlaceholder('https://your-app.example.com').fill(target.base);
     await page.getByRole('radio', { name: /Smoke check/ }).click(); // no LLM needed
-    await page.getByRole('button', { name: /start run/i }).click();
+    await page.getByRole('button', { name: /start testing/i }).click();
 
     await page.waitForURL(/#\/runs\//);
     const runId = new URL(page.url()).hash.split('/')[2];

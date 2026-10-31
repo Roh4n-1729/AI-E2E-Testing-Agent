@@ -6,6 +6,7 @@ import { buildPipeline } from '../core/pipeline.js';
 import { TestRunner } from '../core/testRunner.js';
 import { RunEvents } from '../events/runEvents.js';
 import { AgentExecutor } from '../executor/agentExecutor.js';
+import { LoopAgentExecutor } from '../executor/loopAgentExecutor.js';
 import { CachingExecutor } from '../executor/cachingExecutor.js';
 import { ReplayExecutor } from '../executor/replayExecutor.js';
 import { EvidenceJudge } from '../judge/evidenceJudge.js';
@@ -24,6 +25,7 @@ import { newRunId } from '../util/misc.js';
 import { ThemeStates } from '../theme/states.js';
 import { BaselineStore } from '../visual/baselines.js';
 import { AuthSchema, performLogin } from '../auth/login.js';
+import { FailureExplainer } from '../judge/failureExplainer.js';
 import { captureReference } from '../theme/reference.js';
 
 /**
@@ -35,6 +37,7 @@ import { captureReference } from '../theme/reference.js';
  * @property {string[]} [expectText]
  * @property {string} [model]
  * @property {'economy' | 'balanced' | 'best'} [preset]  models by role (explicit models win)
+ * @property {'stagehand' | 'loop'} [agentEngine]  who drives the browser (default from AIE2E_AGENT_ENGINE)
  * @property {boolean} [headed]            show a real browser window
  * @property {number} [maxSteps]
  * @property {number} [maxTests]
@@ -52,6 +55,7 @@ import { captureReference } from '../theme/reference.js';
  * @property {import('../auth/login.js').Auth} [auth]  log in first (a suite's own "auth" is used otherwise)
  * @property {string} [themeFrom]  check the theme against this other product's themes (a suite's own "themeFrom" otherwise)
  * @property {boolean} [heal]             false = a broken replay is a plain failure, never handed to the agent
+ * @property {boolean} [explain]          false = no AI reading of failures (default: on when the judge's key is set)
  * @property {'off' | 'warn' | 'fail'} [quality]  Web Vitals / accessibility gate (default: warn = advisory)
  * @property {'off' | 'warn' | 'fail'} [visual]  screenshot comparison with approved baselines (default: warn)
  * @property {boolean} [updateBaselines]  accept every screenshot of a passing test as its new baseline
@@ -83,6 +87,7 @@ export async function startRun(o, { events = new RunEvents(), signal } = {}) {
   const config = loadConfig({
     model: o.model,
     preset: o.preset,
+    agentEngine: o.agentEngine,
     headless: o.headed ? false : undefined,
     maxSteps: o.maxSteps,
     maxTests: o.maxTests,
@@ -103,8 +108,13 @@ export async function startRun(o, { events = new RunEvents(), signal } = {}) {
   const logger = createLogger(config.logLevel, '', (e) =>
     events.emit('log', { level: e.level, scope: e.scope, message: e.message }),
   );
-  const agentWarning = agentModelWarning(config.model);
+  const agentWarning = agentModelWarning(config.model, config.agentEngine);
   if (agentWarning) logger.warn(agentWarning);
+  /** "anthropic/claude-haiku-4-5" -> "claude-haiku-4-5" @param {string} m */
+  const short = (m) => m.replace(/^[a-z]+\//, '');
+  logger.info(
+    `Models${config.preset ? ` (${config.preset})` : ''}: agent ${short(config.model)}${config.agentEngine === 'loop' ? ' (own loop)' : ''}, planner ${short(config.plannerModel ?? config.model)}, judge ${short(config.judgeModel ?? config.model)}`,
+  );
   const runId = o.runId ?? newRunId();
   const artifacts = new RunArtifacts(config.outDir, runId);
   await artifacts.init();
@@ -118,6 +128,13 @@ export async function startRun(o, { events = new RunEvents(), signal } = {}) {
   };
   const llm = lazyLlm(config.plannerModel ?? config.model, meter);
   const judgeLlm = lazyLlm(config.judgeModel ?? config.model, meter);
+  // The AI's reading of failures: only with a key for the judge's model, and only if not switched off.
+  const judgeModel = config.judgeModel ?? config.model;
+  const judgeKey = apiKeyEnvFor(judgeModel);
+  const explainer =
+    o.explain !== false && config.explainFailures && (!judgeKey || !!process.env[judgeKey])
+      ? new FailureExplainer(judgeLlm, artifacts.runDir, logger, judgeModel)
+      : undefined;
   const suite = o.suite ? await loadSuite(o.suite) : undefined;
   const baselines = new BaselineStore(
     config.visual.dir ?? path.join(config.outDir, 'baselines'),
@@ -195,7 +212,9 @@ export async function startRun(o, { events = new RunEvents(), signal } = {}) {
   if (declared.length)
     logger.info(`Ignoring known third-party noise declared by the suite: ${declared.join(', ')}`);
 
-  const agent = new AgentExecutor(config);
+  // the browser agent: Stagehand's agent() by default, or our own tool loop (any model) when configured
+  const agent =
+    config.agentEngine === 'loop' ? new LoopAgentExecutor(config) : new AgentExecutor(config);
   agent.loggedIn = !!login;
   const fileStore = new FileRecordStore(path.join(config.outDir, 'recordings'));
   const recordStore = suitePlanner
@@ -236,6 +255,7 @@ export async function startRun(o, { events = new RunEvents(), signal } = {}) {
         : agent,
       recordStore: cache ? recordStore : undefined,
       fallbackExecutor: cache && heal ? agent : undefined,
+      explainer: explainer,
       judge: new EvidenceJudge(judgeCfg, judgeLlm, config.quality, {
         store: baselines,
         cfg: config.visual,
@@ -255,6 +275,7 @@ export async function startRun(o, { events = new RunEvents(), signal } = {}) {
       plannerModel: config.plannerModel ?? config.model,
       judgeModel: config.judgeModel ?? config.model,
       preset: config.preset,
+      agentEngine: config.agentEngine,
       concurrency: config.concurrency,
       headless: config.headless,
       quality: config.quality.gate,

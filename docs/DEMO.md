@@ -1,17 +1,30 @@
-# Demo script (about 8 minutes)
+# Demo script (about 10 minutes)
 
-One story, told on apps that run on your laptop, so nothing depends on the venue's network except the LLM
-calls in Act 1 and Act 4. Every act has a fallback: a finished run already in the UI's history.
+One story, told mostly in the web UI, on apps that run on your laptop plus one real deployed app. Every act has a
+fallback: a finished run already in the UI's history.
 
-**The story in one line:** _AI writes and repairs the tests, plain Playwright replays them for free, and a strict
-judge decides pass or fail from evidence the AI cannot fake._
+**The story in one line:** _AI writes and repairs the tests, plain Playwright replays them for free, a strict judge
+decides pass or fail from evidence the AI cannot fake, and the report reads like a person wrote it for anyone._
 
-## Before the interview (15 minutes, once)
+## Models: cheap while building, best for the demo
+
+| When                   | Setting                                         | Agent      | Planner and judge | Cost per AI-driven test |
+| ---------------------- | ----------------------------------------------- | ---------- | ----------------- | ----------------------- |
+| Building, rehearsing   | `.env`: `AIE2E_PRESET=economy`                  | haiku-4-5  | haiku-4-5         | a few cents             |
+| The demo               | New run → **Models: Best** (or `--preset best`) | sonnet-4-6 | opus-5-5          | about $0.30–0.60        |
+| Any model as the agent | New run → **Browser agent: Own loop**           | any        | as the preset     | depends on the model    |
+
+A preset chosen in the form or with `--preset` beats the models in `.env` for that run only; every run prints its
+models first (`Models (best): agent claude-sonnet-4-6, planner claude-opus-5-5, judge claude-opus-5-5`). Replays cost
+nothing whatever the preset.
+
+## Before the interview (20 minutes, once)
 
 `.env`:
 
 ```bash
 ANTHROPIC_API_KEY=...
+AIE2E_PRESET=economy
 AIE2E_USERNAME=standard_user
 AIE2E_PASSWORD=secret_sauce        # Sauce Demo's public demo password
 ```
@@ -25,117 +38,146 @@ npm run saucedemo
 # T2: the tester's UI (http://localhost:4173)
 npm run ui
 
-# T3: the seeded-bug shop, for Act 5 (http://localhost:4300)
+# T3: the seeded-bug shop, for Act 6 (http://localhost:4300)
 $env:BUGS="dark-leak"; npm run shop
 ```
 
-Rehearsal run, so every act has a fallback in the UI history and the baselines are approved:
+Rehearsal, so every act has a fallback in the history and the screenshot baselines are approved:
 
 ```powershell
-npm start -- run http://localhost:4500 --suite examples/saucedemo/suite.json --no-heal
+node src/cli/main.js run http://localhost:4500 --suite examples/saucedemo/suite.json --no-heal
+$env:AIE2E_USERNAME="problem_user"; node src/cli/main.js run http://localhost:4500 --suite examples/saucedemo/suite.json --no-heal
+$env:AIE2E_USERNAME="standard_user"
+node src/cli/main.js run https://asset-sense-6fom.vercel.app/ --preset best --max-tests 3 --replan --rerecord
 ```
 
-Then, so that Act 1 plans and records live instead of replaying: delete the folders `.aie2e\recordings` and
-`.aie2e\plans` (or switch on "Record again" and "Plan again" in the New run form; "Run again" in Act 2 then
-replays, it does not repeat those switches). Keep `.aie2e\baselines`.
+Then, so that Act 1 plans and records live: in the New run form switch on **Record again** and **Plan again**
+("Run again" in Act 2 replays; it does not repeat those switches). Keep `.aie2e\baselines`.
 
-Browser tabs: the UI, the GitHub Actions page (latest green run), `docs/EVALUATION.md` on GitHub.
+Browser tabs: the UI, the GitHub Actions page (latest green run), the Vercel showcase, `docs/EVALUATION.md`.
 
-## Act 1: the AI tests a real app it has never seen (2 min)
+## Act 1: the AI tests an app it has never seen (2 min)
 
 UI → **New run**:
 
 - URL `http://localhost:4500`
 - Description: _A shop: log in, browse products, sort them, add to cart, check out._
-- Login URL `/`, success text `Products` (credentials come from `.env`, the AI never sees them)
-- Max tests 3, 2 in parallel
+- Login URL `/`, success text `Products` (credentials come from `.env`; the AI never sees them)
+- Planned tests 3 · **Models: Best** · Record again · Plan again
 
-Say while it runs:
+Before pressing **Start testing**: "The right side says what will happen, filled in from this form: Playwright
+logs in and explores, the planner writes the tests, the agent runs them, the judge decides. Each AI step names its
+model."
 
-- "It logs in once with plain Playwright, crawls the app, and the planner writes test cases from the site map."
-- "Each test gets a fresh browser. The cursor you see is the agent; the live view is a CDP screencast."
-- "The agent's own 'I'm done' is recorded but never trusted. The judge reads the DOM, URL, console, network and
-  screenshots itself."
+While it runs (the **live run** screen):
 
-Open one passed test: step timeline, screenshots, checks with their evidence, the agent's claim next to the verdict.
+- "Five stages: it logs in once with plain Playwright, explores the app, plans tests, runs each in its own
+  browser, and writes the report. The cards at the top are those stages."
+- "This is the browser the agent is driving, streamed live. The line under it is what it is doing right now."
+- "Before anything ran, the plan review compared every check with what the crawl saw: a check that is already true
+  on the start page, or wording the app never showed, proves nothing. That card shows what it fixed."
 
-_Fallback:_ open the rehearsal run from the history.
+When it finishes, the **run summary**: the verdict sentence, the four numbers, the tests table. Open a test: the
+**journey** (where the user went, the steps by page, why it passed).
+
+_Fallback:_ open the rehearsal run.
 
 ## Act 2: replay costs nothing (30 s)
 
-Click **Run again**. Every test says `replay`, the token counter stays at 0, and it finishes in seconds.
+**Run again**. Every test says _Replay_, the AI cost stays at 0 tokens, it finishes in seconds.
 
-- "Passing runs are saved as JSON steps with a test id selector and an XPath fallback. Plain Playwright replays
-  them. This is what runs in CI on every push."
+- "Passing runs are saved as steps with stable selectors. Plain Playwright replays them; this is what CI runs on
+  every push."
 
-## Act 3: same tests, broken users (1.5 min)
+## Act 3: the same tests, a broken user (1.5 min)
 
-T4:
+Open the rehearsal run for **problem_user** from the history.
 
-```powershell
-$env:AIE2E_USERNAME="problem_user"; npm start -- run http://localhost:4500 --suite examples/saucedemo/suite.json --no-heal
-$env:AIE2E_USERNAME="visual_user";  npm start -- run http://localhost:4500 --suite examples/saucedemo/suite.json --no-heal
-```
+- The headline: _"4 problems found · 1 of 6 flows work for problem_user."_
+- **What is wrong**: "2 flows get stuck on Checkout step one. The page shows 'Error: Last Name is required'." Click
+  _Place an order_.
+- The **journey**: Inventory → Cart → **Checkout step one (stuck here)** ⇢ Checkout complete (never reached). Step 9
+  in red: _Click Finish: it never appeared (waited 8 s)_. **Why it failed** stays in view on the right.
+- **AI's reading** (when the run had a key): the likely cause in plain words, labelled as the AI's reading; it never
+  changes the result.
+- **Who did what**: the filter above the steps. _Playwright_ shows the 8 steps it replayed and that they came from
+  the suite; _Judge_ shows the checks it used, the test's own and the ones added to every test; _AI agent_ is
+  empty, because no AI ran. On an AI run, _AI agent_ shows the exact instruction the agent got.
+- **Looks different**: approved vs now vs changed pixels; _Approve new look_ / _Keep the old one_.
+- "Sauce Labs built these bugs into their demo; we did not write them. 0 tokens: it is all replay."
 
-Both runs appear in the UI. Show:
+## Act 4: a real deployed app (2 min)
 
-- problem_user: 5 of 6 fail. Open "Sort products by price": the first price is not $7.99. Open "Every product
-  shows its own photo": the photo check fails.
-- visual_user: open the **Visual** panel: baseline, current, diff. Approve or reject.
-- "Sauce Labs built these bugs into their demo app; we did not write them. 0 tokens: it is all replay."
+Open the rehearsal **Asset Sense** run (`asset-sense-6fom.vercel.app`, Best models).
 
-## Act 4: the judge cannot be talked into a pass (1 min)
+- The app's own bugs, found without a script: React hydration errors on every page (explained in plain English),
+  a request to `/[object Module]` that returns 404, the community page that never loads.
+- _"Goal reached, but the app logged errors"_: the tool tells a working flow on a noisy app apart from a broken flow.
+- A test where the agent clicked the wrong one of three "Explore Now" buttons and called it success: the judge
+  failed it from the URL and the screenshots, and the AI's reading says _"clicked the wrong Explore Now button… a
+  problem with the test, not the app"_.
+- "This is why the judge exists, and why the explanation says when the test itself is wrong."
 
-```powershell
-$env:AIE2E_USERNAME="standard_user"; npm start -- run http://localhost:4500 --goal "Add the Sauce Labs Backpack to the cart and open the cart" --expect-text "Sauce Labs Rocket" --login-url / --login-success-text Products
-```
-
-The agent adds the backpack and reports success. The judge fails it: the text is not on the page, and the report
-flags **agent claim ≠ evidence**.
-
-- "This is the failure mode of naive AI testers: the agent says done, nobody checks."
-
-## Act 5: self-healing that cannot hide a regression (1 min)
-
-```powershell
-npm start -- run http://localhost:4500 --suite examples/saucedemo/heal-demo.suite.json
-```
-
-The suite was "recorded" against an older test id (`add-to-cart-backpack`). Replay breaks at step 1, the agent
-redoes only that step from the live page, the judge runs the same checks, and the report lists the heal with the
-old and new selector.
-
-- "If the app were really broken, the healed run would still fail the judge, the cache would not be updated and
-  the heal would be marked suspect."
-
-_Fallback:_ `tests/integration/replay.test.js` covers both cases; mention it.
-
-## Act 6: things functional tests never see (1 min)
+## Act 5: the judge cannot be talked into a pass (1 min)
 
 ```powershell
-npm start -- run http://localhost:4300 --suite examples/buggy-shop/suite.json --no-heal
+node src/cli/main.js run http://localhost:4500 --goal "Add the Sauce Labs Backpack to the cart and open the cart" --expect-text "Sauce Labs Rocket" --login-url / --login-success-text Products
 ```
 
-Open the report → **Theme**: in dark mode the newsletter card is still white. The finding names the CSS rule
-Chrome used, the nearest theme token, and a crop of the element. Then the **Consistency** panel.
+The agent adds the backpack and reports success. The judge fails it: the text is not on the page. In the UI the
+journey shows the agent's report next to the evidence: **contradicted by the evidence**.
 
-- "The themes are discovered from the production CSS. No config. `--theme-from` checks one product against
-  another product's themes."
+- "The failure mode of naive AI testers: the agent says done, nobody checks."
 
-## Act 7: proof, not anecdotes (1 min)
+## Act 6: self-healing that cannot hide a regression, and things functional tests never see (1.5 min)
 
-- `docs/EVALUATION.md`: 12/12 seeded bugs, 0 false positives, 0 flaky; TodoMVC; Sauce Demo per user.
-- GitHub Actions: the clean apps must pass and the seeded regressions must fail, on every push. Job summary from
-  the reusable Action.
-- `docs/DECISIONS.md` and `docs/IMPROVEMENTS.md`: every real-run failure and what changed.
+```powershell
+node src/cli/main.js run http://localhost:4500 --suite examples/saucedemo/heal-demo.suite.json
+node src/cli/main.js run http://localhost:4300 --suite examples/buggy-shop/suite.json --no-heal
+```
 
-Close with the honest limits from the README (login without 2FA/SSO, UI only, local or CI, not hosted).
+- Heal: the suite was recorded against an old test id. Replay breaks at step 1, the agent redoes only that step,
+  the judge runs the same checks, and the summary lists _"1 recording was out of date and repaired by the AI"_.
+- Theme: in dark mode the newsletter card stays white. **Developer details → Theme** names the CSS rule, the nearest
+  theme token and a crop of the element.
+
+## Act 7: under the hood, and proof (1 min)
+
+- **Two agent engines**: Stagehand (default) and our own loop on Playwright's accessibility tree, which takes any
+  model and clicks the exact element it saw. "Stagehand 4 removed its agent, so the loop had to become ours."
+- **Where AI is and is not used**: planner, agent, `visual` checks, the AI's reading of failures. Everything else,
+  including the verdict and the report wording, is deterministic.
+- `docs/EVALUATION.md` (12/12 seeded bugs, 0 false positives), GitHub Actions (clean apps pass, seeded regressions
+  fail, on every push), `docs/DECISIONS.md` and `docs/IMPROVEMENTS.md`.
+- **Developer view** toggle: the original tabs for engineers, one click away.
+
+Close with the honest limits from the README.
+
+## The showcase (Vercel, read-only)
+
+A link the interviewer can open before or after the call: the same UI over real runs, exported as static files.
+Nothing can be started there, so it cannot fail and holds no keys.
+
+```powershell
+# 1. pick the runs (ids are in the UI's URL: #/runs/<id>); e.g. Asset Sense (best), TodoMVC (both engines),
+#    Sauce Demo as standard_user and problem_user, the shop with dark-leak
+npm run demo:export -- --runs 20261030111859-a09b,20261030105506-e080,20261030105946-f2c7,<sauce standard>,<sauce problem>
+# 2. build the UI in showcase mode (reads .aie2e/showcase, writes ui/dist-demo)
+npm run demo:build
+# 3. deploy the folder (first time: log in and accept the project name)
+npx vercel deploy ui/dist-demo --prod
+```
+
+Re-export and redeploy whenever you want newer runs on it. Look at what you publish: URLs, usernames (never
+passwords) and screenshots of the apps are in the reports.
 
 ## If something goes wrong
 
 | Problem                  | Do this                                                                                    |
 | ------------------------ | ------------------------------------------------------------------------------------------ |
-| LLM slow or rate-limited | Open the rehearsal run in the history; continue with Acts 2, 3, 6 (no LLM).                |
+| LLM slow or rate-limited | Open the rehearsal runs; continue with Acts 2, 3, 4, 6 (replays and saved runs, no LLM).   |
+| Wrong models in a run    | Check the first log line; pick **Best** in the form (it beats `.env`).                     |
 | Port already in use      | `$env:PORT=4501; npm run saucedemo` and use that URL everywhere.                           |
 | Login fails              | Check `AIE2E_USERNAME` in the current terminal (`echo $env:AIE2E_USERNAME`).               |
 | Visual diffs everywhere  | The baselines are from another screen size or zoom: rerun with `--update-baselines` first. |
+| No network on the call   | The Vercel showcase has every run above, read-only.                                        |

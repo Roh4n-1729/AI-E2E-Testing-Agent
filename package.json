@@ -30,6 +30,8 @@
     "shop": "node examples/buggy-shop/server.js",
     "todomvc": "node examples/todomvc/server.js",
     "saucedemo": "node examples/saucedemo/server.js",
+    "demo:export": "node scripts/demo-export.js",
+    "demo:build": "vite build --config ui/vite.config.js --mode demo",
     "graph": "node scripts/graph.js"
   },
   "dependencies": {

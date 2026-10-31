@@ -35,6 +35,10 @@ program
   .option('-s, --suite <file>', 'run a committed test suite (JSON) instead of planning')
   .option('--no-cache', 'always use the AI agent: do not replay or save recordings')
   .option('--no-heal', 'a broken replay is a plain failure; never hand it to the agent (CI)')
+  .option(
+    '--no-explain',
+    'do not ask the judge model to explain failed tests (advisory, 1 call per failure)',
+  )
   .option('--rerecord', 'ignore saved recordings and record them again with the agent')
   .option('--replan', 'ignore the saved AI test plan and plan again')
   .option(
@@ -60,12 +64,17 @@ program
   .option('--max-steps <n>', 'max agent steps per test', Number)
   .option('-m, --model <provider/model>', 'browser-agent model (overrides the preset)')
   .option('--preset <name>', 'models by role: economy | balanced | best (AIE2E_PRESET)')
+  .option(
+    '--agent-engine <name>',
+    'who drives the browser: stagehand | loop (own loop, any model; AIE2E_AGENT_ENGINE)',
+  )
   .option('-o, --out <dir>', 'output directory')
   .option('-v, --verbose', 'debug logging')
   .action(async (/** @type {string} */ url, /** @type {Record<string, any>} */ o) => {
     const { report } = await startRun({
       url,
       preset: o.preset,
+      agentEngine: o.agentEngine,
       description: o.description,
       goal: o.goal,
       expectUrl: o.expectUrl,
@@ -98,6 +107,7 @@ program
       updateBaselines: !!o.updateBaselines,
       suite: o.suite,
       heal: o.heal,
+      explain: o.explain,
     });
     const s = report.summary;
     process.exitCode = s.errored ? 2 : s.failed ? 1 : 0;
@@ -169,7 +179,7 @@ program
       keyVar ? !!process.env[keyVar] : true,
       keyVar ?? 'unknown provider: only anthropic/, openai/, google/ are supported',
     ]);
-    const warning = agentModelWarning(config.model);
+    const warning = agentModelWarning(config.model, config.agentEngine);
     rows.push([
       'Browser-agent model works with Stagehand 3.7.3',
       !warning,

@@ -1,8 +1,9 @@
-import { ArrowLeft, ArrowRight, Bot, Check, ChevronDown, Wrench, X } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Bot, Check, ChevronDown, Sparkles, Wrench, X } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { EvidenceGallery, Shot } from '../components/Evidence.jsx';
-import { RESULT, testHref } from '../components/RunSummary.jsx';
+import { AI_CATEGORY, RESULT, testHref } from '../components/RunSummary.jsx';
 import { TestDetail } from '../components/TestDetail.jsx';
+import { ActorFilter, ActorInput } from '../components/WhoDidWhat.jsx';
 import { Badge, Button } from '../components/ui.jsx';
 import { MODE, fmtDuration, fmtTokens, pathOf } from '../lib/format.js';
 
@@ -103,7 +104,7 @@ function FlowStrip({ t, result }) {
                     ? 'border border-dashed border-line-strong bg-subtle/50 text-muted'
                     : 'border border-ok/30 bg-ok-bg/40';
               return (
-                <li key={p.key} className="contents">
+                <li key={`${p.key}-${i}`} className="contents">
                   <a
                     data-stuck={p.status === 'stuck' ? '' : undefined}
                     href={p.status === 'unreached' ? undefined : `#page-${i}`}
@@ -164,28 +165,46 @@ function StepRow({ s, error, note }) {
   );
 }
 
-function Story({ t, result, runId, visualByStep, onCompare }) {
-  const pages = t.pages.filter((p) => p.status !== 'unreached');
-  const lastIdx = pages.length - 1;
+/** Which steps a part of the tool did: the agent's own, or Playwright's (replayed and harness steps). */
+const STEP_OF = {
+  agent: (s) => s.source === 'agent',
+  playwright: (s) => s.source !== 'agent',
+};
+
+function Story({ t, result, runId, visualByStep, onCompare, only }) {
+  const keep = only ? STEP_OF[only] : null;
+  // `at`: the page's place in the flow strip, so its node scrolls to it (pages can repeat: Home, then Home again)
+  const all = t.pages.map((p, at) => ({ ...p, at })).filter((p) => p.status !== 'unreached');
+  const lastIdx = all.length - 1;
+  const pages = keep
+    ? all
+        .map((p) => ({ ...p, steps: p.steps.filter(keep) }))
+        .filter((p, i) => p.steps.length || (i === lastIdx && p.status === 'stuck'))
+    : all;
+  if (keep && !pages.length)
+    return (
+      <p className="rounded-xl border border-dashed border-line-strong px-5 py-6 text-[14px] text-muted">
+        {only === 'agent'
+          ? 'The AI agent took no steps in this test.'
+          : 'Playwright took no steps of its own here: it carried out the agent’s actions and watched the page.'}
+      </p>
+    );
   return (
-    <section aria-labelledby="steps-h" className="flex min-w-0 flex-col gap-3.5">
-      <h2 id="steps-h" className="text-[18px] font-semibold">
-        What happened, step by step
-      </h2>
+    <section aria-label="Steps" className="flex min-w-0 flex-col gap-3.5">
       {pages.map((p, i) => {
         const stuck = p.status === 'stuck';
         const changed = [
           ...p.steps.flatMap((s) => visualByStep.get(s.index) ?? []),
-          ...(i === lastIdx ? (visualByStep.get('final') ?? []) : []),
+          ...(p.key === all[lastIdx]?.key ? (visualByStep.get('final') ?? []) : []),
         ].filter(isChanged);
         return (
-          <div key={p.key} id={`page-${t.pages.indexOf(p)}`} className="scroll-mt-6">
-            <div
-              className={`pb-2 pt-1.5 text-[12px] font-semibold uppercase tracking-[0.06em] ${stuck ? 'text-bad' : 'text-muted'}`}
+          <div key={p.at} id={`page-${p.at}`} className="scroll-mt-6">
+            <h3
+              className={`pb-2 pt-1.5 text-[14px] font-semibold ${stuck ? 'text-bad' : 'text-muted'}`}
             >
               {p.name}
-              {stuck ? ' · where it broke' : ''}
-            </div>
+              {stuck ? ', where it broke' : ''}
+            </h3>
             <article
               className={`flex flex-col gap-4 rounded-xl bg-panel p-4 md:flex-row ${stuck ? 'border-2 border-bad/30' : 'border border-line'}`}
             >
@@ -228,7 +247,7 @@ function Story({ t, result, runId, visualByStep, onCompare }) {
                     (screenshots, reading the page)
                   </p>
                 )}
-                {i === lastIdx && t.pageMessage && (
+                {i === pages.length - 1 && p.status === 'stuck' && t.pageMessage && (
                   <p className="rounded-lg bg-bad-bg/60 px-3 py-2 text-[13px] text-bad">
                     The page says “{t.pageMessage}”
                   </p>
@@ -255,6 +274,40 @@ function Story({ t, result, runId, visualByStep, onCompare }) {
         );
       })}
     </section>
+  );
+}
+
+/** The judge model's reading of a failure: advisory, written after the verdict, never part of it. */
+function AiReading({ e }) {
+  const c = AI_CATEGORY[e.category] ?? AI_CATEGORY.unclear;
+  return (
+    <div className="rounded-lg border border-ai/25 bg-ai/[0.06] px-3.5 py-3 text-[13px]">
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+        <span className="flex items-center gap-1.5 font-semibold text-ai">
+          <Sparkles size={13} aria-hidden /> AI&apos;s reading
+        </span>
+        <span className={`font-medium ${c.cls}`}>{c.label}</span>
+        <span className="text-muted">· {e.confidence} confidence</span>
+      </div>
+      <p className="mt-1.5 text-[14px] leading-relaxed">{e.cause}</p>
+      {e.evidence?.length > 0 && (
+        <ul className="mt-1.5 list-disc space-y-0.5 pl-4 text-muted">
+          {e.evidence.map((x, i) => (
+            <li key={i}>{x}</li>
+          ))}
+        </ul>
+      )}
+      {e.suggestion && (
+        <p className="mt-1.5">
+          <span className="font-medium">Next: </span>
+          {e.suggestion}
+        </p>
+      )}
+      <p className="mt-2 text-[11px] text-faint">
+        Written by {String(e.model ?? '').replace(/^[a-z]+\//, '')} from the evidence after the
+        verdict. It never changes the result.
+      </p>
+    </div>
   );
 }
 
@@ -291,6 +344,7 @@ function Why({ t, result }) {
         {status === 'pass' ? 'Why it passed' : 'Why it failed'}
       </h2>
       <p className="text-[15px] leading-relaxed">{sentence}</p>
+      {result.explanation && <AiReading e={result.explanation} />}
       <ul className="flex flex-col gap-2 text-[13px]">
         {hard.map((c, i) => (
           <li key={i} className="flex items-start gap-2">
@@ -538,6 +592,7 @@ export function TestJourney({
   const t = insights.tests[testId];
   const [compare, setCompare] = useState(focusVisual ? '__first' : '');
   const [devOpen, setDevOpen] = useState(false);
+  const [actor, setActor] = useState('all');
   const visual = useMemo(() => result?.evidence.visual?.results ?? [], [result]);
   // replayed step N is screenshotted as checkpoint "step-N-…"; the final screen as "final"
   const visualByStep = useMemo(() => {
@@ -646,13 +701,45 @@ export function TestJourney({
         <FlowStrip t={t} result={result} />
 
         <div className="grid items-start gap-6 xl:grid-cols-[minmax(0,1fr)_400px]">
-          <Story
-            t={t}
-            result={result}
-            runId={runId}
-            visualByStep={visualByStep}
-            onCompare={(cp) => setCompare(cp)}
-          />
+          <div className="flex min-w-0 flex-col gap-4">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <h2 className="text-[18px] font-semibold">
+                {actor === 'agent'
+                  ? 'What the AI agent did'
+                  : actor === 'playwright'
+                    ? 'What Playwright did'
+                    : actor === 'judge'
+                      ? 'How the judge decided'
+                      : 'What happened, step by step'}
+              </h2>
+              <ActorFilter value={actor} onChange={setActor} result={result} />
+            </div>
+            {actor !== 'all' && (
+              <ActorInput actor={actor} result={result} report={report} options={info.options} />
+            )}
+            {actor !== 'all' && info.options?.suiteName && (
+              <p className="text-[13px] text-muted">
+                Change what it gets in{' '}
+                <a
+                  className="font-medium text-user hover:underline"
+                  href={`#/suites/${info.options.suiteName}`}
+                >
+                  the suite
+                </a>
+                .
+              </p>
+            )}
+            {actor !== 'judge' && (
+              <Story
+                t={t}
+                result={result}
+                runId={runId}
+                visualByStep={visualByStep}
+                onCompare={(cp) => setCompare(cp)}
+                only={actor === 'all' ? undefined : actor}
+              />
+            )}
+          </div>
           <aside
             aria-label="Verdict and evidence"
             className="pin-xl flex min-w-0 flex-col gap-3.5 xl:pr-1"

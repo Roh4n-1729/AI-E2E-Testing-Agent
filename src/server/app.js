@@ -14,6 +14,7 @@ import { FileRecordStore } from '../storage/recordStore.js';
 import { suiteFromRun } from '../planner/suitePlanner.js';
 import { testFingerprint } from '../storage/recordStore.js';
 import { AuthSchema } from '../auth/login.js';
+import { slugify } from '../util/misc.js';
 
 /** Request body for POST /api/runs. Bounds keep a stray click from launching dozens of browsers. */
 const StartBody = z.object({
@@ -24,6 +25,7 @@ const StartBody = z.object({
   expectText: z.array(z.string().max(500)).max(10).optional(),
   model: z.string().max(100).optional(),
   preset: z.enum(['economy', 'balanced', 'best']).optional(),
+  agentEngine: z.enum(['stagehand', 'loop']).optional(),
   headed: z.boolean().optional(),
   concurrency: z.number().int().min(1).max(4).optional(),
   maxTests: z.number().int().min(1).max(8).optional(),
@@ -37,6 +39,7 @@ const StartBody = z.object({
   quality: z.enum(['off', 'warn', 'fail']).optional(),
   visual: z.enum(['off', 'warn', 'fail']).optional(),
   heal: z.boolean().optional(),
+  explain: z.boolean().optional(),
   /** check the theme against another product's themes */
   themeFrom: z.url({ protocol: /^https?$/ }).optional(),
   /** log in first; credentials come from the server's .env, never from the request */
@@ -76,7 +79,8 @@ export async function createServer({ outDir, uiDir, manager, logger = false }) {
       judgeModel: config.judgeModel ?? config.model,
       preset: config.preset ?? null,
       presets: MODEL_PRESETS,
-      agentWarning: agentModelWarning(config.model) ?? null,
+      agentWarning: agentModelWarning(config.model, config.agentEngine) ?? null,
+      agentEngine: config.agentEngine,
       keyVar: need.keyVar ?? null,
       keyPresent: need.keyPresent,
       chrome,
@@ -154,9 +158,20 @@ export async function createServer({ outDir, uiDir, manager, logger = false }) {
       return reply
         .code(400)
         .send({ error: 'Use lowercase letters, digits and dashes for the name' });
+    const before = await suites.get(name).catch(() => null);
     const res = await suites.save(name, req.body);
     if (!res.ok) return reply.code(400).send({ error: res.issues.join('; '), issues: res.issues });
-    return { name, suite: res.suite };
+    // Saved recordings win over a suite's own steps (they carry heals), so steps edited here would
+    // never replay: drop the saved recording of every test whose steps changed.
+    const cleared = [];
+    for (const id of changedSteps(before, res.suite)) {
+      const file = recFile(id);
+      if (file && existsSync(file)) {
+        await rm(file);
+        cleared.push(id);
+      }
+    }
+    return { name, suite: res.suite, cleared };
   });
   app.delete('/api/suites/:name', async (req, reply) => {
     const name = suiteName(req);
@@ -310,4 +325,17 @@ export async function createServer({ outDir, uiDir, manager, logger = false }) {
     );
   }
   return { app, runs };
+}
+
+/**
+ * Test ids whose hand-written steps differ between two versions of a suite.
+ * @param {{ tests: { id?: string, title: string, steps?: unknown[] }[] } | null} before
+ * @param {{ tests: { id?: string, title: string, steps?: unknown[] }[] }} after
+ */
+export function changedSteps(before, after) {
+  const key = (/** @type {{ id?: string, title: string }} */ t) => t.id ?? slugify(t.title);
+  const old = new Map((before?.tests ?? []).map((t) => [key(t), JSON.stringify(t.steps ?? [])]));
+  return after.tests
+    .filter((t) => old.has(key(t)) && old.get(key(t)) !== JSON.stringify(t.steps ?? []))
+    .map(key);
 }

@@ -13,7 +13,9 @@ import { sha256 } from '../util/misc.js';
  * @param {TestCase} test
  */
 export function testFingerprint(test) {
-  return sha256(JSON.stringify([test.goal, test.startUrl, test.expectations]));
+  // labels are words for people: rewording one must not throw a recording away
+  const checks = test.expectations.map(({ label: _label, ...e }) => e);
+  return sha256(JSON.stringify([test.goal, test.startUrl, checks]));
 }
 
 /**

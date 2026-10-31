@@ -148,7 +148,7 @@ export function buildPipeline(deps) {
         summary: { ...summarize(results), overhead: deps.overheadUsage?.() },
         results,
         models: {
-          agent: config.model,
+          agent: config.agentEngine === 'loop' ? `${config.model} (own loop)` : config.model,
           planner: config.plannerModel ?? config.model,
           judge: config.judgeModel ?? config.model,
           ...(config.preset ? { preset: config.preset } : {}),

@@ -19,7 +19,8 @@ export function parse(hash) {
   if (parts[0] === 'recordings') return { name: 'recordings', id: parts[1] };
   if (parts[0] === 'hints') return { name: 'hints' };
   if (parts[0] === 'suites') return { name: 'suites', id: parts[1] };
-  return { name: 'new' };
+  // the showcase opens on the recorded runs: nothing can be started there
+  return { name: import.meta.env.MODE === 'demo' && !parts[0] ? 'runs' : 'new' };
 }
 
 export function useHashRoute() {

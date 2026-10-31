@@ -28,6 +28,7 @@ import { errorMessage } from '../util/misc.js';
  * @property {import('../visual/baselines.js').BaselineStore} [baselines]  approved screenshots
  * @property {import('../auth/login.js').StorageState} [storageState]  logged-in session every test starts with
  * @property {import('./types.js').ThemeReference} [themeReference]  check the theme against another product
+ * @property {import('../judge/failureExplainer.js').FailureExplainer} [explainer]  the AI's reading of failures
  */
 
 /** Runs one test in its own isolated browser: execute -> judge -> (record) -> close. */
@@ -44,6 +45,11 @@ export class TestRunner {
     const started = Date.now();
     events.emit('test.started', { testId: test.id, title: test.title, goal: test.goal });
     const result = await this.#runWithFallback(test, started, fallbackExecutor, logger);
+    // After the verdict, never before: the explanation reads the evidence, it does not decide anything.
+    if (result.verdict.status !== 'pass' && this.deps.explainer && !this.deps.signal?.aborted) {
+      const explanation = await this.deps.explainer.explain(result);
+      if (explanation) result.explanation = explanation;
+    }
     events.emit('test.finished', {
       testId: test.id,
       title: test.title,
@@ -54,6 +60,7 @@ export class TestRunner {
       claimMismatch: result.claimMismatch,
       heals: result.heals,
       llmUsage: result.llmUsage,
+      explanation: result.explanation,
     });
     return result;
   }
@@ -200,6 +207,7 @@ export class TestRunner {
         durationMs: Date.now() - started,
         llmUsage: outcome.llmUsage,
         trace: outcome.trace,
+        inputs: testInputs(outcome),
       };
     } catch (e) {
       // Infrastructure failure (browser did not launch, judge crashed): report as an error.
@@ -229,5 +237,34 @@ function errorResult(test, message, durationMs) {
     claimMismatch: false,
     heals: [],
     durationMs,
+  };
+}
+
+/**
+ * What the AI agent and Playwright were given, and who wrote Playwright's steps: the suite, an earlier run's
+ * recording, the agent in this run (its actions, saved as steps), or the harness alone (smoke check).
+ * @param {import('./types.js').ExecutionOutcome} outcome
+ * @returns {import('./types.js').TestInputs}
+ */
+export function testInputs(outcome) {
+  const replayed = outcome.mode === 'replay' || outcome.mode === 'healed';
+  /** @type {import('./types.js').TestInputs['playwright']['source']} */
+  const source =
+    replayed && outcome.recordedAt === 'suite'
+      ? 'suite'
+      : replayed
+        ? 'recording'
+        : outcome.mode === 'agent'
+          ? 'agent'
+          : 'harness';
+  return {
+    ...(outcome.agentInput ? { agent: outcome.agentInput } : {}),
+    playwright: {
+      steps: outcome.steps,
+      source,
+      ...(replayed && outcome.recordedAt && outcome.recordedAt !== 'suite'
+        ? { recordedAt: outcome.recordedAt }
+        : {}),
+    },
   };
 }

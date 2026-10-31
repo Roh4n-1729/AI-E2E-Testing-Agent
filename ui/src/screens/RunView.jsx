@@ -10,7 +10,7 @@ import {
 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { toast } from 'sonner';
-import { api, fileUrl } from '../api.js';
+import { DEMO, api, fileUrl } from '../api.js';
 import {
   CrawledPages,
   LivePanel,
@@ -199,7 +199,8 @@ function Live({ runId, onDone, fromSuite }) {
     <div className="flex flex-col gap-5">
       <div className="flex flex-wrap items-center gap-3">
         <span className="inline-flex items-center gap-1.5 rounded-full bg-ai/10 px-2.5 py-1 text-[13px] font-semibold text-ai">
-          <span className="pulse size-2 rounded-full bg-ai" aria-hidden /> AI is testing
+          <span className="pulse size-2 rounded-full bg-ai" aria-hidden />{' '}
+          {fromSuite ? 'Testing' : 'AI is testing'}
         </span>
         {state.config && (
           <span className="text-[13px] text-muted">
@@ -410,7 +411,7 @@ export function RunView({ id, test, visual }) {
         testId={test}
         focusVisual={visual}
         review={info.review ?? {}}
-        onReview={onReview}
+        onReview={DEMO ? undefined : onReview}
         runTitle={runTitle}
       />
     );
@@ -511,7 +512,7 @@ export function RunView({ id, test, visual }) {
                   <FileText size={14} aria-hidden /> Report{' '}
                   <ExternalLink size={12} className="text-faint" aria-hidden />
                 </LinkButton>
-                {!info.options?.suiteName && (
+                {!info.options?.suiteName && !DEMO && (
                   <Button
                     variant="secondary"
                     onClick={async () => {
@@ -529,7 +530,7 @@ export function RunView({ id, test, visual }) {
                 )}
               </>
             )}
-            {info.options && (
+            {info.options && !DEMO && (
               <Button variant="accent" onClick={rerun}>
                 <RotateCcw size={14} aria-hidden /> Run again
               </Button>

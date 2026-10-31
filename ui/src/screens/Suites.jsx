@@ -15,6 +15,7 @@ import {
 import { useEffect, useMemo, useState } from 'react';
 import { toast } from 'sonner';
 import { api } from '../api.js';
+import { ACTORS } from '../components/WhoDidWhat.jsx';
 import { Badge, Button, EmptyState, Select, Skeleton } from '../components/ui.jsx';
 import { go } from '../hooks/useHashRoute.js';
 import { fmtWhen } from '../lib/format.js';
@@ -189,7 +190,12 @@ function Editor({ name }) {
       const res = await api.saveSuite(target, clean);
       setIssues([]);
       setSaved(JSON.stringify(tidy(res.suite)));
-      toast.success('Suite saved');
+      const n = res.cleared?.length ?? 0;
+      toast.success(
+        n
+          ? `Suite saved. Your steps replace the saved recording of ${n} ${n === 1 ? 'test' : 'tests'}.`
+          : 'Suite saved',
+      );
       if (isNew) go(`#/suites/${target}`);
       return target;
     } catch (e) {
@@ -421,7 +427,11 @@ function TestCard({ index, test, count, onChange, onMove, onDuplicate, onRemove 
           value={test.title}
           onChange={(e) => onChange({ title: e.target.value })}
         />
-        {test.steps?.length > 0 && <Badge tone="ok">{test.steps.length} recorded steps</Badge>}
+        {test.steps?.length > 0 && (
+          <Badge tone="ok">
+            {test.steps.length} {test.steps.length === 1 ? 'step' : 'steps'} for Playwright
+          </Badge>
+        )}
         <IconButton
           label="Move up"
           disabled={index === 0}
@@ -437,7 +447,11 @@ function TestCard({ index, test, count, onChange, onMove, onDuplicate, onRemove 
         <IconButton label="Duplicate" onClick={onDuplicate} icon={Copy} />
         <IconButton label="Remove test" disabled={count === 1} onClick={onRemove} icon={Trash2} />
       </div>
-      <div className="grid gap-4 p-4 md:grid-cols-[200px_minmax(0,1fr)]">
+      <ActorHeading actor="agent">
+        Reads the goal when there are no steps for Playwright, or when a step breaks and the test
+        needs repairing.
+      </ActorHeading>
+      <div className="grid gap-4 px-4 pb-4 md:grid-cols-[200px_minmax(0,1fr)]">
         <label className="block text-[12px] font-medium text-muted">
           Start page
           <input
@@ -460,13 +474,22 @@ function TestCard({ index, test, count, onChange, onMove, onDuplicate, onRemove 
           />
         </label>
       </div>
+      <ActorHeading actor="playwright">
+        Runs these steps in order with no AI. Leave it empty and the AI agent does the test, then
+        saves its actions here when the judge passes it.
+      </ActorHeading>
+      <div className="px-4 pb-4">
+        <StepsEditor
+          steps={test.steps ?? []}
+          hasGoal={!!test.goal?.trim()}
+          onChange={(steps) => onChange({ steps: steps.length ? steps : undefined })}
+        />
+      </div>
+      <ActorHeading actor="judge">
+        Decides pass or fail with these checks, from what Playwright saw. No console errors and no
+        failed requests are always checked.
+      </ActorHeading>
       <div className="space-y-2 px-4 pb-4">
-        <div className="text-[12px] font-medium text-muted">
-          Checks that prove it worked{' '}
-          <span className="font-normal text-faint">
-            (no console errors and no failed requests are always checked)
-          </span>
-        </div>
         {exps.map((e, k) => (
           <ExpectationRow
             key={k}
@@ -485,31 +508,174 @@ function TestCard({ index, test, count, onChange, onMove, onDuplicate, onRemove 
         >
           + Add a check
         </button>
-        {test.steps?.length > 0 && (
-          <details className="rounded-lg bg-subtle px-3 py-2 text-[12px]">
-            <summary className="cursor-pointer text-muted">
-              Recorded steps: replayed with no AI. If you change what the test does, clear them so
-              the agent records it again.
-            </summary>
-            <ol className="mt-2 list-decimal space-y-0.5 pl-5">
-              {test.steps.map((s, k) => (
-                <li key={k}>
-                  {s.description}{' '}
-                  {s.selector && <span className="font-mono text-faint">{s.selector}</span>}
-                </li>
-              ))}
-            </ol>
-            <button
-              type="button"
-              onClick={() => onChange({ steps: undefined })}
-              className="mt-2 font-medium text-bad hover:underline"
-            >
-              Clear recorded steps
-            </button>
-          </details>
-        )}
       </div>
     </li>
+  );
+}
+
+const ACTOR_HEAD = {
+  agent: { ...ACTORS.agent, title: 'For the AI agent' },
+  playwright: { ...ACTORS.playwright, title: 'For Playwright' },
+  judge: { ...ACTORS.judge, title: 'For the judge' },
+};
+
+/** Each part of the tool gets its own input: the heading says whose it is and what they do with it. */
+function ActorHeading({ actor, children }) {
+  const a = ACTOR_HEAD[actor];
+  return (
+    <div className="flex items-start gap-2.5 border-t border-line px-4 pb-2 pt-3.5 first:border-t-0">
+      <a.Icon size={16} className={`mt-0.5 shrink-0 ${a.tone}`} aria-hidden />
+      <div>
+        <h3 className="text-[13px] font-semibold">{a.title}</h3>
+        <p className="text-[12px] text-muted">{children}</p>
+      </div>
+    </div>
+  );
+}
+
+/** What a person picks; how it is saved as a recorded step. */
+const STEP_ACTIONS = [
+  { value: 'click', label: 'Click', target: 'Element', value_: null },
+  { value: 'fill', label: 'Type into', target: 'Field', value_: 'Text' },
+  {
+    value: 'press',
+    label: 'Press a key in',
+    target: 'Element (or body)',
+    value_: 'Key, e.g. Enter',
+  },
+  { value: 'selectOption', label: 'Choose in a dropdown', target: 'Dropdown', value_: 'Option' },
+  { value: 'hover', label: 'Hover over', target: 'Element', value_: null },
+  { value: 'navigate', label: 'Open a page', target: 'URL or path', value_: null },
+  { value: 'wait', label: 'Wait', target: null, value_: 'Milliseconds' },
+  { value: 'back', label: 'Go back', target: null, value_: null },
+];
+const actionOfSaved = (s) => (s.kind === 'act' ? (s.method ?? 'click') : s.kind);
+const actionOf = (s) => (s.kind === 'act' ? (s.method ?? 'click') : s.kind);
+
+/** A step in the editor's terms -> the recorded step Playwright replays. */
+function toStep(action, target, value, description) {
+  const label = STEP_ACTIONS.find((a) => a.value === action)?.label ?? action;
+  const desc =
+    description?.trim() || [label, target, value && `"${value}"`].filter(Boolean).join(' ');
+  if (action === 'navigate') return { kind: 'navigate', description: desc, url: target ?? '' };
+  if (action === 'wait')
+    return { kind: 'wait', description: desc, arguments: [String(value || 1000)] };
+  if (action === 'back') return { kind: 'back', description: desc };
+  return {
+    kind: 'act',
+    description: desc,
+    selector: target ?? '',
+    method: action,
+    arguments: value ? [value] : [],
+  };
+}
+
+/** Steps for Playwright: recorded by the agent, or written by hand. */
+function StepsEditor({ steps, hasGoal, onChange }) {
+  const set = (k, patch) => {
+    const cur = steps[k];
+    const action = patch.action ?? actionOf(cur);
+    const target = patch.target ?? (cur.kind === 'navigate' ? cur.url : cur.selector) ?? '';
+    const value =
+      patch.value ?? (cur.kind === 'wait' ? cur.arguments?.[0] : cur.arguments?.[0]) ?? '';
+    const description = patch.description ?? cur.description;
+    // a hand-edited step keeps its own selector: drop the recorder's fallbacks
+    onChange(steps.map((s, j) => (j === k ? toStep(action, target, value, description) : s)));
+  };
+  return (
+    <div className="space-y-2">
+      {steps.length === 0 && (
+        <p className="text-[12px] text-faint">
+          No steps: the AI agent will do this test and record them.
+        </p>
+      )}
+      {steps.length > 0 && !hasGoal && (
+        <p className="text-[12px] text-warn">
+          Add a goal for the AI agent too: steps replay only for tests with a goal, which is also
+          what the agent uses if a step breaks.
+        </p>
+      )}
+      <ol className="space-y-2">
+        {steps.map((s, k) => {
+          const action = actionOf(s);
+          const def = STEP_ACTIONS.find((a) => a.value === action) ?? STEP_ACTIONS[0];
+          const target = s.kind === 'navigate' ? s.url : s.selector;
+          return (
+            <li key={k} className="flex flex-wrap items-center gap-2">
+              <span className="w-5 shrink-0 text-right text-[12px] text-faint">{k + 1}</span>
+              <div className="w-[190px] shrink-0">
+                <Select
+                  value={action}
+                  onValueChange={(v) => set(k, { action: v })}
+                  options={STEP_ACTIONS.map((a) => ({ value: a.value, label: a.label }))}
+                  label={`Step ${k + 1} action`}
+                />
+              </div>
+              {def.target && (
+                <input
+                  aria-label={`Step ${k + 1}: ${def.target}`}
+                  className={`${inputCls} h-9 min-w-[200px] flex-[2] font-mono`}
+                  placeholder={
+                    action === 'navigate' ? '/checkout' : '[data-test="checkout"] or text=Checkout'
+                  }
+                  value={target ?? ''}
+                  onChange={(e) => set(k, { target: e.target.value })}
+                />
+              )}
+              {def.value_ && (
+                <input
+                  aria-label={`Step ${k + 1}: ${def.value_}`}
+                  className={`${inputCls} h-9 min-w-[110px] flex-1`}
+                  placeholder={def.value_}
+                  value={s.arguments?.[0] ?? ''}
+                  onChange={(e) => set(k, { value: e.target.value })}
+                />
+              )}
+              <input
+                aria-label={`Step ${k + 1}: in plain words`}
+                className={`${inputCls} h-9 min-w-[180px] flex-[2]`}
+                placeholder="In plain words, e.g. Open the cart"
+                value={s.description ?? ''}
+                onChange={(e) => set(k, { description: e.target.value })}
+              />
+              <IconButton
+                label="Move step up"
+                disabled={k === 0}
+                onClick={() => {
+                  const n = [...steps];
+                  [n[k - 1], n[k]] = [n[k], n[k - 1]];
+                  onChange(n);
+                }}
+                icon={ArrowUp}
+              />
+              <IconButton
+                label="Remove step"
+                onClick={() => onChange(steps.filter((_, j) => j !== k))}
+                icon={X}
+              />
+            </li>
+          );
+        })}
+      </ol>
+      <div className="flex flex-wrap gap-4">
+        <button
+          type="button"
+          onClick={() => onChange([...steps, toStep('click', '', '', '')])}
+          className="text-[13px] font-medium text-user hover:underline"
+        >
+          + Add a step
+        </button>
+        {steps.length > 0 && (
+          <button
+            type="button"
+            onClick={() => onChange([])}
+            className="text-[13px] font-medium text-bad hover:underline"
+          >
+            Clear all steps
+          </button>
+        )}
+      </div>
+    </div>
   );
 }
 
@@ -675,7 +841,17 @@ function tidy(suite) {
       goal: t.goal ?? '',
       startUrl: t.startUrl || '/',
       expectations: (t.expectations ?? []).map(keep),
-      ...(t.steps?.length ? { steps: t.steps } : {}),
+      // every step needs words for people; a hand-written one may still be empty
+      ...(t.steps?.length
+        ? {
+            steps: t.steps.map((st) => ({
+              ...st,
+              description:
+                st.description?.trim() ||
+                `${actionOfSaved(st)} ${st.selector ?? st.url ?? ''}`.trim(),
+            })),
+          }
+        : {}),
       ...(t.maxSteps ? { maxSteps: t.maxSteps } : {}),
       tags: t.tags ?? [],
     })),

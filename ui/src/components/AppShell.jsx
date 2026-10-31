@@ -9,6 +9,7 @@ import {
   Play,
   Sun,
 } from 'lucide-react';
+import { DEMO } from '../api.js';
 import { useTheme } from '../lib/theme.js';
 import { Tooltip } from './ui.jsx';
 
@@ -89,7 +90,7 @@ export function AppShell({ route, health, children }) {
           {NAV.map((n) => link(n, false))}
         </nav>
         <div className="mt-auto space-y-3 px-1">
-          {health && (
+          {health && !DEMO && (
             <div className="space-y-1.5 rounded-xl border border-line bg-panel px-3 py-2.5 text-[12px] text-muted">
               <div className="flex items-center justify-between gap-2">
                 <span className="font-semibold text-text">
@@ -113,11 +114,11 @@ export function AppShell({ route, health, children }) {
               </div>
               {(health.plannerModel === health.judgeModel
                 ? [
-                    ['agent', health.model],
+                    [health.agentEngine === 'loop' ? 'agent (own loop)' : 'agent', health.model],
                     ['planner and judge', health.plannerModel],
                   ]
                 : [
-                    ['agent', health.model],
+                    [health.agentEngine === 'loop' ? 'agent (own loop)' : 'agent', health.model],
                     ['planner', health.plannerModel],
                     ['judge', health.judgeModel],
                   ]
@@ -137,6 +138,24 @@ export function AppShell({ route, health, children }) {
         <header className="sticky top-0 z-20 flex items-center gap-2 overflow-x-auto border-b border-line bg-bg/90 px-4 py-2 backdrop-blur md:hidden">
           {NAV.map((n) => link(n, true))}
         </header>
+        {DEMO && (
+          <div className="border-b border-user/20 bg-user/[0.07] px-4 py-2 text-center text-[13px] md:px-8">
+            <span className="font-semibold">Read-only showcase</span>
+            <span className="text-muted">
+              {' '}
+              · real runs recorded with the tool; every screen, step and screenshot is real. The
+              tool itself runs on your machine:{' '}
+            </span>
+            <a
+              className="font-medium text-user hover:underline"
+              href="https://github.com/Roh4n-1729/AI-E2E-Testing-Agent"
+              target="_blank"
+              rel="noreferrer"
+            >
+              GitHub
+            </a>
+          </div>
+        )}
         <main className="mx-auto w-full max-w-[1440px] flex-1 px-4 py-6 md:px-8 md:py-8">
           {children}
         </main>

@@ -1,4 +1,4 @@
-import { AlertTriangle, CheckCircle2, ChevronRight, Eye, XCircle } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, ChevronRight, Eye, Sparkles, XCircle } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { fileUrl } from '../api.js';
 import { fmtDuration, fmtTokens } from '../lib/format.js';
@@ -36,6 +36,29 @@ const TONE = {
   bad: { cls: 'bg-bad-bg text-bad', Icon: XCircle },
   warn: { cls: 'bg-warn-bg text-warn', Icon: AlertTriangle },
 };
+
+export const AI_CATEGORY = {
+  'app-bug': { label: 'Looks like an app bug', cls: 'text-bad' },
+  'test-problem': { label: 'Looks like a problem with the test', cls: 'text-warn' },
+  environment: { label: 'Looks like the environment', cls: 'text-warn' },
+  unclear: { label: 'Cause unclear', cls: 'text-muted' },
+};
+
+/** One line: the AI's reading of a failure, clearly marked as such. */
+export function AiLine({ ai }) {
+  const c = AI_CATEGORY[ai.category] ?? AI_CATEGORY.unclear;
+  return (
+    <p className="mt-1 flex gap-2 rounded-lg bg-ai/[0.07] px-3 py-2 text-[13px] leading-relaxed">
+      <Sparkles size={14} className="mt-0.5 shrink-0 text-ai" aria-hidden />
+      <span>
+        <span className="font-semibold text-ai">AI&apos;s reading</span>
+        <span className={`font-medium ${c.cls}`}> · {c.label}</span>
+        {ai.confidence === 'low' && <span className="text-muted"> (low confidence)</span>}:{' '}
+        {ai.cause}
+      </span>
+    </p>
+  );
+}
 
 export const testHref = (runId, testId) => `#/runs/${runId}/tests/${encodeURIComponent(testId)}`;
 
@@ -186,6 +209,7 @@ export function FindingCard({ f, report, runId }) {
         </div>
         <h3 className="text-[16px] font-semibold leading-snug">{f.title}</h3>
         <p className="text-[14px] leading-relaxed text-text/80">{f.detail}</p>
+        {f.ai && <AiLine ai={f.ai} />}
         <SeenIn ids={f.testIds} report={report} runId={runId} />
         {f.category === 'visual' && (
           <div className="mt-1">

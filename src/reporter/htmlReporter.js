@@ -61,6 +61,8 @@ dialog::backdrop{background:rgb(8 11 18 / .9)}
 .findings{display:grid;gap:10px;margin:8px 0 20px}.finding{display:flex;gap:16px;flex-wrap:wrap;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px}
 .finding .t{width:200px;aspect-ratio:16/10;flex:none}.finding h4{margin:4px 0 2px;font-size:15px}.finding p{margin:0;color:var(--muted)}
 .sev{font-size:11px;font-weight:600;border-radius:6px;padding:2px 7px}.sev-high{background:var(--badbg);color:var(--bad)}.sev-medium{background:var(--warnbg);color:var(--warn)}.sev-review{background:color-mix(in srgb,var(--user) 12%,transparent);color:var(--user)}.sev-low{background:var(--subtle);color:var(--muted)}
+
+.ai{margin:8px 0 0;border-radius:8px;padding:8px 10px;background:color-mix(in srgb,var(--ai) 8%,transparent);font-size:13px}.ai b{color:var(--ai)}
 .outcome{flex-basis:100%;margin-left:18px;color:var(--muted);font-size:13px}
 .flow{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:12px 0 0;font-size:12px}.flow span{border:1px solid var(--line);border-radius:8px;padding:3px 8px}.flow .ok{border-color:color-mix(in srgb,var(--ok) 35%,transparent);background:var(--okbg)}.flow .stuck{border:2px solid var(--bad);background:var(--badbg);font-weight:600}.flow .unreached{border-style:dashed;color:var(--faint)}
 @media print{.toggle,dialog{display:none}.test{break-inside:avoid}}
@@ -338,6 +340,7 @@ ${r.test.goal ? `<p class="muted" style="margin:12px 0 0">${h(r.test.goal)}</p>`
 <div class="verdict v-${v.status}"><b>${v.status === 'pass' ? 'Passed on independent evidence' : 'Why it did not pass'}</b>${v.status !== 'pass' ? `<div style="margin-top:4px">${h(v.reason)}</div>` : ''}
 <ul class="checks">${v.checks.map(checkRow).join('') || '<li class="muted">no checks</li>'}</ul>
 ${v.warnings.length ? `<div class="small warn" style="margin-top:8px">${v.warnings.map((w) => h(w)).join('<br>')}</div>` : ''}</div>
+${r.explanation ? `<div class="ai"><b>AI's reading</b> · ${h(AI_CAT[r.explanation.category] ?? '')} (${h(r.explanation.confidence)} confidence): ${h(r.explanation.cause)}${r.explanation.suggestion ? `<br><span class="muted">Next: ${h(r.explanation.suggestion)}</span>` : ''}<div class="small faint">Written by the judge model after the verdict; never changes the result.</div></div>` : ''}
 </div>${final ? `<div style="margin-top:14px">${thumb(g, final.path, 'Final state (judged)', 'width:100%;aspect-ratio:16/10')}<div class="small muted" style="margin-top:6px">Final state the judge looked at</div></div>` : ''}</div>
 <h3>Steps</h3>${steps}
 ${
@@ -384,6 +387,12 @@ ${net ? `<h3>Failed requests</h3><ul class="small mono">${net}</ul>` : ''}
 </div></details>`;
 }
 
+const AI_CAT = /** @type {Record<string, string>} */ ({
+  'app-bug': 'looks like an app bug',
+  'test-problem': 'looks like a problem with the test',
+  environment: 'looks like the environment',
+  unclear: 'cause unclear',
+});
 const SEV = { high: 'High', medium: 'Medium', review: 'Review', low: 'Low' };
 const CAT = /** @type {Record<string, string>} */ ({
   functional: 'Functional',
@@ -407,7 +416,7 @@ function renderVerdict(report) {
         f,
       ) => `<article class="finding">${f.image ? `<span class="t">${thumb('findings', f.image, f.title, 'width:200px;aspect-ratio:16/10')}</span>` : ''}
 <div style="flex:1;min-width:240px"><div class="small"><span class="sev sev-${f.severity}">${SEV[f.severity]}</span> <span class="muted">${h(CAT[f.category] ?? f.category)}${f.area ? ` · ${h(f.area)}` : ''}</span></div>
-<h4>${h(f.title)}</h4><p>${h(f.detail)}</p><div class="small muted" style="margin-top:6px">Seen in ${f.testIds.map((id) => `<a href="#t-${h(id)}">${h(titles[id] ?? id)}</a>`).join(', ')}</div></div></article>`,
+<h4>${h(f.title)}</h4><p>${h(f.detail)}</p>${f.ai ? `<p class="ai"><b>AI's reading</b> · ${h(AI_CAT[f.ai.category] ?? '')}: ${h(f.ai.cause)}</p>` : ''}<div class="small muted" style="margin-top:6px">Seen in ${f.testIds.map((id) => `<a href="#t-${h(id)}">${h(titles[id] ?? id)}</a>`).join(', ')}</div></div></article>`,
     )
     .join('');
   return `<section class="vcard"><span class="pill ${tone}">${h(ins.headline)}</span> <span class="small muted">Judged from the page, the network and screenshots, never from the AI's own report</span>

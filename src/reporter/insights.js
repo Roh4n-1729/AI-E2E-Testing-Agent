@@ -23,6 +23,8 @@ import { clip, explainError } from '../util/explain.js';
  * @property {string} detail
  * @property {string[]} testIds
  * @property {string} [image]  screenshot that shows it, relative to the run dir
+ * @property {Pick<import('../core/types.js').Explanation, 'cause' | 'category' | 'confidence'>} [ai]
+ *   the AI's reading of the first failed test it covers, when one was written (data from the report, no call here)
  * @typedef {{ expected: string, actual: string, kind: Expectation['kind'] }} Reason
  * @typedef {object} FlowStep
  * @property {number} n  1-based, over the steps shown
@@ -312,6 +314,24 @@ function howItRan(
   }
 }
 
+/**
+ * The flow did what it should (every outcome check held, with real evidence) and failed only on the app's own
+ * errors: console errors or failed requests. Worth telling apart from a broken flow.
+ * @param {TestResult} r
+ */
+function reachedButErrors(r) {
+  if (r.verdict.status !== 'fail') return false;
+  const hard = r.verdict.checks.filter((c) => !c.advisory);
+  const failed = hard.filter((c) => !c.passed);
+  const outcomes = hard.filter((c) => !GUARDS.has(c.expectation.kind));
+  return (
+    failed.length > 0 &&
+    failed.every((c) => GUARDS.has(c.expectation.kind)) &&
+    outcomes.some((c) => c.passed && !c.vacuous) &&
+    !(r.trace ?? []).some((t) => !t.ok && !t.observe)
+  );
+}
+
 /** @param {TestResult} r @returns {TestInsight} */
 export function testInsight(r) {
   const { verdict } = r;
@@ -362,6 +382,7 @@ export function testInsight(r) {
           : '';
     outcome = `Stuck on “${where}”${what ? `: ${what}` : ''}`;
   } else if (inconclusive) outcome = 'Nothing showed the goal was reached';
+  else if (reachedButErrors(r)) outcome = `Goal reached, but ${lower(reasons[0].actual)}`;
   else if (failedOutcome.length) {
     const first = checkLabel(failedOutcome[0].expectation);
     outcome = `Not as expected: ${lower(clip(first, 70))}${failedOutcome.length > 1 ? ` (+${failedOutcome.length - 1} more)` : ''}`;
@@ -514,8 +535,13 @@ export function runInsights(report) {
     });
 
   // 4. The AI said it succeeded; the evidence disagreed. Worth seeing: it is why the judge exists.
+  // only where the goal itself was not reached: an agent that reached it on an app that logs errors was right
   const lied = results.filter(
-    (r) => r.claimMismatch && r.agentClaim?.success && r.verdict.status !== 'pass',
+    (r) =>
+      r.claimMismatch &&
+      r.agentClaim?.success &&
+      r.verdict.status !== 'pass' &&
+      !reachedButErrors(r),
   );
   if (lied.length)
     add({
@@ -597,6 +623,13 @@ export function runInsights(report) {
       testIds: healed.map((r) => r.test.id),
     });
 
+  // attach the AI's reading (already in the report) to the failures it explains
+  const byId = new Map(results.map((r) => [r.test.id, r]));
+  for (const f of findings) {
+    if (!['functional', 'errors'].includes(f.category)) continue;
+    const e = f.testIds.map((id) => byId.get(id)?.explanation).find(Boolean);
+    if (e) f.ai = { cause: e.cause, category: e.category, confidence: e.confidence };
+  }
   findings.sort((a, b) => SEVERITY_ORDER.indexOf(a.severity) - SEVERITY_ORDER.indexOf(b.severity));
 
   const s = report.summary;
@@ -614,15 +647,22 @@ export function runInsights(report) {
     tone = 'warn';
   } else if (problems) {
     headline = `${plural(problems, 'problem')} found`;
-    sentence =
-      `${s.passed} of ${plural(s.total, 'flow')} work${s.total === 1 && s.passed === 1 ? 's' : ''}${who}. ${
-        failing.length
-          ? `Failing: ${failing
-              .slice(0, 3)
-              .map((t) => `“${t}”`)
-              .join(', ')}${failing.length > 3 ? `, and ${failing.length - 3} more` : ''}.`
-          : ''
-      }`.trim();
+    const errorsOnly = results.filter(reachedButErrors).map((r) => r.test.title);
+    const broken = failing.filter((t) => !errorsOnly.includes(t));
+    sentence = [
+      `${s.passed} of ${plural(s.total, 'flow')} work${s.total === 1 && s.passed === 1 ? 's' : ''}${who}.`,
+      errorsOnly.length
+        ? `${errorsOnly.length === 1 ? '1 more reaches its goal but fails' : `${errorsOnly.length} more reach their goal but fail`} because the app logs errors or requests fail.`
+        : '',
+      broken.length
+        ? `Failing: ${broken
+            .slice(0, 3)
+            .map((t) => `“${t}”`)
+            .join(', ')}${broken.length > 3 ? `, and ${broken.length - 3} more` : ''}.`
+        : '',
+    ]
+      .filter(Boolean)
+      .join(' ');
     tone = 'bad';
   } else {
     headline = s.total === 1 ? 'The flow works' : `All ${s.total} flows work`;

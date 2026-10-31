@@ -10,6 +10,7 @@ export default [
       '.aie2e',
       'docs',
       'ui/dist',
+      'ui/dist-demo',
       'examples/todomvc/app',
       'examples/saucedemo/app',
     ],

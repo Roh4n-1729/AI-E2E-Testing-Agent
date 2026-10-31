@@ -6,6 +6,130 @@ teaches us something: it is the honest history of how the judge got stricter.
 
 ---
 
+## 2026-10-31 (Saturday, 09:00): who did what, steps by hand, a landing page that explains the run
+
+- **Each test shows what each part was given.** A filter on the journey (All, AI agent, Playwright, Judge) shows
+  only that part's steps and, above them, its input: the exact instruction the agent got and its model and engine;
+  the steps Playwright replayed, with who wrote them (the agent on an earlier run, a person in the suite, or this
+  run's agent); the checks the judge used, split into the test's own and the ones the tool adds to every test.
+  Stored on each result as `inputs` (D33).
+- **The suite editor is arranged the same way:** "For the AI agent" (start page, goal), "For Playwright" (steps
+  you can add, edit, reorder and remove by hand: click, type, press, choose, hover, open, wait, back), and "For
+  the judge" (checks). Saving changed steps drops that test's saved recording, which would otherwise win over
+  them (`changedSteps`, tested).
+- **New run page redesigned** with the taste-skill rules: two columns; the mode is a list, not three equal
+  cards; a live "What happens when you start" sequence (Playwright → AI planner → AI agent → judge, with each
+  model and the form's own URL, login and flow filled in); recent runs; settings summary in words; "Start
+  testing". Checked in light, dark and at phone width.
+
+---
+
+## 2026-10-31 (Saturday, 07:30): P5, the read-only showcase
+
+- `npm run demo:export -- --runs <ids>` captures every API answer the UI reads from the real server (`app.inject`,
+  so the shapes cannot drift) plus each run folder, into `.aie2e/showcase`. `npm run demo:build` builds the same UI
+  in `--mode demo` into `ui/dist-demo`: GETs read `/demo/api/*.json`, files come from `/demo/files`, anything that
+  would start a browser or change a file says it is a showcase, Run again / Save as suite / Approve are hidden, a
+  banner links to the repo, and it opens on the run list. Deployed as static files (`npx vercel deploy
+ui/dist-demo --prod`): no server, no keys, nothing to fail during the call.
+- Checked on two Sauce Demo runs served as plain static files: run list, summary, journeys, screenshots and
+  report.html load with no errors.
+- Also: suite runs in the live view say "Testing" (a replay is not the AI testing).
+
+---
+
+## 2026-10-30 (Friday, 17:05): Asset Sense with the real best models; ambiguous clicks
+
+- **Seen:** with sonnet-4-6 driving, tagging reached its page in 3 actions (37k tokens), but transformation and
+  community ended on Home: the agent asked Stagehand to "click the Explore Now button" without saying which of the
+  three, and Stagehand's element lookup picked the first (Tagging). The agent then called /tagging a success; the
+  judge failed it on the URL and screenshots, and the AI's reading said "clicked the wrong Explore Now button…
+  test problem". Haiku's earlier run named the section and got it right.
+- **Change:** the agent instruction requires naming the section or nearby text when several controls share a
+  label, and reporting a wrong landing instead of calling it success. The own loop avoids this by design (it acts
+  on an exact element ref, no second lookup).
+
+---
+
+## 2026-10-30 (Friday, 16:55): Asset Sense with `--preset best`, new planner rules
+
+- **Seen (report `models`):** `--preset best` ran the agent on haiku-4-5 and the planner on sonnet-5-5: `.env` pinned
+  `AIE2E_MODEL` and `AIE2E_PLANNER_MODEL` for development, and env models beat the preset. **Change:** a preset chosen
+  for the run (flag or UI) now beats the models in `.env`; only a model flag beats it. Every run logs its models
+  first ("Models (best): agent claude-sonnet-4-6, planner claude-opus-5-5, judge claude-opus-5-5").
+- **Better than the morning run:** goals now name sections, not positions ("the Explore Now button in the 'Enhance
+  Your Visuals with Ease' section"): tagging and transformation reached their pages in 6 and 4 steps (the morning
+  run looped Home → Tagging → Home on "the second Explore Now"). Checks carry plain labels. 3 tests used 339k agent
+  tokens (morning: 8 tests, 951k).
+- **Seen:** both flows failed only on the app's React hydration errors, and the summary said "0 of 4 flows work".
+  **Change:** "Goal reached, but the app logged errors" is told apart from a broken flow in the outcome and the
+  headline sentence, and such a test is no longer counted as the AI contradicting the evidence.
+- **The AI's reading (opus-5-5)** on its first real run: hydration errors called app bugs with quotes from the
+  console; on the community test it noticed the agent claimed a click no step recorded and said "unclear, low
+  confidence" instead of guessing.
+
+---
+
+## 2026-10-30 (Friday, 16:35): first real run of the own loop: thinking signatures
+
+- **Seen:** TodoMVC, same goal, both engines. Stagehand + haiku-4-5 passed. The loop + `claude-sonnet-5-5`
+  errored: "Invalid `signature` in `thinking` block … Content before this block differs". The loop replaced older
+  page snapshots with a note before each call to save tokens; the 5.5 models always think and sign each thinking
+  block against everything before it, so any edit to history is rejected. Same class of bug as Stagehand 3.7.3's.
+- **Change:** the loop never rewrites history (append only); snapshots are capped at 12k characters and the model is
+  told to re-read the page only when it needs new refs. No `temperature` for the 5.5 models (they ignore it; the
+  SDK warned on every call), in the loop and in the planner/judge client.
+- **Test:** every prompt the model receives starts with the previous one unchanged
+  (`tests/integration/loopAgent.test.js`).
+
+---
+
+## 2026-10-30 (Friday, 19:00): P3, our own agent loop (instead of a Stagehand v4 migration)
+
+- **Spike finding:** Stagehand 4.3.0 launches locally, Playwright attaches over CDP, and `claude-haiku-5-5` reaches
+  the API through v4's `act`/`observe`. But v4 runs through a browser extension with an RPC runtime and has no
+  `agent()`, so moving to it means a new browser lifecycle plus writing our own loop anyway.
+- **Built:** `src/executor/loopAgentExecutor.js`, behind `AIE2E_AGENT_ENGINE=loop` (`--agent-engine`, the New run
+  form, the Action's `agent-engine`). The AI SDK runs the tool loop with any model id. The page is read with
+  Playwright's `ariaSnapshot({ mode: 'ai' })` (roles, names, `[ref=e12]`), the model acts by ref (`click`,
+  `type`, `select`, `hover`, `press`, `navigate`, `back`, `scroll`, `screenshot` as an image, `hoverAt`,
+  `harnessStatus`, test-id tools) and ends with `finish` (the same structured report). Each action is recorded as
+  Playwright's own best locator (`locator.normalize()`: "the Add to cart button in the block that says Lamp",
+  not an XPath), so replay and healing need no change; replay now accepts Playwright's `internal:` selectors.
+  A stale ref goes back to the model as an error, never a crash.
+- **Not decided yet:** the loop stays opt-in until a side-by-side run with a real key (Sauce Demo and the shop,
+  `loop` + sonnet-5-5 vs `stagehand` + haiku-4-5).
+
+Tests: `tests/integration/loopAgent.test.js` (a scripted model acts by ref on a real page; the second of two
+identical buttons; the recording replays with plain Playwright; stale refs; the conversation is only appended to).
+
+---
+
+## 2026-10-30 (Friday, 18:00): the AI's reading of failures; side panels stay in view
+
+- **Seen (Asset Sense, balanced preset):** the right panel ("Why it failed") scrolled away from the step that
+  broke; console errors showed raw text ("Minified React error #425; visit…") because uncaught page errors were
+  not explained; the agent's own "Open https://…" steps showed the URL.
+- **Change:** side panels (journey verdict, developer test list, live run, recordings) are pinned with their
+  own scroll; the flow strip opens at the stuck page; console errors are explained from the judge's own detail
+  ("8 errors in the console, first: React error #425: … hydration mismatch"); every page open reads "Opened
+  “Home”".
+- **Failure explainer** (`src/judge/failureExplainer.js`): after the verdict, one call to the judge's model per
+  FAILED test, with the failed checks in words, the steps by page, the final page text, console errors, failed
+  requests and up to three screenshots (start, before the failed step, end). It returns the likely cause, a
+  category (app bug / problem with the test / environment / unclear), confidence, up to three quoted
+  observations and a next step. Shown as "AI's reading" on the journey, on the matching finding and in
+  `report.html`; it never changes a verdict and is never asked about a passing test. On by default when the
+  judge's API key is set; `--no-explain`, `AIE2E_EXPLAIN=false`, Action input `explain`. Off in the evaluation
+  script and in the test suite.
+- **Also seen:** the Asset Sense goal still said "the second Explore Now button": the plan was reused from the
+  saved plan (`--replan` / Plan again uses the new planner rules).
+
+Tests: `tests/failureExplainer.test.js` (only failures, three screenshots, untrusted agent claim, a failing model
+costs nothing), console explanation in `tests/insights.test.js`, the config switch.
+
+---
+
 ## 2026-10-30 (Friday, 17:00): P2 of plan v2: UI v2, the run in plain words for anyone
 
 Rohan's review of the Asset Sense run: the UI was built for developers; a reader had to scroll a long log and work

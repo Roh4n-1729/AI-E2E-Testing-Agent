@@ -142,19 +142,30 @@ labels on checks, `reporter/insights.js`. Not built: the filmstrip toggle and cr
 screenshots; adding them costs a screenshot per page for little gain). Remaining gate: Rohan's review in the
 browser and a demo rehearsal on the new screens.
 
-### P3 · Stagehand v4 spike (Sat, time-boxed 3 h, branch only)
+### P3 · Stagehand v4 spike (Sat, time-boxed 3 h, branch only) · **done Fri 19:00, different outcome**
+
+**Outcome:** Stagehand 4.3.0 launches locally and Playwright attaches over CDP, but v4 runs through a browser
+extension and has no `agent()`, so the real work was always "our own loop". Built that instead, behind a setting:
+`AIE2E_AGENT_ENGINE=loop` (D31). The model reads `page.ariaSnapshot({ mode: 'ai' })` with element refs, acts by
+ref, and every action is recorded as Playwright's own locator (`locator.normalize()`), so replay and healing are
+unchanged. Any model id works (the 5.5 family included). Tested offline with a scripted model on a real page,
+including replaying the recording. **Still to decide (needs your key):** run Sauce Demo and the shop in explore
+mode with `loop` + sonnet-5-5 vs `stagehand` + haiku-4-5, compare pass rate, false failures, tokens and time; make
+`loop` the default only if it is at least as good. Stagehand stays the default until then.
+
+Original plan:
 
 Our own agent loop: AI SDK `generateText` with tools (`act`, `observe`, `extract` from Stagehand v4, plus
 `hoverAt`, test-id tools and `harness_status`), step events from our loop, any model id including the 5.5 family.
 **Decision on Sat evening:** merge only if replay, healing and the Sauce Demo and shop AI runs are at least as good;
 otherwise it is roadmap, documented in TRADEOFFS with what the spike learned.
 
-### P4 · Finish (Sun, after P5)
+### P4 · Finish (Sun, after P5) · **README and DEMO.md done Fri 20:30; GIF and final CI left**
 
 README with screenshots of the new UI, demo script updated for the new screens, the demo GIF, AI evaluation numbers
 in the README, final CI run. Mon: final run and transcripts only.
 
-### P5 · Share it: Vercel showcase + live demo from the laptop (Sun morning, ~3 h)
+### P5 · Share it: Vercel showcase + live demo from the laptop (Sun morning, ~3 h) · **showcase built Sat 07:30**
 
 Decided Fri 14:30: no Docker host. The interview is a call, so the live part runs on Rohan's laptop (screen share),
 and a Vercel link lets anyone explore real results before or after the call.

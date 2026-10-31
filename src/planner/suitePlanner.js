@@ -94,6 +94,7 @@ export class SuitePlanner {
         expectations,
         maxSteps: t.maxSteps,
         tags: t.tags,
+        origin: 'suite',
       });
       tests.push(test);
       if (t.steps?.length && test.goal) {

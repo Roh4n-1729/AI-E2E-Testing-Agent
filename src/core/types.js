@@ -83,6 +83,11 @@ export const TestCaseSchema = z.object({
   expectations: z.array(ExpectationSchema),
   maxSteps: z.number().int().positive().optional(),
   tags: z.array(z.string()).default([]),
+  /**
+   * Who wrote the test (its goal and checks): the AI planner, a suite (a person, or a run saved as a suite), a
+   * person on the command line or the New run form, or the built-in smoke check. Shown in reports, never judged.
+   */
+  origin: z.enum(['planner', 'suite', 'user', 'smoke']).optional(),
 });
 
 // ---------- Recorded (replayable) steps: the Saturday contract ----------
@@ -286,6 +291,22 @@ export const RecordingSchema = z.object({
  * @property {Baseline} [baseline]  Start-page snapshot used by the judge to spot vacuous expectations.
  * @property {boolean} [recordable]  True when `steps` fully capture what the agent did, so they can be replayed.
  * @property {TraceEntry[]} [trace]  Run log for the report.
+ * @property {AgentInput} [agentInput]  what the AI agent was told (when it ran)
+ * @property {string} [recordedAt]  replay: when the recording was made ('suite' = the suite's own steps)
+ */
+/**
+ * @typedef {object} AgentInput
+ * @property {string} model
+ * @property {'stagehand' | 'loop'} engine
+ * @property {string} instruction  the full instruction the agent received (goal included)
+ */
+/**
+ * What each part of the tool was given for one test, for the "who did what" view. The judge's input is the
+ * test's own checks (`test.expectations`) plus the checks the tool adds (quality, visual), see the verdict.
+ * @typedef {object} TestInputs
+ * @property {AgentInput} [agent]  absent when no AI drove the browser (replay, smoke check)
+ * @property {{ steps: RecordedStep[], source: 'suite' | 'recording' | 'agent' | 'harness', recordedAt?: string }} playwright
+ *   the steps Playwright ran (replay) or recorded from the agent's actions; source = who wrote them
  */
 
 // ---------- Results ----------
@@ -301,6 +322,19 @@ export const RecordingSchema = z.object({
  * @property {number} durationMs
  * @property {{ inputTokens: number, outputTokens: number }} [llmUsage]  Browser-agent tokens for this test.
  * @property {TraceEntry[]} [trace]  What happened, step by step, with screenshots.
+ * @property {Explanation} [explanation]  the AI's reading of a failure; advisory, written after the verdict
+ * @property {TestInputs} [inputs]  what the AI agent, Playwright and the judge were each given
+ */
+/**
+ * Why a failed test most likely failed, read by the judge's model from the evidence after the verdict.
+ * Shown as "the AI's reading"; never used for the verdict.
+ * @typedef {object} Explanation
+ * @property {string} cause
+ * @property {'app-bug' | 'test-problem' | 'environment' | 'unclear'} category
+ * @property {'high' | 'medium' | 'low'} confidence
+ * @property {string[]} evidence
+ * @property {string} suggestion
+ * @property {string} model
  */
 /**
  * @typedef {object} RunSummary

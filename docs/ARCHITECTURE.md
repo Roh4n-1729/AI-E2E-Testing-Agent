@@ -220,6 +220,29 @@ per test the pages it went through (from the trace URLs, plus the expected pages
 broke and any error the page itself shows. Checks are said by their `label` when they have one (D28). Nothing in
 it can change a verdict (D27). The UI shows the summary first and keeps the developer tabs one click away (D29).
 
+After the verdict, failed tests get one more call (D30): `judge/failureExplainer.js` sends the judge's model the
+failed checks in words, the steps by page, the final page text, console errors, failed requests and up to three
+screenshots, and stores `result.explanation` (cause, category, confidence, evidence, suggestion). Insights attach
+it to the matching finding; the UI and `report.html` show it as "AI's reading". The order is the guarantee: the
+verdict exists before the explainer is asked.
+
+### Where AI is used, and where it is not
+
+| Uses a model                                   | Never uses a model                                       |
+| ---------------------------------------------- | -------------------------------------------------------- |
+| Planner (tests and checks, one revision)       | Crawler, login, replay                                   |
+| Browser agent (first runs, heals)              | Every hard check, vacuity, plan review, heal acceptance  |
+| Judge: `visual` questions only                 | Accessibility, Web Vitals, theme audit, pixel comparison |
+| Failure explainer: failed tests only, advisory | Insights and report wording (D27)                        |
+
+### Two agent engines (D31)
+
+`config.agentEngine` picks the executor in `startRun`: `AgentExecutor` (Stagehand `agent()`) or
+`LoopAgentExecutor` (AI SDK `generateText` with tools, `stopWhen: [stepCountIs(maxSteps), hasToolCall('finish')]`).
+Both take the same `(test, session, ctx, resume)` and return the same `ExecutionOutcome`, so replay, healing, the
+judge and the reports do not know which one ran. The loop's tools act on `aria-ref` locators from the latest
+snapshot and record `locator.normalize()` selectors.
+
 ## 5. Data model
 
 ![data model](diagrams/04-data-model.png)

@@ -111,8 +111,9 @@ export class AgentExecutor {
           ...(useHints ? testIdTools(session) : {}),
         },
       });
+      const instruction = buildInstruction(test, resume, useHints ? hints : [], this.loggedIn);
       const result = await agent.execute({
-        instruction: buildInstruction(test, resume, useHints ? hints : [], this.loggedIn),
+        instruction,
         maxSteps: test.maxSteps ?? this.cfg.maxSteps,
         // a structured final report instead of prose: shown next to the verdict, never used for it
         output: FinalReportSchema,
@@ -172,6 +173,7 @@ export class AgentExecutor {
         llmUsage: result.usage
           ? { inputTokens: result.usage.input_tokens, outputTokens: result.usage.output_tokens }
           : undefined,
+        agentInput: { model: this.cfg.model, engine: 'stagehand', instruction },
       };
     } catch (e) {
       return {
@@ -358,7 +360,7 @@ export function describeAgentStep(e) {
 }
 
 /** @param {TestCase} test @param {ResumeContext} [resume] @param {PageHint[]} [hints] */
-function buildInstruction(test, resume, hints = [], loggedIn = false) {
+export function buildInstruction(test, resume, hints = [], loggedIn = false) {
   const lines = [
     `You are testing a web application starting at ${test.startUrl}.`,
     `Goal: ${test.goal}`,
@@ -373,6 +375,10 @@ function buildInstruction(test, resume, hints = [], loggedIn = false) {
     'Some controls are hidden until the pointer moves or hovers (toolbars in full-screen or presentation',
     'mode, hover menus). If a control you expect is not visible, use the hoverAt tool (usually near an',
     'edge or corner), look again, and only then conclude it does not exist.',
+    'When the page has several controls with the same label (three "Explore Now" buttons), always say which one in',
+    'your action: its section heading or the text next to it, e.g. "click the Explore Now button in the Enhance Your',
+    'Visuals section", never just "click the Explore Now button". After a click, check you reached what the goal',
+    'expects; if you landed somewhere else, say so in your report instead of calling it success.',
     'Prefer finishing the goal in the screen where it naturally belongs: do not wander into other modes.',
     'Take the shortest path: if the app offers a sample or template that gets you to the needed state, use it,',
     'unless the goal is about creating that state.',
