@@ -254,6 +254,30 @@ export function NewRun({ health }) {
           </p>
         </div>
 
+        {health?.shared && (
+          <div className="rounded-xl border border-line bg-panel p-4 text-[13px] leading-relaxed">
+            <p className="font-semibold">A shared instance</p>
+            <p className="mt-0.5 text-muted">
+              Runs use its owner’s AI account: up to {health.shared.maxTests} planned tests, 2 at a
+              time. Any public web app works. These apps run next to it:
+            </p>
+            {health.shared.apps.length > 0 && (
+              <div className="mt-2.5 flex flex-wrap gap-2">
+                {health.shared.apps.map((a) => (
+                  <button
+                    key={a.url}
+                    type="button"
+                    onClick={() => set({ url: a.url })}
+                    className="rounded-lg border border-line px-2.5 py-1 text-[13px] font-medium hover:border-user hover:text-user"
+                  >
+                    {a.name}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
         {DEMO && (
           <div className="rounded-xl border border-user/25 bg-user/[0.07] p-4 text-[14px] leading-relaxed">
             <p className="font-semibold">This form starts a run on your own machine.</p>
@@ -429,7 +453,9 @@ export function NewRun({ health }) {
                     label="Planned tests"
                     value={form.maxTests}
                     onValueChange={(v) => set({ maxTests: Number(v) })}
-                    options={[2, 3, 4, 5, 6, 8].map((n) => ({ value: n, label: `Up to ${n}` }))}
+                    options={[2, 3, 4, 5, 6, 8]
+                      .filter((n) => !health?.shared || n <= health.shared.maxTests)
+                      .map((n) => ({ value: n, label: `Up to ${n}` }))}
                   />
                 </Field>
                 <Field id="q" label="Quality gate">

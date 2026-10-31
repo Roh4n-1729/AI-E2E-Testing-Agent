@@ -6,6 +6,27 @@ teaches us something: it is the honest history of how the judge got stricter.
 
 ---
 
+## 2026-10-31 (Saturday, 11:00): a working deployed instance (Render)
+
+- **Why:** a read-only showcase cannot show the tool working; the interviewers should be able to start a run.
+  Railway closed sign-ups; Render's free plan (512 MB) is too small for Chromium plus the agent, so the
+  deployment is Render's 2 GB instance for a few days.
+- **What:** `Dockerfile` (Node 22, production packages, Playwright's Chromium), `deploy/serve.js` (starts Sauce
+  Demo, the buggy shop and TodoMVC inside the container, copies baked-in runs, starts the UI on `$PORT`),
+  `npm run deploy:seed` (bakes chosen runs, recordings, plans, suites and baselines into `deploy/seed`),
+  `docs/DEPLOY.md`.
+- **Locked down (D34, `tests/access.test.js`):** access code for every API call and file (cookie, constant-time
+  check, lockout after 10 wrong codes); only the service's host name; no targets on the server's own network,
+  checked after DNS (except the demo apps); the `.env` login only on listed apps, including through saved
+  suites; at most 4 tests, 2 at a time; no server paths in responses. The UI asks for the code, and New run
+  offers the demo apps as buttons.
+- **Verified:** the image's files with production packages only, started by `deploy/serve.js` with Render's
+  variables: locked without the code, wrong host refused, the baked suite replays 6 of 6 with login, its own
+  port refused as a target, run files served behind the code. The image itself is built by Render (Docker
+  registries are not reachable from the build machine used here).
+
+---
+
 ## 2026-10-31 (Saturday, 09:20): the presentation builder with the new planner
 
 - **Seen (run `f7d8`, Best, 8 planned):** the planner now covers 8 different features (generate from a description,

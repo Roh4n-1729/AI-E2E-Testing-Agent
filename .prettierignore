@@ -8,3 +8,4 @@ ui/dist-demo
 docs/study-guide.html
 examples/todomvc/app
 examples/saucedemo/app
+deploy/seed

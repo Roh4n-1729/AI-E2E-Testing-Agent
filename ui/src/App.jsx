@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Toaster } from 'sonner';
 import { api } from './api.js';
+import { AccessGate } from './components/AccessGate.jsx';
 import { AppShell } from './components/AppShell.jsx';
 import { useHashRoute } from './hooks/useHashRoute.js';
 import { Hints } from './screens/Hints.jsx';
@@ -13,11 +14,23 @@ import { Suites } from './screens/Suites.jsx';
 export function App() {
   const route = useHashRoute();
   const [health, setHealth] = useState(null);
+  // a deployed instance asks for its access code before anything else (null: not known yet)
+  const [locked, setLocked] = useState(/** @type {boolean | null} */ (null));
+  useEffect(() => {
+    api
+      .access()
+      .then((a) => setLocked(a.required && !a.ok))
+      .catch(() => setLocked(false));
+    const lock = () => setLocked(true);
+    window.addEventListener('aie2e:locked', lock);
+    return () => window.removeEventListener('aie2e:locked', lock);
+  }, []);
   // refreshed on every screen change and every few seconds while a run is going, so the sidebar shows
   // the running run's models and goes back to the defaults when it ends
   const active = health?.active;
   useEffect(() => {
     let live = true;
+    if (locked !== false) return undefined;
     const load = () =>
       api
         .health()
@@ -29,8 +42,10 @@ export function App() {
       live = false;
       clearInterval(timer);
     };
-  }, [route.name, route.id, active]);
+  }, [route.name, route.id, active, locked]);
 
+  if (locked === null) return null;
+  if (locked) return <AccessGate onUnlocked={() => window.location.reload()} />;
   return (
     <AppShell route={route} health={health}>
       {route.name === 'new' && <NewRun health={health} />}

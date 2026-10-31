@@ -8,6 +8,7 @@ export default [
     ignores: [
       'node_modules',
       '.aie2e',
+      'deploy/seed',
       'docs',
       'ui/dist',
       'ui/dist-demo',

@@ -50,6 +50,7 @@ containers work with no flags; `AIE2E_CHROME_SANDBOX=true` keeps it.
 | New recorded step method   | `executor/replayExecutor.js#runStep` + `executor/steps.js`                                               |
 | New config option          | `config/config.js` (schema + env var) + `.env.example`                                                   |
 | Plain-English report text  | `reporter/insights.js` (pure; used by the UI, `report.html` and the run list) + `tests/insights.test.js` |
+| Deployed instance          | `Dockerfile`, `deploy/serve.js`, guards in `server/access.js` + `tests/access.test.js`, `docs/DEPLOY.md` |
 | New CLI flag               | `cli/main.js` → `app/startRun.js` options; mirror in `server/app.js` `StartBody` and `action.yml`        |
 
 ## Docs to keep current

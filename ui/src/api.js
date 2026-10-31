@@ -15,6 +15,8 @@ async function request(path, init) {
   }
   const res = await fetch(path, init);
   const body = await res.json().catch(() => ({}));
+  // a shared instance whose access cookie is missing or expired: show the code screen
+  if (res.status === 401 && body.locked) window.dispatchEvent(new Event('aie2e:locked'));
   if (!res.ok) throw new Error(body.error ?? `Request failed (${res.status})`);
   return body;
 }
@@ -27,6 +29,8 @@ const json = (method, body) => ({
 
 export const api = {
   health: () => request('/api/health'),
+  access: () => (DEMO ? Promise.resolve({ required: false, ok: true }) : request('/api/access')),
+  unlock: (code) => request('/api/access', json('POST', { code })),
   startRun: (options) => request('/api/runs', json('POST', options)),
   runs: () => request('/api/runs'),
   run: (id) => request(`/api/runs/${id}`),

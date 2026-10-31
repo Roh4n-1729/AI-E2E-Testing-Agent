@@ -117,10 +117,24 @@ program
   .command('ui')
   .description('open the local web UI: start runs, watch the browser live, browse results')
   .option('-p, --port <n>', 'port', Number, 4173)
+  .option(
+    '--host <address>',
+    'address to listen on (default 127.0.0.1; 0.0.0.0 needs AIE2E_ACCESS_CODE)',
+  )
   .option('-o, --out <dir>', 'output directory')
   .option('--no-open', 'do not open a browser tab')
   .action(async (/** @type {Record<string, any>} */ o) => {
     const config = loadConfig({ outDir: o.out });
+    const host = o.host ?? process.env.AIE2E_HOST ?? '127.0.0.1';
+    const port = o.port;
+    // listening beyond this machine launches browsers with your API key for whoever connects
+    if (!/^(127\.0\.0\.1|localhost|::1)$/.test(host) && !process.env.AIE2E_ACCESS_CODE?.trim()) {
+      console.error(
+        `Listening on ${host} needs an access code: set AIE2E_ACCESS_CODE (see docs/DEPLOY.md).`,
+      );
+      process.exitCode = 2;
+      return;
+    }
     const uiDir = fileURLToPath(new URL('../../ui/dist', import.meta.url));
     if (!existsSync(path.join(uiDir, 'index.html'))) {
       console.error('The UI is not built yet. Run: npm run ui:build   (or use: npm run ui)');
@@ -129,10 +143,10 @@ program
     }
     const { createServer } = await import('../server/app.js');
     const { app } = await createServer({ outDir: config.outDir, uiDir });
-    await app.listen({ host: '127.0.0.1', port: o.port });
-    const url = `http://localhost:${o.port}`;
+    await app.listen({ host, port });
+    const url = `http://localhost:${port}`;
     console.log(`AI E2E Agent UI: ${url}   (Ctrl+C to stop)`);
-    if (o.open) openInBrowser(url);
+    if (o.open && host === '127.0.0.1') openInBrowser(url);
   });
 
 program

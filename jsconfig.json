@@ -12,5 +12,5 @@
     "resolveJsonModule": true,
     "maxNodeModuleJsDepth": 0
   },
-  "include": ["src", "tests", "vitest.config.js", "eslint.config.js"]
+  "include": ["src", "tests", "deploy/*.js", "vitest.config.js", "eslint.config.js"]
 }

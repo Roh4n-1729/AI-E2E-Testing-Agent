@@ -54,6 +54,12 @@ on Playwright's accessibility tree, which takes any model and clicks the exact e
 - **Watch it live.** A local web UI streams the browser (CDP screencast) with a visible cursor while the run moves
   through log in, explore, plan, test and report.
 
+## Try it
+
+- **Run it yourself:** `npm install && npm run browsers && npm run ui` (see below).
+- **A deployed instance** (Render, Docker): ask for the access code. How it is deployed and locked down:
+  [docs/DEPLOY.md](docs/DEPLOY.md).
+
 ## What you see
 
 | Test journey: where the user went and where it broke | Live run: the browser the agent is driving |

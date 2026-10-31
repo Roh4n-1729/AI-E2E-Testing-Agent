@@ -32,6 +32,8 @@
     "saucedemo": "node examples/saucedemo/server.js",
     "demo:export": "node scripts/demo-export.js",
     "demo:build": "vite build --config ui/vite.config.js --mode demo",
+    "deploy:seed": "node deploy/seed.js",
+    "serve": "node deploy/serve.js",
     "graph": "node scripts/graph.js"
   },
   "dependencies": {

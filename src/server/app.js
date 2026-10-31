@@ -15,6 +15,7 @@ import { suiteFromRun } from '../planner/suitePlanner.js';
 import { testFingerprint } from '../storage/recordStore.js';
 import { AuthSchema } from '../auth/login.js';
 import { slugify } from '../util/misc.js';
+import { AccessGate, accessConfig, hostAllowed, targetAllowed } from './access.js';
 
 /** Request body for POST /api/runs. Bounds keep a stray click from launching dozens of browsers. */
 const StartBody = z.object({
@@ -48,24 +49,64 @@ const StartBody = z.object({
   suite: z.string().regex(SUITE_NAME).optional(),
 });
 
-const LOCAL_HOSTS = /^(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/;
-
 /**
  * Local-only web server: REST + SSE for the UI, static reports/screenshots, the built UI itself.
  * It launches browsers on this machine, so it (a) should be bound to 127.0.0.1 by the caller and
- * (b) rejects any request whose Host header is not local (guards against DNS rebinding).
+ * (b) rejects any request whose Host header is not local (guards against DNS rebinding). Deployed for
+ * others (docs/DEPLOY.md), it also needs an access code and refuses targets on the owner's network
+ * (`./access.js`).
  *
- * @param {{ outDir: string, uiDir?: string, manager?: RunManager, logger?: boolean }} opts
+ * @param {{ outDir: string, uiDir?: string, manager?: RunManager, logger?: boolean,
+ *   access?: import('./access.js').AccessConfig }} opts
  */
-export async function createServer({ outDir, uiDir, manager, logger = false }) {
+export async function createServer({
+  outDir,
+  uiDir,
+  manager,
+  logger = false,
+  access = accessConfig(),
+}) {
   const runs = manager ?? new RunManager({ outDir });
   const app = Fastify({ logger });
   const root = path.resolve(outDir);
 
+  const gate = access.code ? new AccessGate(access.code) : null;
   app.addHook('onRequest', async (req, reply) => {
-    if (!LOCAL_HOSTS.test(req.headers.host ?? '')) {
+    // the platform's health check may use any host name; it learns nothing but "ok"
+    if (req.url === '/healthz') return reply.send('ok');
+    if (!hostAllowed(req.headers.host ?? '', access)) {
       return reply.code(403).send({ error: 'Only local access is allowed' });
     }
+    // with an access code, everyone needs it (a proxy may present itself as localhost)
+    const guarded = req.url.startsWith('/api/') || req.url.startsWith('/files/');
+    if (
+      gate &&
+      guarded &&
+      !req.url.startsWith('/api/access') &&
+      !gate.hasAccess(req.headers.cookie)
+    ) {
+      return reply.code(401).send({ error: 'Enter the access code', locked: true });
+    }
+  });
+
+  // ---- access code (shared instances) ---------------------------------------------------------
+  app.get('/api/access', async (req) => ({
+    required: !!gate,
+    ok: gate ? gate.hasAccess(req.headers.cookie) : true,
+  }));
+  app.post('/api/access', async (req, reply) => {
+    if (!gate) return { ok: true };
+    const who = String(req.headers['cf-connecting-ip'] ?? req.ip);
+    const secure = req.headers['x-forwarded-proto'] === 'https';
+    const res = gate.tryCode(/** @type {any} */ (req.body)?.code, who, secure);
+    if (!res.ok)
+      return reply.code(res.retryAfterS ? 429 : 401).send({
+        error: res.retryAfterS
+          ? `Too many wrong codes. Try again in ${Math.ceil(res.retryAfterS / 60)} min.`
+          : 'That code is not right',
+      });
+    reply.header('set-cookie', res.cookie);
+    return { ok: true };
   });
 
   // ---- health -------------------------------------------------------------------------------
@@ -83,9 +124,11 @@ export async function createServer({ outDir, uiDir, manager, logger = false }) {
       agentEngine: config.agentEngine,
       keyVar: need.keyVar ?? null,
       keyPresent: need.keyPresent,
-      chrome,
+      // local paths stay on this machine when the UI is shared
+      chrome: access.shared ? undefined : chrome,
       chromeOk: !!chrome && existsSync(chrome),
-      outDir: root,
+      outDir: access.shared ? undefined : root,
+      shared: access.shared ? { maxTests: access.maxTests, apps: access.apps } : null,
       active: runs.active?.runId ?? null,
       // the models the running run uses (a preset picked for it beats .env), for the sidebar
       activeModels: runs.active ? runModels(runs.active.options, config) : null,
@@ -101,6 +144,30 @@ export async function createServer({ outDir, uiDir, manager, logger = false }) {
       return reply.code(400).send({
         error: parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; '),
       });
+    }
+    if (access.shared) {
+      // a shared instance: no targets on the owner's network, login only on listed origins, fewer tests
+      const suite = parsed.data.suite
+        ? await suites.get(parsed.data.suite).catch(() => null)
+        : null;
+      for (const u of [parsed.data.url, parsed.data.themeFrom, suite?.themeFrom].filter(Boolean)) {
+        const t = await targetAllowed(/** @type {string} */ (u), access);
+        if (!t.ok) return reply.code(403).send({ error: t.reason });
+      }
+      // the owner's password is typed only into a login page of an app the owner listed
+      const auth = parsed.data.auth ?? suite?.auth;
+      if (auth) {
+        const app = new URL(parsed.data.url).origin;
+        const login = new URL(auth.loginUrl, parsed.data.url).origin;
+        if (login !== app || !access.allowedTargets.includes(app))
+          return reply.code(403).send({
+            error:
+              'On a shared instance, logging in with the owner’s account only works on the apps the owner listed.',
+          });
+      }
+      parsed.data.maxTests = Math.min(parsed.data.maxTests ?? access.maxTests, access.maxTests);
+      parsed.data.headed = false;
+      parsed.data.concurrency = Math.min(parsed.data.concurrency ?? 2, 2);
     }
     const need = llmRequirement(parsed.data);
     if (need.needed && !need.keyPresent) {
