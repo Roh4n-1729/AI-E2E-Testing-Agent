@@ -258,8 +258,11 @@ export function NewRun({ health }) {
           <div className="rounded-xl border border-line bg-panel p-4 text-[13px] leading-relaxed">
             <p className="font-semibold">A shared instance</p>
             <p className="mt-0.5 text-muted">
-              Runs use its owner’s AI account: up to {health.shared.maxTests} planned tests, 2 at a
-              time. Any public web app works. These apps run next to it:
+              Runs use its owner’s AI account: up to {health.shared.maxTests} planned tests,{' '}
+              {health.shared.concurrency === 1
+                ? 'one at a time'
+                : `${health.shared.concurrency} at a time`}
+              . Any public web app works. These apps run next to it:
             </p>
             {health.shared.apps.length > 0 && (
               <div className="mt-2.5 flex flex-wrap gap-2">
@@ -444,7 +447,9 @@ export function NewRun({ health }) {
                     label="Tests in parallel"
                     value={form.concurrency}
                     onValueChange={(v) => set({ concurrency: Number(v) })}
-                    options={[1, 2, 3, 4].map((n) => ({ value: n, label: String(n) }))}
+                    options={[1, 2, 3, 4]
+                      .filter((n) => !health?.shared || n <= health.shared.concurrency)
+                      .map((n) => ({ value: n, label: String(n) }))}
                   />
                 </Field>
                 <Field id="max" label="Planned tests">

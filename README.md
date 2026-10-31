@@ -11,8 +11,9 @@ replay breaks, the agent heals it, and every heal is logged.
 > [docs/EVALUATION.md](docs/EVALUATION.md) has the measured results, [docs/IMPROVEMENTS.md](docs/IMPROVEMENTS.md) what
 > real runs taught us, and [docs/DEMO.md](docs/DEMO.md) the 10-minute demo.
 
-**Try it without installing:** a read-only showcase of real runs (Vercel) is built with `npm run demo:export` and
-`npm run demo:build`; see [docs/DEMO.md](docs/DEMO.md#the-showcase-vercel-read-only).
+**Try it without installing:** the [live instance](https://ai-e2e-testing-agent.onrender.com/) (access code on
+request) runs real tests on Render. A read-only static showcase can also be built (`npm run demo:export`,
+`npm run demo:build`; see [docs/DEMO.md](docs/DEMO.md#the-showcase-vercel-read-only)).
 
 ![Run summary: a verdict sentence, four numbers, the problems found in plain words with screenshots](docs/images/ui-summary.png)
 
@@ -57,8 +58,10 @@ on Playwright's accessibility tree, which takes any model and clicks the exact e
 ## Try it
 
 - **Run it yourself:** `npm install && npm run browsers && npm run ui` (see below).
-- **A deployed instance** (Render, Docker): ask for the access code. How it is deployed and locked down:
-  [docs/DEPLOY.md](docs/DEPLOY.md).
+- **Live instance:** [ai-e2e-testing-agent.onrender.com](https://ai-e2e-testing-agent.onrender.com/). It
+  starts real runs on the owner's AI account, so it asks for an access code (ask me for it). It comes with
+  finished runs to browse, and Sauce Demo, a seeded-bug shop and TodoMVC running next to it to test. How
+  it is deployed and locked down: [docs/DEPLOY.md](docs/DEPLOY.md).
 
 ## What you see
 

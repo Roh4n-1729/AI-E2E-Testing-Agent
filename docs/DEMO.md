@@ -54,7 +54,13 @@ node src/cli/main.js run https://asset-sense-6fom.vercel.app/ --preset best --ma
 Then, so that Act 1 plans and records live: in the New run form switch on **Record again** and **Plan again**
 ("Run again" in Act 2 replays; it does not repeat those switches). Keep `.aie2e\baselines`.
 
-Browser tabs: the UI, the GitHub Actions page (latest green run), the Vercel showcase, `docs/EVALUATION.md`.
+Browser tabs: the UI, the live instance (https://ai-e2e-testing-agent.onrender.com/, unlocked), the GitHub
+Actions page (latest green run), `docs/EVALUATION.md`.
+
+**The live instance** is the link to share before or after the call (with the access code, sent separately). It
+runs the same UI in Docker on Render with the six rehearsal runs baked in and the demo apps next to it, so the
+interviewers can start a run themselves. During the call, use the laptop (faster, and the demo apps there have
+your approved screenshots); the live instance is the fallback if the laptop fails.
 
 ## Act 1: the AI tests an app it has never seen (2 min)
 
@@ -168,8 +174,8 @@ Close with the honest limits from the README.
 
 ## The showcase (Vercel, read-only)
 
-A link the interviewer can open before or after the call: the same UI over real runs, exported as static files.
-Nothing can be started there, so it cannot fail and holds no keys.
+Optional now that the live instance exists: a backup link that cannot fail, the same UI over real runs exported
+as static files. Nothing can be started there, and it holds no keys.
 
 ```powershell
 # 1. pick the runs (ids are in the UI's URL: #/runs/<id>): the presentation builder and Asset Sense (Best),
@@ -193,4 +199,4 @@ passwords) and screenshots of the apps are in the reports.
 | Port already in use      | `$env:PORT=4501; npm run saucedemo` and use that URL everywhere.                           |
 | Login fails              | Check `AIE2E_USERNAME` in the current terminal (`echo $env:AIE2E_USERNAME`).               |
 | Visual diffs everywhere  | The baselines are from another screen size or zoom: rerun with `--update-baselines` first. |
-| No network on the call   | The Vercel showcase has every run above, read-only.                                        |
+| No network on the call   | The live instance has every run above; share the screen from another device.               |

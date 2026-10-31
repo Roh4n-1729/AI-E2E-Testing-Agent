@@ -25,6 +25,7 @@ const COOKIE = 'aie2e_access';
  *   allowedTargets: string[],
  *   apps: { name: string, url: string }[],
  *   maxTests: number,
+ *   concurrency: number,
  * }} AccessConfig
  */
 
@@ -62,6 +63,8 @@ export function accessConfig(env = process.env) {
     apps,
     allowedTargets: apps.map((a) => new URL(a.url).origin),
     maxTests: Math.max(1, Math.min(8, Number(env.AIE2E_SHARED_MAX_TESTS) || 4)),
+    // one browser at a time by default: a 1-CPU instance is saturated by two, and slow pages time out
+    concurrency: Math.max(1, Math.min(4, Number(env.AIE2E_SHARED_CONCURRENCY) || 1)),
   };
 }
 

@@ -100,6 +100,7 @@ describe('a deployed (shared) instance', () => {
       expect(health.outDir).toBeUndefined();
       expect(health.shared).toEqual({
         maxTests: 4,
+        concurrency: 1,
         apps: [
           { name: 'Sauce Demo', url: 'http://localhost:4500/' },
           { name: 'localhost:4300', url: 'http://localhost:4300/' },

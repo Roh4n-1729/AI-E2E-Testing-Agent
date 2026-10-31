@@ -6,6 +6,15 @@ teaches us something: it is the honest history of how the judge got stricter.
 
 ---
 
+## 2026-10-31 (Saturday, 11:00, later): one test at a time on the deployed instance
+
+- **Seen (Render metrics, first runs):** memory peaked near 50% of 2 GB, but the 1 CPU sat at 100% with two
+  browsers and the live stream, which is how waits run out on slow pages.
+- **Change:** a shared instance runs one test at a time (`AIE2E_SHARED_CONCURRENCY`, default 1, enforced by the
+  server); the New run form and its notice follow it.
+
+---
+
 ## 2026-10-31 (Saturday, 11:00): a working deployed instance (Render)
 
 - **Why:** a read-only showcase cannot show the tool working; the interviewers should be able to start a run.

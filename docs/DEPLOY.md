@@ -16,7 +16,7 @@ The instance launches browsers and AI calls on your account, so a deployed copy 
 | Host names (`AIE2E_ALLOWED_HOSTS`) | Only your `onrender.com` name (filled in from Render's `RENDER_EXTERNAL_HOSTNAME`).                                                                                                                             |
 | Targets                            | Nothing on the server's own machine or network (localhost, private ranges, cloud metadata), checked after DNS too. The demo apps are the exception (`AIE2E_ALLOWED_TARGETS`). Any public web app can be tested. |
 | Login                              | The account in `AIE2E_USERNAME` / `AIE2E_PASSWORD` is only typed into a login page on a listed app, never one a visitor chooses, including through a saved suite.                                               |
-| Size                               | At most 4 planned tests (`AIE2E_SHARED_MAX_TESTS`), 2 at a time, one run at a time, never headed.                                                                                                               |
+| Size                               | At most 4 planned tests (`AIE2E_SHARED_MAX_TESTS`), one test at a time (`AIE2E_SHARED_CONCURRENCY`), one run at a time, never headed.                                                                           |
 | Paths                              | Health and runs do not show server paths.                                                                                                                                                                       |
 
 Set a monthly spend limit on your Anthropic account as well: the code limits who, not how much.
@@ -86,5 +86,5 @@ the code widely.
 | "Only local access is allowed"                               | The host name is not allowed: set `AIE2E_ALLOWED_HOSTS` to your `onrender.com` name.                |
 | The code page comes back after unlocking                     | The cookie needs HTTPS: open the `https://` address, not `http://`.                                 |
 | "…does not open addresses on the owner's machine or network" | Working as intended for localhost and private addresses; use a demo app button or a public URL.     |
-| A test errors with "out of memory" or the browser crashes    | Run fewer tests at once (Run settings → Tests in parallel: 1).                                      |
+| Tests time out on a busy instance                            | Keep `AIE2E_SHARED_CONCURRENCY` at 1 (the default): one browser already keeps the 1 CPU busy.       |
 | Port errors                                                  | Render sets `PORT`; the image defaults to 10000. Do not set `AIE2E_HOST` to anything but `0.0.0.0`. |

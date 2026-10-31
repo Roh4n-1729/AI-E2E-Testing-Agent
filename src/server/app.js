@@ -128,7 +128,9 @@ export async function createServer({
       chrome: access.shared ? undefined : chrome,
       chromeOk: !!chrome && existsSync(chrome),
       outDir: access.shared ? undefined : root,
-      shared: access.shared ? { maxTests: access.maxTests, apps: access.apps } : null,
+      shared: access.shared
+        ? { maxTests: access.maxTests, concurrency: access.concurrency, apps: access.apps }
+        : null,
       active: runs.active?.runId ?? null,
       // the models the running run uses (a preset picked for it beats .env), for the sidebar
       activeModels: runs.active ? runModels(runs.active.options, config) : null,
@@ -167,7 +169,10 @@ export async function createServer({
       }
       parsed.data.maxTests = Math.min(parsed.data.maxTests ?? access.maxTests, access.maxTests);
       parsed.data.headed = false;
-      parsed.data.concurrency = Math.min(parsed.data.concurrency ?? 2, 2);
+      parsed.data.concurrency = Math.min(
+        parsed.data.concurrency ?? access.concurrency,
+        access.concurrency,
+      );
     }
     const need = llmRequirement(parsed.data);
     if (need.needed && !need.keyPresent) {
