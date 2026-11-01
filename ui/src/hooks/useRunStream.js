@@ -8,6 +8,8 @@ const TYPES = [
   'plan.review',
   'plan.reused',
   'plan.ready',
+  'screens.found',
+  'plan.extended',
   'test.started',
   'test.step',
   'test.screenshot',

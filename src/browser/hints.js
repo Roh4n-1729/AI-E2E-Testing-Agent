@@ -82,18 +82,76 @@ export async function readHints(page) {
     .catch(() => []);
 }
 
+/** Ids a framework made up (React useId `:r1:` or `_r_e_`, Radix, Headless UI, MUI): they change between renders. */
+export const GENERATED_ID = /\d{3,}|[:«»]|^radix-|_r_[\da-z]+_|^headlessui-|^mui-|^react-aria/i;
+
+/** Roles a person acts on, whose name says what the control does. */
+const ACTIONABLE = new Set([
+  'button',
+  'link',
+  'textbox',
+  'searchbox',
+  'combobox',
+  'checkbox',
+  'radio',
+  'switch',
+  'tab',
+  'menuitem',
+  'menuitemcheckbox',
+  'menuitemradio',
+  'option',
+  'slider',
+  'spinbutton',
+  'treeitem',
+]);
+
+/** Playwright's own quoting for an exact attribute value. @param {string} v */
+const quoteExact = (v) => `"${v.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"s`;
+
+/**
+ * The control at `xp` by what a person sees: its role and accessible name ("the button named Generate"), as a
+ * Playwright locator string. Only when it is the one element with that role and name, the name is short (not a
+ * thumbnail full of content) and it really is the same element.
+ * @param {Page} page @param {string} xp
+ * @returns {Promise<string | null>}
+ */
+async function roleSelector(page, xp) {
+  try {
+    const el = page.locator(`xpath=${xp}`).first();
+    const first = (await el.ariaSnapshot({ timeout: 1500 })).split('\n')[0] ?? '';
+    const m = /^- ([a-z]+)(?: "((?:[^"\\]|\\.)*)")?/.exec(first);
+    const role = m?.[1];
+    const name = m?.[2] ? JSON.parse(`"${m[2]}"`) : '';
+    if (!role || !ACTIONABLE.has(role) || !name || name.length > 60) return null;
+    const selector = `internal:role=${role}[name=${quoteExact(name)}]`;
+    const loc = page.locator(selector);
+    if ((await loc.count()) !== 1) return null;
+    const same = await loc.evaluate(
+      (node, x) =>
+        node ===
+        document.evaluate(x, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null)
+          .singleNodeValue,
+      xp,
+    );
+    return same ? selector : null;
+  } catch {
+    return null;
+  }
+}
+
 /**
  * A selector for the element at `xpath` that survives layout changes: its own test id, a test id on
- * a close ancestor (clicks often land on an inner <span>; only for click-like methods), or a
- * non-generated unique id. Null when there is none (the XPath stays the selector).
+ * a close ancestor (clicks often land on an inner <span>; only for click-like methods), a non-generated
+ * unique id, or its role and name ("the button named Generate"). Null when there is none (the XPath stays
+ * the selector).
  * @param {Page} page @param {string} xpath @param {string} method
  * @returns {Promise<string | null>}
  */
 export async function stableSelector(page, xpath, method) {
   const xp = xpath.replace(/^xpath=/, '');
-  return page
+  const byAttribute = await page
     .evaluate(
-      ({ xp, attrs, climb }) => {
+      ({ xp, attrs, climb, generated }) => {
         const el = document.evaluate(
           xp,
           document,
@@ -117,13 +175,20 @@ export async function stableSelector(page, xpath, method) {
           }
         }
         const id = /** @type {Element} */ (el).id;
-        // skip generated ids (React useId ":r1:", "radix-123", "ember456")
-        if (id && !/\d{3,}|:/.test(id) && unique(`#${CSS.escape(id)}`)) return `#${CSS.escape(id)}`;
+        // skip ids a framework made up: they change between renders
+        if (id && !new RegExp(generated, 'i').test(id) && unique(`#${CSS.escape(id)}`))
+          return `#${CSS.escape(id)}`;
         return null;
       },
-      { xp, attrs: TEST_ID_ATTRS, climb: ['click', 'doubleClick', 'hover'].includes(method) },
+      {
+        xp,
+        attrs: TEST_ID_ATTRS,
+        climb: ['click', 'doubleClick', 'hover'].includes(method),
+        generated: GENERATED_ID.source,
+      },
     )
     .catch(() => null);
+  return byAttribute ?? roleSelector(page, xp);
 }
 
 /** Compact text for prompts. @param {PageHint[]} hints */

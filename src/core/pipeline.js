@@ -9,6 +9,7 @@ import { analyseConsistency } from '../theme/consistency.js';
  * @import { Crawler, Planner, Reporter } from './ports.js'
  * @import { TestRunner } from './testRunner.js'
  * @import { RunReport, RunSummary, SiteMap, Target, TestCase, TestResult } from './types.js'
+ * @import { Screen } from './discovery.js'
  */
 
 /**
@@ -26,6 +27,9 @@ const PipelineState = Annotation.Root({
     default: () => [],
   }),
   report: Annotation(),
+  /** exploring deeper: the round now running (1 = tests from the crawl) and the tests it added */
+  round: Annotation(),
+  newTests: Annotation(),
 });
 
 /**
@@ -37,6 +41,8 @@ const PipelineState = Annotation.Root({
  * @property {TestCase[]} tests
  * @property {TestResult[]} results
  * @property {RunReport} [report]
+ * @property {number} [round]
+ * @property {TestCase[]} [newTests]
  */
 
 /**
@@ -50,6 +56,9 @@ const PipelineState = Annotation.Root({
  * @property {import('../events/runEvents.js').RunEvents} [events]
  * @property {() => { inputTokens: number, outputTokens: number }} [overheadUsage]  planner + judge tokens so far
  * @property {RunReport['auth']} [auth]  the login the run did first, if any
+ * @property {{ rounds: number, discover: (results: TestResult[], siteMap: SiteMap) => Promise<Screen[]> }} [deeper]
+ *   explore deeper: after each round, plan tests that start on the new screens its passing tests reached
+ * @property {AbortSignal} [signal]  a stopped run plans no further round
  */
 
 /** @param {TestResult[]} results @returns {RunSummary} */
@@ -76,8 +85,14 @@ export function summarize(results) {
 /**
  * The run as a LangGraph state graph:
  *
- *   START -> crawl -> plan --(Send: one branch per test, `concurrency` at a time)--> runTest -> writeReport -> END
- *                       \------------------------- no tests ----------------------------/
+ *   START -> crawl -> plan --(Send: one branch per test, `concurrency` at a time)--> runTest -> discover
+ *                       \------------------------- no tests ---------------------------------> writeReport -> END
+ *   discover --(more rounds and new screens: Send one branch per new test)--> runTest
+ *   discover --(otherwise)--> writeReport
+ *
+ * With one round (the default) `discover` always goes straight to the report. With more (exploring deeper), it
+ * takes the screens the round's passing tests ended on that the crawl never saw, and the planner plans tests that
+ * start there; Playwright replays the steps that reach each screen, then the agent continues.
  *
  * Nodes stay plain async functions over the ports (crawler, planner, runner, reporter), so the
  * orchestration framework is swappable and every node is testable on its own. Progress for the UI
@@ -121,7 +136,7 @@ export function buildPipeline(deps) {
       });
       phase('plan', 'done', `${tests.length} test(s)`);
       if (tests.length) phase('run', 'running');
-      return { tests };
+      return { tests, round: 1, newTests: tests };
     })
     // One branch per test (fan-out via Send); each appends its result to `results`.
     .addNode('runTest', async (/** @type {{ test: TestCase }} */ input) => {
@@ -130,6 +145,63 @@ export function buildPipeline(deps) {
         return runner.run(input.test);
       });
       return { results: [result] };
+    })
+    // After every round: plan the next one from the new screens its passing tests reached, or stop.
+    .addNode('discover', async (/** @type {any} */ state) => {
+      const s = /** @type {PipelineState} */ (state);
+      const round = s.round ?? 1;
+      const deeper = deps.deeper;
+      if (!deeper || round >= deeper.rounds || !planner.planFrom || deps.signal?.aborted)
+        return { newTests: [] };
+      phase('deeper', 'running', `round ${round + 1}`);
+      const ran = s.results.filter((r) => (r.test.round ?? 1) === round);
+      const screens = await deeper.discover(ran, /** @type {SiteMap} */ (s.siteMap));
+      if (!screens.length) {
+        logger.info(`Exploring deeper: round ${round} reached no screen the crawl had not seen`);
+        phase('deeper', 'done', 'no new screens');
+        return { newTests: [] };
+      }
+      logger.info(
+        `Exploring deeper: ${screens.length} new screen(s): ${screens.map((sc) => sc.url).join(', ')}`,
+      );
+      events.emit('screens.found', {
+        round: round + 1,
+        screens: screens.map((sc) => ({ url: sc.url, title: sc.title, from: sc.from })),
+      });
+      // tests the AI's reading blamed on how they were written get one rewrite from a deeper screen
+      const retry = ran
+        .filter((r) => r.verdict.status === 'fail' && r.explanation?.category === 'test-problem')
+        .map((r) => ({
+          title: r.test.title,
+          goal: r.test.goal,
+          reading: [r.explanation?.cause, r.explanation?.suggestion].filter(Boolean).join(' '),
+        }));
+      if (retry.length)
+        logger.info(
+          `Exploring deeper: asking the planner to rewrite ${retry.length} test(s) the AI's reading blamed on the test`,
+        );
+      const planned = await planner.planFrom(
+        s.target,
+        /** @type {SiteMap} */ (s.siteMap),
+        screens,
+        s.tests,
+        round + 1,
+        retry,
+      );
+      const newTests = planned.map((t) => ({ ...t, round: round + 1 }));
+      events.emit('plan.extended', {
+        round: round + 1,
+        tests: newTests.map((t) => ({
+          id: t.id,
+          title: t.title,
+          goal: t.goal,
+          expectations: t.expectations,
+          startsFrom: t.startsFrom,
+          round: t.round,
+        })),
+      });
+      phase('deeper', 'done', `${newTests.length} test(s) from ${screens.length} screen(s)`);
+      return { tests: [...s.tests, ...newTests], newTests, round: round + 1 };
     })
     .addNode('writeReport', async (/** @type {any} */ state) => {
       const s = /** @type {PipelineState} */ (state);
@@ -154,6 +226,7 @@ export function buildPipeline(deps) {
           ...(config.preset ? { preset: config.preset } : {}),
         },
         ...(deps.auth ? { auth: deps.auth } : {}),
+        ...(deps.signal?.aborted ? { stopped: true } : {}),
       };
       if (results.some((r) => r.evidence.themeStates?.length)) {
         report.consistency = analyseConsistency(results);
@@ -177,7 +250,17 @@ export function buildPipeline(deps) {
       },
       ['runTest', 'writeReport'],
     )
-    .addEdge('runTest', 'writeReport')
+    .addEdge('runTest', 'discover')
+    .addConditionalEdges(
+      'discover',
+      (/** @type {any} */ state) => {
+        const s = /** @type {PipelineState} */ (state);
+        return s.newTests?.length
+          ? s.newTests.map((test) => new Send('runTest', { test }))
+          : 'writeReport';
+      },
+      ['runTest', 'writeReport'],
+    )
     .addEdge('writeReport', END)
     .compile();
 

@@ -46,6 +46,17 @@ Anti-masking rules (these are the point of the project):
 2. If the judge fails after a heal, the cache is **not** updated and the heals are listed as suspect.
 3. Every `HealEvent` (old selector, new selector, reason) is in the report.
 4. A recording is invalidated when its fingerprint (goal + startUrl + expectations) changes.
+5. **A recording is kept only if it replays** (D36, `TestRunner.#replayOnce`, `AIE2E_VERIFY_RECORDINGS`). Right
+   after the judge passes an agent run, its steps are replayed once in a fresh browser with no AI and judged on
+   the test's own checks (no quality or screenshot gates, so it stays quick; visual questions are asked again).
+   A recording that fails is not saved; the test still passed, and the report says it could not be recorded.
+6. **Sturdier selectors** (D37). Stagehand records absolute XPaths (`/html[1]/body[1]/div[1]/main[1]/…`) that break
+   when one wrapper is added. A step's element gets, in order: its test id, a close ancestor's test id, a real
+   `#id` (ids a framework makes up, like React's `_r_e_` or `radix-…`, are skipped), or its role and accessible
+   name (`internal:role=button[name="Generate"s]`, only when unique, short and the same element). The agent run
+   tries this right after each action; when the click already changed the page, the replay check above does it
+   just before replaying that step, and the replay uses it, so the saved recording is the one that worked. The
+   XPath always stays as a fallback.
 
 ### Judge rules added after the first real runs (29 Oct)
 
@@ -271,6 +282,51 @@ Render (Docker, 1 CPU / 2 GB)
 
 `/healthz` answers before the host check (the platform's probe). Locally nothing changes: the server binds to
 127.0.0.1 and refuses to listen elsewhere without `AIE2E_ACCESS_CODE`.
+
+## 4m. Exploring deeper (experimental, D35)
+
+The crawler follows links only, so a screen behind a click (a page a button opens, a wizard step, the state after
+"Generate") never reaches the planner, and its tests can only ask visual questions. Every passing test has already
+been to such screens. With `--rounds 2` (or 3), the pipeline loops:
+
+```
+plan ─▶ runTest ×N ─▶ discover ──(new screens, rounds left)──▶ runTest ×M (round 2) ─▶ discover ─▶ … ─▶ writeReport
+                         │
+                         └─ each passing, recorded test's final screen: new unless a crawled or discovered screen
+                            has its route (ids folded: /deck/:id) and ≥ 60% of its controls (or 70% of its words)
+```
+
+- **Discovery** (`core/discovery.js`): from the judge's evidence, never the agent's words. The final screen's
+  controls, text boxes, safe links, test ids and API calls are collected by `session.collectEvidence`
+  (`evidence.screen`); the steps that reach it are the test's recording, only when its fingerprint matches. A
+  screen's identity is its route plus its controls, not its text: eight decks open in one editor are one screen
+  (found on the presentation builder, where text-based identity made six). When several tests reach it, the
+  shortest recording is kept, because every round-2 test replays it.
+- **Round-2 planning** (`LlmPlanner.planFrom`): the planner sees the new screens and plans tests that start on
+  one of them. Grounding widens to those screens (their URLs, endpoints and test ids become valid hard checks),
+  and the plan review treats the starting screen as the start page, so anything already shown there is rejected.
+  `CachedPlanner.planFrom` pins round-2 plans like round-1 plans, refreshing the steps from today's recordings.
+- **Rewriting tests that were wrong**: a round-1 test that failed and that the AI's reading blamed on the test
+  itself is handed to the round-2 planner with that reading, to rewrite from a screen that shows how (found on
+  the presentation builder: "improve a slide with AI" failed because the planner never saw the editor's AI chat
+  box; the editor screen shows it). The reading only steers planning; the new test is judged like any other.
+- **Reaching a screen by its address** (`reachDirectly`, `probePage`): each new screen's URL is opened in a fresh
+  browser (logged in when the run is). If the same screen appears (route and controls), round-2 tests start
+  there with no steps to replay, in seconds instead of replaying a whole flow (on the presentation builder,
+  generating a deck per test). If not (the state lived only in that test's browser, or the URL redirects), they
+  replay the steps. Checked every run, so a saved plan follows what works today.
+- **Starting deeper** (`TestCase.prefix`, `startsFrom`, `round`): Playwright replays the prefix with no AI
+  (`replayPrefix`), then the agent continues as it does after a heal. The judge's "before" snapshot is taken on
+  the starting screen, in the first run and in every replay (`ReplayExecutor` retakes it after the prefix). A
+  prefix that no longer works fails the test plainly. Tests without a prefix keep their fingerprints.
+- **A stopped run is not a broken app:** the report is marked `stopped`, and tests it cut off are listed as not
+  finished instead of "could not run" problems.
+- **Off by default, and never on the shared instance:** one round is today's behaviour. Each extra round adds
+  planner calls and agent runs, capped at `maxTests` per round and 3 rounds.
+
+The golden-master trap: a planner that sees a screen could turn what it shows (a total, a message) into a check
+that it is correct, freezing today's bugs into the tests. It cannot here: everything on the starting screen is
+rejected by the review, and the planner never sees the result of the action it plans.
 
 ## 5. Data model
 

@@ -6,6 +6,7 @@ export const initial = {
   site: [], // pages the crawler found: [{ url, title }]
   review: null, // { found: string[], remaining: string[] } from the plan review
   planReused: false, // the plan was saved by an earlier run, not made now
+  screens: [], // exploring deeper: [{ round, url, title, from: { testId, title } }] screens earlier tests reached
   tests: {}, // id -> { id, title, goal, expectations, status, steps[], screenshots[], result? }
   order: [],
   logs: [],
@@ -14,11 +15,13 @@ export const initial = {
   error: null,
 };
 
-const blank = (id, title = id, goal = '', expectations = []) => ({
+const blank = (id, title = id, goal = '', expectations = [], extra = {}) => ({
   id,
   title,
   goal,
   expectations,
+  round: extra.round ?? 1,
+  startsFrom: extra.startsFrom,
   status: 'pending',
   steps: [],
   screenshots: [],
@@ -45,6 +48,21 @@ export function reduce(state, { type, data }) {
       const tests = {};
       for (const t of data.tests) tests[t.id] = blank(t.id, t.title, t.goal, t.expectations);
       return { ...state, tests, order: data.tests.map((t) => t.id) };
+    }
+    case 'screens.found':
+      return {
+        ...state,
+        screens: [...state.screens, ...data.screens.map((s) => ({ ...s, round: data.round }))],
+      };
+    case 'plan.extended': {
+      const tests = { ...state.tests };
+      for (const t of data.tests)
+        tests[t.id] ??= blank(t.id, t.title, t.goal, t.expectations, {
+          round: t.round ?? data.round,
+          startsFrom: t.startsFrom,
+        });
+      const added = data.tests.map((t) => t.id).filter((id) => !state.order.includes(id));
+      return { ...state, tests, order: [...state.order, ...added] };
     }
     case 'test.started': {
       const t = state.tests[data.testId] ?? blank(data.testId, data.title, data.goal);

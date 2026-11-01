@@ -18,6 +18,7 @@ const DEFAULTS = {
   cache: true,
   rerecord: false,
   replan: false,
+  deeper: false,
   headed: false,
   quality: 'warn',
   visual: 'warn',
@@ -229,6 +230,8 @@ export function NewRun({ health }) {
         cache: form.cache,
         rerecord: form.rerecord,
         replan: form.replan,
+        rounds:
+          form.mode === 'explore' && form.cache && form.deeper && !health?.shared ? 2 : undefined,
         headed: form.headed,
         quality: form.quality,
         visual: form.visual,
@@ -633,6 +636,15 @@ export function NewRun({ health }) {
                   label="Plan again"
                   hint="Ignore the saved test plan for this URL."
                 />
+                {form.mode === 'explore' && form.cache && !health?.shared && (
+                  <Switch
+                    id="deeper"
+                    checked={form.deeper}
+                    onCheckedChange={(v) => set({ deeper: v })}
+                    label="Explore deeper (experimental)"
+                    hint="A second round: tests that start on the screens the first round reached but the crawl could not see. More AI calls."
+                  />
+                )}
                 <Switch
                   id="headed"
                   checked={form.headed}

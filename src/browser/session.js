@@ -11,6 +11,8 @@ import { auditThemes } from '../theme/audit.js';
 import { ThemeStates, fingerprintOf } from '../theme/states.js';
 import { applyTheme, discoverThemes, restoreTheme, themeState } from '../theme/discover.js';
 import { applyStorageState } from '../auth/login.js';
+import { readHints } from './hints.js';
+import { isSafeLink, normalizeUrl } from '../crawler/bfsCrawler.js';
 
 /** Visual-comparison captures hide the harness's own cursor overlay: its position is not the app's. */
 const VISUAL_STYLE = '#__aie2e_cursor{display:none!important}';
@@ -25,7 +27,7 @@ const LIVE_STYLE =
  * @import { Browser, BrowserContext, Page } from 'playwright'
  * @import { Config } from '../config/config.js'
  * @import { TestArtifacts } from '../storage/artifacts.js'
- * @import { Baseline, ConsoleEntry, Evidence, Expectation, NetworkFailure, ScreenshotRef, ThemeAudit, ThemeState, VisualCapture } from '../core/types.js'
+ * @import { Baseline, ConsoleEntry, Evidence, Expectation, NetworkFailure, ScreenSummary, ScreenshotRef, ThemeAudit, ThemeState, VisualCapture } from '../core/types.js'
  * @import { Logger } from '../util/logger.js'
  */
 
@@ -506,6 +508,73 @@ export class BrowserSession {
         this.qualityCfg.a11y && this.qualityCfg.gate !== 'off'
           ? await this.quality.scanA11y(page)
           : undefined,
+      screen: await this.#screenSummary().catch(() => undefined),
+    };
+  }
+
+  /**
+   * What the final screen offers next, in the crawler's terms (controls, safe links, test ids, hints) plus the
+   * API calls the test made. Exploring deeper plans new tests from it; the judge never reads it.
+   * @returns {Promise<ScreenSummary>}
+   */
+  async #screenSummary() {
+    const page = this.page;
+    const here = page.url();
+    const origin = new URL(here).origin;
+    const raw = await page.evaluate(() => ({
+      forms: document.forms.length,
+      inputs: [
+        ...document.querySelectorAll(
+          'input:not([type=hidden]):not([type=checkbox]):not([type=radio]):not([type=submit]):not([type=button]), textarea, [role="textbox"]',
+        ),
+      ]
+        .map((el) =>
+          (
+            el.getAttribute('placeholder') ||
+            el.getAttribute('aria-label') ||
+            (el.id && document.querySelector(`label[for="${CSS.escape(el.id)}"]`)?.textContent) ||
+            el.getAttribute('name') ||
+            ''
+          ).trim(),
+        )
+        .filter(Boolean)
+        .slice(0, 12),
+      buttons: [...document.querySelectorAll('button, [role="button"]')]
+        .map((b) => (b.textContent ?? '').replace(/\s+/g, ' ').trim().slice(0, 80))
+        .filter(Boolean)
+        .slice(0, 20),
+      anchors: [...document.querySelectorAll('a[href]')].map((a) => ({
+        href: /** @type {HTMLAnchorElement} */ (a).href,
+        text: (a.textContent ?? '').trim(),
+      })),
+    }));
+    /** @type {string[]} */
+    const links = [];
+    for (const a of raw.anchors) {
+      const link = normalizeUrl(a.href, here);
+      if (link && isSafeLink(link, a.text, origin) && !links.includes(link)) links.push(link);
+    }
+    const hints = await readHints(page);
+    const apiCalls = [
+      ...new Set(
+        this.quality.requests
+          .filter((r) => r.api)
+          .map((r) => `${r.method} ${new URL(r.url).pathname}`),
+      ),
+    ].slice(0, 12);
+    return {
+      buttons: [...new Set(raw.buttons)],
+      links: links.slice(0, 30),
+      forms: raw.forms,
+      inputs: [...new Set(raw.inputs)],
+      testIds: hints
+        .filter((h) => h.selector)
+        .slice(0, 40)
+        .map((h) => `${h.selector} "${h.text}"${h.visible ? '' : ' (hidden)'}`),
+      hints: hints
+        .flatMap((h) => (h.hint ? [`${h.selector ?? h.tag}: ${h.hint}`] : []))
+        .slice(0, 15),
+      apiCalls,
     };
   }
 

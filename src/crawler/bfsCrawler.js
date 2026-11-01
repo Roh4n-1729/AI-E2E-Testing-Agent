@@ -91,19 +91,7 @@ export class BfsCrawler {
         try {
           await page.goto(url, { waitUntil: 'domcontentloaded' });
           await page.waitForLoadState('load', { timeout: 5000 }).catch(() => undefined);
-          const raw = await page.evaluate(() => ({
-            title: document.title,
-            text: (document.body?.innerText ?? '').replace(/\s+/g, ' ').slice(0, 1500),
-            forms: document.forms.length,
-            buttons: [...document.querySelectorAll('button, [role="button"]')]
-              .map((b) => (b.textContent ?? '').trim())
-              .filter(Boolean)
-              .slice(0, 15),
-            anchors: [...document.querySelectorAll('a[href]')].map((a) => ({
-              href: /** @type {HTMLAnchorElement} */ (a).href,
-              text: (a.textContent ?? '').trim(),
-            })),
-          }));
+          const raw = await readPage(page);
           const hints = await readHints(page);
           /** @type {string[]} */
           const links = [];
@@ -123,6 +111,7 @@ export class BfsCrawler {
             textExcerpt: raw.text,
             forms: raw.forms,
             buttons: raw.buttons,
+            inputs: [...new Set(raw.inputs)],
             apiCalls: [...apiCalls],
             testIds: hints
               .filter((h) => h.selector)
@@ -147,5 +136,72 @@ export class BfsCrawler {
     }
     this.logger.info(`Crawled ${pages.length} page(s)`);
     return { origin, pages };
+  }
+}
+
+/**
+ * What a page offers, read in the page: title, text, forms, text boxes, buttons and links.
+ * @param {import('playwright').Page} page
+ */
+export function readPage(page) {
+  return page.evaluate(() => ({
+    title: document.title,
+    text: (document.body?.innerText ?? '').replace(/\s+/g, ' ').slice(0, 1500),
+    forms: document.forms.length,
+    inputs: [
+      ...document.querySelectorAll(
+        'input:not([type=hidden]):not([type=checkbox]):not([type=radio]):not([type=submit]):not([type=button]), textarea, [role="textbox"]',
+      ),
+    ]
+      .map((el) =>
+        (
+          el.getAttribute('placeholder') ||
+          el.getAttribute('aria-label') ||
+          (el.id && document.querySelector(`label[for="${CSS.escape(el.id)}"]`)?.textContent) ||
+          el.getAttribute('name') ||
+          ''
+        ).trim(),
+      )
+      .filter(Boolean)
+      .slice(0, 12),
+    buttons: [...document.querySelectorAll('button, [role="button"]')]
+      .map((b) => (b.textContent ?? '').replace(/\s+/g, ' ').trim().slice(0, 80))
+      .filter(Boolean)
+      .slice(0, 20),
+    anchors: [...document.querySelectorAll('a[href]')].map((a) => ({
+      href: /** @type {HTMLAnchorElement} */ (a).href,
+      text: (a.textContent ?? '').trim(),
+    })),
+  }));
+}
+
+/**
+ * Open one URL in a fresh browser (logged in when the run is) and read what it shows, after the page has gone
+ * quiet. Exploring deeper uses it to see whether a screen a test reached opens directly by its address.
+ * @param {Config} cfg @param {string} url
+ * @param {{ storageState?: import('../auth/login.js').StorageState }} [o]
+ * @returns {Promise<import('../core/discovery.js').Snapshot | null>}
+ */
+export async function probePage(cfg, url, o = {}) {
+  const browser = await chromium.launch({
+    executablePath: resolveChromePath(cfg),
+    args: cfg.chromeArgs,
+    headless: true,
+  });
+  try {
+    const context = await browser.newContext({
+      viewport: cfg.viewport,
+      storageState: o.storageState,
+    });
+    const page = await context.newPage();
+    page.setDefaultNavigationTimeout(cfg.navTimeoutMs);
+    await page.goto(url, { waitUntil: 'domcontentloaded' });
+    await page.waitForLoadState('networkidle', { timeout: 8000 }).catch(() => undefined);
+    const raw = await readPage(page);
+    return { url: page.url(), title: raw.title, text: raw.text, buttons: raw.buttons };
+  } catch {
+    return null;
+  } finally {
+    await browser.close();
   }
 }

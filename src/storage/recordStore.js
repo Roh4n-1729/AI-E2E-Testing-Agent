@@ -15,7 +15,14 @@ import { sha256 } from '../util/misc.js';
 export function testFingerprint(test) {
   // labels are words for people: rewording one must not throw a recording away
   const checks = test.expectations.map(({ label: _label, ...e }) => e);
-  return sha256(JSON.stringify([test.goal, test.startUrl, checks]));
+  // a test that starts on a screen reached by earlier steps changes when those steps change; tests without
+  // a prefix keep the fingerprint they always had, so existing recordings stay valid
+  const prefix = test.prefix?.map((s) => [s.kind, s.url, s.selector, s.method, s.arguments]);
+  return sha256(
+    JSON.stringify(
+      prefix ? [test.goal, test.startUrl, checks, prefix] : [test.goal, test.startUrl, checks],
+    ),
+  );
 }
 
 /**

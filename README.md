@@ -3,7 +3,8 @@
 AI-agent-driven end-to-end testing for any web app. Give it a URL: it explores the app, plans
 user-flow tests, runs them with an AI agent driving a real browser, and **decides pass/fail from
 evidence the agent cannot fake**: the page, the URL, network calls, downloads, toasts, console errors
-and screenshots. Tests that pass are recorded and **replayed with plain Playwright and no LLM**. When a
+and screenshots. Tests that pass are recorded (after one check that the recording replays on its own) and
+**replayed with plain Playwright and no LLM**. When a
 replay breaks, the agent heals it, and every heal is logged.
 
 > Final-round interview project. Status: working end to end, tested on three local apps (one with seeded bugs, two
@@ -142,6 +143,9 @@ npm start -- run https://app-two.your-company.com --theme-from https://design.yo
 
 # an app behind a login (username/password from AIE2E_USERNAME / AIE2E_PASSWORD in .env)
 npm start -- run https://staging.your-app.com --login-url /login --login-success-text "Welcome back"
+
+# explore deeper (experimental): a second round of tests that start on screens the first round reached
+npm start -- run https://your-app.test --rounds 2
 
 # turn any run into a suite you can commit
 npm start -- export <runId> -o my-app.suite.json

@@ -8,6 +8,10 @@
 import { settle } from '../browser/settle.js';
 import { moveMouseToPercent } from './mouse.js';
 import { stepCheckpoint } from '../visual/baselines.js';
+import { stableSelector } from '../browser/hints.js';
+
+/** An absolute XPath recorded by Stagehand: breaks when one wrapper is added. @param {string} [s] */
+const isXPath = (s) => !!s && (s.startsWith('xpath=') || s.startsWith('/'));
 
 export { settle };
 
@@ -39,14 +43,22 @@ export class ReplayExecutor {
   /**
    * @param {TestCase} test @param {BrowserSession} session @param {TestContext} ctx
    * @param {Recording} recording
+   * @param {{ sturdier?: boolean }} [o]  sturdier: before each step that targets an absolute XPath, find a selector
+   *   that survives layout changes (test id, id, role and name) while the element is on the page, and replay with
+   *   it; the outcome's steps carry the upgraded selectors (the XPath stays as a fallback)
    * @returns {Promise<ExecutionOutcome>}
    */
-  async execute(test, session, ctx, recording) {
+  async execute(test, session, ctx, recording, o = {}) {
+    /** @type {RecordedStep[]} the steps as replayed, possibly with sturdier selectors */
+    const replayed = [];
     /** @type {import('../core/types.js').TraceEntry[]} */
     const trace = [];
     await session.goto(test.startUrl);
     const start = await session.screenshot('start');
-    const baseline = await session.baseline(test.expectations);
+    let baseline = await session.baseline(test.expectations);
+    // A test that starts on a screen reached by earlier steps (exploring deeper) is judged from that screen:
+    // its "before" snapshot is retaken once the prefix is replayed, so a check already true there is vacuous.
+    const prefixEnd = (test.prefix?.length ?? 0) - 1;
     trace.push({
       index: 0,
       source: 'harness',
@@ -59,7 +71,30 @@ export class ReplayExecutor {
     });
     await session.auditState('start', { step: 0 });
 
-    for (const step of recording.steps) {
+    for (const original of recording.steps) {
+      let step = original;
+      if (o.sturdier && step.kind === 'act' && isXPath(step.selector)) {
+        const better = await resolveTarget(session.page, step)
+          .then((loc) => loc.waitFor({ state: 'attached', timeout: ACTION_TIMEOUT_MS }))
+          .then(() =>
+            stableSelector(
+              session.page,
+              /** @type {string} */ (step.selector),
+              step.method ?? 'click',
+            ),
+          )
+          .catch(() => null);
+        if (better)
+          step = {
+            ...step,
+            selector: better,
+            fallbackSelectors: [
+              /** @type {string} */ (step.selector),
+              ...(step.fallbackSelectors ?? []),
+            ],
+          };
+      }
+      replayed.push(step);
       if (step.kind === 'navigate' && step.index === 0) continue; // the start page is already open
       ctx.logger.debug(`replay ${step.index}: ${step.description}`);
       ctx.events.emit('test.step', {
@@ -97,10 +132,43 @@ export class ReplayExecutor {
         await session.auditState(`after step ${step.index}`, { step: step.index });
         await session.visualCapture(stepCheckpoint(step), `after step ${step.index}`);
       }
+      if (step.index === prefixEnd) {
+        await session.settle(STEP_SETTLE);
+        baseline = await session.baseline(test.expectations);
+      }
     }
     await session.settle(FINAL_SETTLE);
-    return { mode: 'replay', steps: recording.steps, heals: [], baseline, trace };
+    return {
+      mode: 'replay',
+      steps: o.sturdier ? replayed : recording.steps,
+      heals: [],
+      baseline,
+      trace,
+    };
   }
+}
+
+/**
+ * Reach the screen a round-2 test starts on: open the start URL and replay the test's prefix (the recorded steps
+ * of the earlier test that ended there), with no AI. The "before" snapshot is taken on that screen. Throws
+ * ReplayStepError when a prefix step no longer works.
+ * @param {TestCase} test @param {BrowserSession} session @param {TestContext} ctx
+ * @returns {Promise<{ completed: RecordedStep[], baseline: Baseline, trace: import('../core/types.js').TraceEntry[] }>}
+ */
+export async function replayPrefix(test, session, ctx) {
+  const steps = (test.prefix ?? []).map((s, i) => ({ ...s, index: i }));
+  const out = await new ReplayExecutor().execute({ ...test, prefix: steps }, session, ctx, {
+    schemaVersion: 1,
+    testId: test.id,
+    fingerprint: '',
+    recordedAt: '',
+    steps,
+  });
+  return {
+    completed: steps,
+    baseline: /** @type {Baseline} */ (out.baseline),
+    trace: out.trace ?? [],
+  };
 }
 
 /**

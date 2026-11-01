@@ -679,6 +679,13 @@ export function TestJourney({
             {result.test.goal && (
               <p className="max-w-3xl text-[13px] text-muted">Goal: {result.test.goal}</p>
             )}
+            {result.test.startsFrom && (
+              <p className="max-w-3xl text-[13px] text-ai">
+                Round {result.test.round ?? 2}: starts where “{result.test.startsFrom.title}” ended
+                ({pathOf(result.test.startsFrom.url)}). Playwright replays those steps first; the
+                judge&apos;s “before” is that screen.
+              </p>
+            )}
           </div>
           <div className="flex gap-2">
             <Button

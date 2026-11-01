@@ -432,4 +432,41 @@ describe('insights', () => {
     expect(i.findings.find((f) => f.testIds?.includes('blank'))?.severity).toBe('review');
     expect(i.findings.some((f) => f.category === 'agent')).toBe(false);
   });
+  it('does not count tests a stopped run cut off as problems with the app', () => {
+    const cut = (/** @type {string} */ id, /** @type {string} */ reason) =>
+      result({ id, verdict: { status: 'error', reason, checks: [], warnings: [] } });
+    const rep = {
+      ...report([
+        result({ id: 'a' }),
+        cut('b', 'No open page'),
+        cut('c', 'Stopped before this test started'),
+      ]),
+      stopped: true,
+    };
+    const i = runInsights(rep);
+    expect(i.headline).toBe('Stopped after 1 of 3 tests');
+    expect(i.sentence).toContain('2 tests did not finish because the run was stopped.');
+    expect(i.findings.filter((f) => f.title.includes('could not run'))).toEqual([]);
+    // an error in a run nobody stopped is still a problem
+    const crashed = runInsights(report([result({ id: 'a' }), cut('b', 'Browser crashed')]));
+    expect(crashed.findings.some((f) => f.title.includes('could not run'))).toBe(true);
+  });
+  it('flags a passing test whose recording did not replay, so the next run uses the agent again', () => {
+    const i = runInsights(
+      report([
+        result({ id: 'a', recording: { saved: true, verified: true } }),
+        result({
+          id: 'b',
+          recording: {
+            saved: false,
+            verified: false,
+            reason: 'Step 2 "Click Save" failed: timeout',
+          },
+        }),
+      ]),
+    );
+    const f = i.findings.find((x) => x.title === '1 test passed but could not be recorded');
+    expect(f).toMatchObject({ severity: 'review', category: 'maintenance', testIds: ['b'] });
+    expect(f?.detail).toContain('Click Save');
+  });
 });

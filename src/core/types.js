@@ -73,6 +73,21 @@ export const ExpectationSchema = z.discriminatedUnion('kind', [
   }),
 ]);
 
+// ---------- Recorded (replayable) steps: the Saturday contract ----------
+export const RecordedStepSchema = z.object({
+  index: z.number().int().nonnegative(),
+  kind: z.enum(['navigate', 'act', 'back', 'wait', 'mouse']),
+  /** Human description, also the instruction handed back to the agent when healing. */
+  description: z.string(),
+  url: z.string().optional(),
+  selector: z.string().optional(),
+  /** Tried in order when `selector` no longer matches (e.g. the XPath, when `selector` is a test id). */
+  fallbackSelectors: z.array(z.string()).optional(),
+  method: z.string().optional(),
+  /** act/mouse: method arguments. mouse: [xPercent, yPercent] of the viewport. */
+  arguments: z.array(z.string()).optional(),
+});
+
 // ---------- Test cases ----------
 export const TestCaseSchema = z.object({
   id: z.string().regex(/^[a-z0-9][a-z0-9-]*$/, 'lowercase slug'),
@@ -88,21 +103,16 @@ export const TestCaseSchema = z.object({
    * person on the command line or the New run form, or the built-in smoke check. Shown in reports, never judged.
    */
   origin: z.enum(['planner', 'suite', 'user', 'smoke']).optional(),
-});
-
-// ---------- Recorded (replayable) steps: the Saturday contract ----------
-export const RecordedStepSchema = z.object({
-  index: z.number().int().nonnegative(),
-  kind: z.enum(['navigate', 'act', 'back', 'wait', 'mouse']),
-  /** Human description, also the instruction handed back to the agent when healing. */
-  description: z.string(),
-  url: z.string().optional(),
-  selector: z.string().optional(),
-  /** Tried in order when `selector` no longer matches (e.g. the XPath, when `selector` is a test id). */
-  fallbackSelectors: z.array(z.string()).optional(),
-  method: z.string().optional(),
-  /** act/mouse: method arguments. mouse: [xPercent, yPercent] of the viewport. */
-  arguments: z.array(z.string()).optional(),
+  /**
+   * Explore deeper (round 2+): the recorded steps of an earlier passing test that reach the screen this test
+   * starts on. Playwright replays them first, with no AI; the judge's "before" snapshot is taken after them,
+   * so only what the agent does from that screen on can pass a check.
+   */
+  prefix: z.array(RecordedStepSchema).optional(),
+  /** The earlier test whose end screen this test starts on (with `prefix`). Shown in reports. */
+  startsFrom: z.object({ testId: z.string(), title: z.string(), url: z.string() }).optional(),
+  /** Which exploration round planned this test (1 = from the crawl). */
+  round: z.number().int().positive().optional(),
 });
 
 export const RecordingSchema = z.object({
@@ -131,7 +141,11 @@ export const RecordingSchema = z.object({
 /** @typedef {z.infer<typeof ExpectationSchema>} Expectation */
 /** @typedef {z.infer<typeof TestCaseSchema>} TestCase */
 /** @typedef {z.infer<typeof RecordedStepSchema>} RecordedStep */
-/** @typedef {{ completed: RecordedStep[], failed: RecordedStep, baseline: Baseline }} ResumeContext  Where a healing agent picks up after a replay step broke. */
+/**
+ * Where an agent picks up after steps Playwright already replayed: a recording that broke at `failed` (a heal),
+ * or, without `failed`, the prefix that reaches the screen a round-2 test starts on.
+ * @typedef {{ completed: RecordedStep[], failed?: RecordedStep, baseline: Baseline, trace?: TraceEntry[] }} ResumeContext
+ */
 /** @typedef {z.infer<typeof RecordingSchema>} Recording */
 
 // ---------- Evidence & verdicts ----------
@@ -216,6 +230,18 @@ export const RecordingSchema = z.object({
  * @property {ThemeAudit} [theme]  theme conformance of the final state, in every theme the build ships
  * @property {ThemeState[]} [themeStates]  every distinct screen the test reached that was audited, final included
  * @property {VisualEvidence} [visual]  screenshots for visual regression and how they compare with the baselines
+ * @property {ScreenSummary} [screen]  what the final screen offers (controls, links, test ids), for exploring deeper
+ */
+/**
+ * The final screen of a test as the planner would see a crawled page: what can be done there next.
+ * @typedef {object} ScreenSummary
+ * @property {string[]} buttons
+ * @property {string[]} links  same-origin, safe-to-visit
+ * @property {number} forms
+ * @property {string[]} [inputs]  text boxes by placeholder or label ("Ask for a change...")
+ * @property {string[]} testIds
+ * @property {string[]} hints
+ * @property {string[]} apiCalls  fetch/XHR calls seen during the test, as "METHOD /path"
  */
 /**
  * @typedef {object} VisualCapture  A deterministic screenshot for comparison: no cursor, animations
@@ -324,6 +350,8 @@ export const RecordingSchema = z.object({
  * @property {TraceEntry[]} [trace]  What happened, step by step, with screenshots.
  * @property {Explanation} [explanation]  the AI's reading of a failure; advisory, written after the verdict
  * @property {TestInputs} [inputs]  what the AI agent, Playwright and the judge were each given
+ * @property {{ saved: boolean, verified: boolean, reason?: string }} [recording]  a passing agent run: was it saved
+ *   for replay, after replaying once on its own (verified)? reason = why a recording was not kept
  */
 /**
  * Why a failed test most likely failed, read by the judge's model from the evidence after the verdict.
@@ -361,6 +389,7 @@ export const RecordingSchema = z.object({
  * @property {Consistency} [consistency]  how consistently the same kinds of element look across screens
  * @property {{ loginUrl: string, username: string, landedOn: string }} [auth]  the run logged in first (never the password)
  * @property {{ agent: string, planner: string, judge: string, preset?: string }} [models]  which model did which job
+ * @property {boolean} [stopped]  the run was stopped: tests that were cut off are not problems with the app
  */
 /**
  * @typedef {object} ConsistencyStyle
@@ -397,6 +426,7 @@ export const RecordingSchema = z.object({
  * @property {string} [textExcerpt]
  * @property {number} [forms]
  * @property {string[]} [buttons]
+ * @property {string[]} [inputs]  text boxes by placeholder or label ("Search products", "Ask for a change...")
  * @property {string[]} [apiCalls]  fetch/XHR calls the page made while loading, as "METHOD /path"
  * @property {string[]} [testIds]  stable selectors the app exposes, e.g. `[data-testid="export"] "Export"`
  * @property {string[]} [hints]  free-text `data-aie2e-hint` guidance the app gives testers

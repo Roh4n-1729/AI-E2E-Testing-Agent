@@ -37,6 +37,7 @@ const StartBody = z.object({
   cache: z.boolean().optional(),
   rerecord: z.boolean().optional(),
   replan: z.boolean().optional(),
+  rounds: z.number().int().min(1).max(3).optional(),
   quality: z.enum(['off', 'warn', 'fail']).optional(),
   visual: z.enum(['off', 'warn', 'fail']).optional(),
   heal: z.boolean().optional(),
@@ -169,6 +170,7 @@ export async function createServer({
       }
       parsed.data.maxTests = Math.min(parsed.data.maxTests ?? access.maxTests, access.maxTests);
       parsed.data.headed = false;
+      parsed.data.rounds = 1; // exploring deeper multiplies AI calls: not on the shared instance
       parsed.data.concurrency = Math.min(
         parsed.data.concurrency ?? access.concurrency,
         access.concurrency,

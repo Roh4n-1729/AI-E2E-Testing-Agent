@@ -1,8 +1,14 @@
 import path from 'node:path';
 import { agentModelWarning, apiKeyEnvFor, loadConfig } from '../config/config.js';
-import { BfsCrawler } from '../crawler/bfsCrawler.js';
+import { BfsCrawler, probePage } from '../crawler/bfsCrawler.js';
 import { NoopCrawler } from '../crawler/noopCrawler.js';
 import { buildPipeline } from '../core/pipeline.js';
+import {
+  crawledScreens,
+  discoverScreens,
+  reachDirectly,
+  recordedSteps,
+} from '../core/discovery.js';
 import { TestRunner } from '../core/testRunner.js';
 import { RunEvents } from '../events/runEvents.js';
 import { AgentExecutor } from '../executor/agentExecutor.js';
@@ -12,7 +18,7 @@ import { ReplayExecutor } from '../executor/replayExecutor.js';
 import { EvidenceJudge } from '../judge/evidenceJudge.js';
 import { AiSdkLlm } from '../llm/aiSdkLlm.js';
 import { CachedPlanner } from '../planner/cachedPlanner.js';
-import { LlmPlanner, PLANNER_VERSION } from '../planner/llmPlanner.js';
+import { DEEPER_VERSION, LlmPlanner, PLANNER_VERSION } from '../planner/llmPlanner.js';
 import { StaticPlanner } from '../planner/staticPlanner.js';
 import { SeededRecordStore, SuitePlanner, loadSuite } from '../planner/suitePlanner.js';
 import { CompositeReporter } from '../reporter/compositeReporter.js';
@@ -60,6 +66,7 @@ import { captureReference } from '../theme/reference.js';
  * @property {'off' | 'warn' | 'fail'} [visual]  screenshot comparison with approved baselines (default: warn)
  * @property {boolean} [updateBaselines]  accept every screenshot of a passing test as its new baseline
  * @property {boolean} [freezeBaselines]  never save new baselines in this run (the evaluation's seeded-bug runs)
+ * @property {number} [rounds]             explore deeper: 2 or 3 = plan more tests from the screens passing tests reached
  * @property {string} [runId]              pre-generated id (the server needs it before the run starts)
  */
 
@@ -182,6 +189,7 @@ export async function startRun(o, { events = new RunEvents(), signal } = {}) {
           {
             replan: !!o.replan || !cache,
             key: `${config.plannerModel ?? config.model}|${config.maxTests}|${PLANNER_VERSION}`,
+            deeperKey: DEEPER_VERSION,
             onReuse: (tests) => events.emit('plan.reused', { tests }),
           },
           logger,
@@ -221,10 +229,42 @@ export async function startRun(o, { events = new RunEvents(), signal } = {}) {
   const recordStore = suitePlanner
     ? new SeededRecordStore(fileStore, suitePlanner.seeds)
     : fileStore;
+  // Explore deeper: needs the AI planner (it plans the next round) and recordings (they reach the new screens).
+  const rounds = Math.min(3, Math.max(1, Math.floor(o.rounds ?? 1)));
+  if (rounds > 1 && !(useAiPlanner && cache))
+    logger.warn('Exploring deeper needs AI-planned tests with recording on: running one round');
+  /** @type {import('../core/discovery.js').Seen[] | undefined} */
+  let known;
+  const deeper =
+    rounds > 1 && useAiPlanner && cache
+      ? {
+          rounds,
+          /** @type {(results: import('../core/types.js').TestResult[], siteMap: import('../core/types.js').SiteMap) => Promise<import('../core/discovery.js').Screen[]>} */
+          discover: async (results, siteMap) => {
+            const screens = await discoverScreens({
+              results,
+              known: (known ??= crawledScreens(siteMap)),
+              stepsFor: recordedSteps(recordStore),
+              origin: new URL(o.url).origin,
+              max: config.maxTests,
+            });
+            const direct = await reachDirectly(screens, (url) =>
+              probePage(config, url, { storageState: login?.state }),
+            );
+            if (direct)
+              logger.info(
+                `Exploring deeper: ${direct} of ${screens.length} new screen(s) open by their address; tests there skip the steps that led to them`,
+              );
+            return screens;
+          },
+        }
+      : undefined;
   const pipeline = buildPipeline({
     config,
     logger,
     events,
+    deeper,
+    signal,
     overheadUsage: () => ({ ...overhead }),
     auth: login
       ? {
@@ -257,6 +297,7 @@ export async function startRun(o, { events = new RunEvents(), signal } = {}) {
       recordStore: cache ? recordStore : undefined,
       fallbackExecutor: cache && heal ? agent : undefined,
       explainer: explainer,
+      verifyJudge: new EvidenceJudge(judgeCfg, judgeLlm),
       judge: new EvidenceJudge(judgeCfg, judgeLlm, config.quality, {
         store: baselines,
         cfg: config.visual,
@@ -281,6 +322,7 @@ export async function startRun(o, { events = new RunEvents(), signal } = {}) {
       headless: config.headless,
       quality: config.quality.gate,
       cache,
+      rounds: deeper ? rounds : 1,
     },
   });
   try {

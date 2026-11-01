@@ -7,6 +7,7 @@ import { moveMouseToPercent } from './mouse.js';
 import {
   FinalReportSchema,
   buildInstruction,
+  reachStart,
   harnessStatusTool,
   hoverAtTool,
   testIdTools,
@@ -47,12 +48,18 @@ export class LoopAgentExecutor {
    * @returns {Promise<ExecutionOutcome>}
    */
   async execute(test, session, ctx, resume) {
+    // Exploring deeper: Playwright first replays the steps that reach the screen this test starts on.
+    if (!resume && test.prefix?.length) {
+      const reached = await reachStart(test, session, ctx);
+      if ('failure' in reached) return reached.failure;
+      resume = reached;
+    }
     /** @type {RecordedStep[]} */
     const prior = resume
       ? resume.completed
       : [{ index: 0, kind: 'navigate', description: `Open ${test.startUrl}`, url: test.startUrl }];
     /** @type {TraceEntry[]} */
-    const trace = [];
+    const trace = resume && !resume.failed ? [...(resume.trace ?? [])] : [];
     const log = (/** @type {Omit<TraceEntry, 'index' | 'ts'>} */ e) => {
       const entry = { index: trace.length, ts: new Date().toISOString(), ...e };
       trace.push(entry);
@@ -67,8 +74,10 @@ export class LoopAgentExecutor {
         log({
           source: 'harness',
           tool: 'resume',
-          description: `Replay broke at "${resume.failed.description}"; the agent takes over here`,
-          ok: false,
+          description: resume.failed
+            ? `Replay broke at "${resume.failed.description}"; the agent takes over here`
+            : `On the screen where "${test.startsFrom?.title ?? 'an earlier test'}" ended; the agent takes over here`,
+          ok: !resume.failed,
           screenshot: shot.path,
           url: shot.url,
         });

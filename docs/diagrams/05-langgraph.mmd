@@ -4,14 +4,17 @@ graph TD;
 	crawl(crawl)
 	plan(plan)
 	runTest(runTest)
+	discover(discover)
 	writeReport(writeReport)
 	__end__([<p>__end__</p>]):::last
 	__start__ --> crawl;
 	crawl --> plan;
-	runTest --> writeReport;
+	runTest --> discover;
 	writeReport --> __end__;
 	plan -.-> runTest;
 	plan -.-> writeReport;
+	discover -.-> runTest;
+	discover -.-> writeReport;
 	classDef default fill:#f2f0ff,line-height:1.2;
 	classDef first fill-opacity:0;
 	classDef last fill:#bfb6fc;

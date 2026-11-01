@@ -7,7 +7,10 @@ import { StaticPlanner } from './staticPlanner.js';
  * @import { LlmClient, Planner } from '../core/ports.js'
  * @import { Expectation, SiteMap, Target, TestCase } from '../core/types.js'
  * @import { Logger } from '../util/logger.js'
+ * @import { Screen } from '../core/discovery.js'
  */
+
+/** @typedef {{ title: string, goal: string, reading: string }} Retry  a test to rewrite from a deeper screen */
 
 /**
  * What we ask the LLM for. Deliberately flat and fully required (no optionals, no unions)
@@ -76,10 +79,35 @@ Rules:
 - Keep tests independent of each other.`;
 
 /**
+ * Round 2+: tests that start on screens earlier tests reached. Same output as PlanSchema, plus which screen.
+ */
+export const DeeperPlanSchema = z.object({
+  tests: z.array(
+    PlanSchema.shape.tests.element.extend({
+      screen: z.number().int().describe('Number of the screen this test starts on, from the list'),
+    }),
+  ),
+});
+
+const DEEPER = `${SYSTEM}
+
+Exploring deeper: earlier tests reached screens the crawl could not see. Each new test STARTS ON one of those
+screens: the steps that reach it are replayed before the test begins, so write the goal from that screen on and
+never repeat those steps.
+- Test what can be done ON that screen next (its buttons, forms and links), not what the earlier test already proved.
+- Do not duplicate an existing test.
+- Everything the screen shows is there before the test acts, so it proves nothing. Never turn a value you see on it
+  (a total, a count, a message) into a check that it is correct: it is the app's current behaviour, which may itself
+  be the bug. Check the effect of the new action instead.
+- url-contains, api-call and selector-visible may use values from these screens as well as from the crawl.`;
+
+/**
  * Changes whenever the planner's instructions change, so plans saved by an older planner are not reused
  * (CachedPlanner keys on it).
  */
 export const PLANNER_VERSION = sha256(SYSTEM).slice(0, 8);
+/** The same for round-2 plans, which have their own instructions. */
+export const DEEPER_VERSION = sha256(DEEPER).slice(0, 8);
 
 /** @param {SiteMap} siteMap */
 function summarizeSiteMap(siteMap) {
@@ -90,6 +118,7 @@ function summarizeSiteMap(siteMap) {
         `  title: ${p.title || '(none)'}`,
         p.textExcerpt ? `  text: ${p.textExcerpt}` : '',
         p.buttons?.length ? `  buttons: ${p.buttons.join(' | ')}` : '',
+        p.inputs?.length ? `  text boxes: ${p.inputs.join(' | ')}` : '',
         p.forms ? `  forms: ${p.forms}` : '',
         p.apiCalls?.length ? `  API calls seen on load: ${p.apiCalls.join(' | ')}` : '',
         p.testIds?.length ? `  stable test ids: ${p.testIds.join(' | ')}` : '',
@@ -279,6 +308,149 @@ export class LlmPlanner {
         `planner: proposed ${planned} of up to ${this.opts.maxTests} tests (raise "Planned tests" or add a description of the app's features for more)`,
       );
     return review.tests;
+  }
+
+  /**
+   * Round 2+: plan tests that start on screens earlier tests reached. Each check is grounded in the crawl plus
+   * those screens, and reviewed against the screen the test starts on, so what that screen already shows proves
+   * nothing. One revision round, like the first plan.
+   * @param {Target} target @param {SiteMap} siteMap @param {Screen[]} screens
+   * @param {TestCase[]} existing @param {number} round
+   * @param {Retry[]} [retry]  earlier tests that failed because of how they were written
+   * @returns {Promise<TestCase[]>}
+   */
+  async planFrom(target, siteMap, screens, existing, round, retry = []) {
+    if (!screens.length) return [];
+    const prompt = [
+      `Start URL: ${target.url}`,
+      target.description ? `App description: ${target.description}` : '',
+      `Propose up to ${this.opts.maxTests} tests that start on the screens below, spread over them.`,
+      '',
+      'Existing tests (do not repeat):',
+      ...existing.map((t) => `- ${t.title}: ${t.goal || '(checks the start page)'}`),
+      '',
+      ...(retry.length
+        ? [
+            'These earlier tests failed because of how they were written, not because the app is broken (an AI read',
+            'the evidence after the verdict). If a screen below shows how to do it (a control, a text box, a panel),',
+            'include one corrected version of each that starts on that screen and uses it by its label:',
+            ...retry.map((r) => `- "${r.title}": ${r.goal}\n  Why it failed: ${r.reading}`),
+            '',
+          ]
+        : []),
+      'Screens earlier tests reached (the crawl never saw them):',
+      summarizeSiteMap({ origin: siteMap.origin, pages: screens.map((sc) => sc.page) })
+        .split('\n')
+        .map((l) => l.replace(/^Page (\d+):/, 'Screen $1:'))
+        .join('\n'),
+      ...screens.map((sc, i) => `  (screen ${i + 1} is where "${sc.from.title}" ended)`),
+      '',
+      'Crawl summary of the pages linked from the start:',
+      summarizeSiteMap(siteMap),
+    ]
+      .filter((l) => l !== '')
+      .join('\n');
+
+    const build = (/** @type {z.infer<typeof DeeperPlanSchema>['tests']} */ planned) =>
+      this.#buildDeeper(planned, target, siteMap, screens, existing, round);
+    let plan = await this.llm.generateObject({ schema: DeeperPlanSchema, system: DEEPER, prompt });
+    let review = build(plan.tests);
+    if (review.issues.length) {
+      const found = review.issues;
+      this.logger.info(`planner (round ${round}): ${found.length} weak check(s), asking for fixes`);
+      try {
+        plan = await this.llm.generateObject({
+          schema: DeeperPlanSchema,
+          system: DEEPER,
+          prompt: [
+            prompt,
+            '',
+            'A reviewer checked your previous plan and found these problems:',
+            ...found.map((i) => `- ${i}`),
+            'Return the complete plan again with every problem fixed. Keep the good tests as they are.',
+          ].join('\n'),
+        });
+        review = build(plan.tests);
+      } catch (e) {
+        this.logger.warn(
+          `planner: revision failed (${/** @type {Error} */ (e).message}); repairing the first plan`,
+        );
+      }
+      for (const i of review.issues) this.logger.warn(`planner: repaired a weak check: ${i}`);
+      this.opts.onReview?.({ found, remaining: review.issues });
+    }
+    this.logger.info(
+      `planner (round ${round}): ${review.tests.length} test(s) from ${screens.length} new screen(s)`,
+    );
+    return review.tests;
+  }
+
+  /**
+   * @param {z.infer<typeof DeeperPlanSchema>['tests']} planned @param {Target} target @param {SiteMap} siteMap
+   * @param {Screen[]} screens @param {TestCase[]} existing @param {number} round
+   */
+  #buildDeeper(planned, target, siteMap, screens, existing, round) {
+    /** @type {TestCase[]} */
+    const tests = [];
+    /** @type {string[]} */
+    const issues = [];
+    const ids = new Set(existing.map((t) => t.id));
+    for (const raw of planned.slice(0, this.opts.maxTests)) {
+      const screen = screens[raw.screen - 1];
+      if (!screen || !raw.goal.trim()) {
+        this.logger.warn(`planner: dropped "${raw.title}" (no such screen ${raw.screen})`);
+        continue;
+      }
+      // the screen the test starts on comes first: the review treats it as the start page
+      const known = {
+        origin: siteMap.origin,
+        pages: [
+          screen.page,
+          ...screens.filter((s) => s !== screen).map((s) => s.page),
+          ...siteMap.pages,
+        ],
+      };
+      let id = slugify(raw.title);
+      for (let n = 2; ids.has(id); n++) id = `${slugify(raw.title, 40)}-${n}`;
+      /** @type {Expectation[]} */
+      const grounded = [];
+      for (const e of raw.expectations) {
+        const exp = toExpectation(e, known);
+        if (exp) grounded.push(exp);
+        else
+          this.logger.warn(
+            `planner: dropped ungrounded expectation (${e.kind}: "${e.value}") in "${raw.title}"`,
+          );
+      }
+      const review = reviewExpectations(grounded, known, screen.url);
+      for (const i of review.issues) issues.push(`In "${raw.title}": ${i}`);
+      const outcome = review.repaired;
+      if (outcome.length === 0)
+        outcome.push({
+          kind: 'visual',
+          question: `Does the page now show the result of this action: ${raw.goal}`,
+        });
+      const parsed = TestCaseSchema.safeParse({
+        id,
+        title: raw.title,
+        goal: raw.goal,
+        // a screen that opens by its address needs no steps replayed: the test simply starts there
+        startUrl: screen.direct ? screen.url : target.url,
+        expectations: [...outcome, { kind: 'no-console-errors' }, { kind: 'no-network-failures' }],
+        origin: 'planner',
+        prefix: screen.direct ? undefined : screen.steps,
+        startsFrom: { testId: screen.from.testId, title: screen.from.title, url: screen.url },
+        round,
+        tags: [`round-${round}`],
+      });
+      if (!parsed.success) {
+        this.logger.warn(`planner: dropped invalid test "${raw.title}": ${parsed.error.message}`);
+        continue;
+      }
+      ids.add(id);
+      tests.push(parsed.data);
+    }
+    return { tests, issues };
   }
 
   /**

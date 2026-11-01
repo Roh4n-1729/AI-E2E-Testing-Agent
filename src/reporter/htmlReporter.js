@@ -336,6 +336,7 @@ ${r.claimMismatch ? '<span class="badge b-bad">agent claim ≠ evidence</span>' 
 <div class="body">
 ${insight.pages.length ? `<div class="flow" aria-label="Pages this test went through">${insight.pages.map((p) => `<span class="${p.status}">${h(p.name)}${p.status === 'stuck' ? ' · stuck here' : p.status === 'unreached' ? ' · not reached' : ''}</span>`).join('<b class="faint">→</b>')}</div>` : ''}
 ${r.test.goal ? `<p class="muted" style="margin:12px 0 0">${h(r.test.goal)}</p>` : ''}
+${r.test.startsFrom ? `<p class="muted small" style="margin:4px 0 0">Round ${r.test.round ?? 2}: starts where “${h(r.test.startsFrom.title)}” ended (${h(r.test.startsFrom.url)}); Playwright replays those steps first.</p>` : ''}
 <div class="grid"><div>
 <div class="verdict v-${v.status}"><b>${v.status === 'pass' ? 'Passed on independent evidence' : 'Why it did not pass'}</b>${v.status !== 'pass' ? `<div style="margin-top:4px">${h(v.reason)}</div>` : ''}
 <ul class="checks">${v.checks.map(checkRow).join('') || '<li class="muted">no checks</li>'}</ul>

@@ -92,4 +92,38 @@ describe('live-run reducer (the UI is a pure function of the event stream)', () 
     expect(s.site).toHaveLength(1);
     expect(s.review.found).toHaveLength(1);
   });
+  it('adds round-2 tests after round 1 and keeps the screens they start on', () => {
+    let s = reduce(start, { type: 'plan.ready', data: { tests: [{ id: 'a', title: 'A' }] } });
+    s = reduce(s, { type: 'test.finished', data: { testId: 'a', status: 'pass' } });
+    s = reduce(s, {
+      type: 'screens.found',
+      data: {
+        round: 2,
+        screens: [{ url: 'https://a.test/cart', title: 'Cart', from: { testId: 'a', title: 'A' } }],
+      },
+    });
+    s = reduce(s, {
+      type: 'plan.extended',
+      data: {
+        round: 2,
+        tests: [
+          {
+            id: 'b',
+            title: 'B',
+            goal: 'Check out',
+            expectations: [],
+            startsFrom: { testId: 'a', title: 'A', url: 'https://a.test/cart' },
+            round: 2,
+          },
+          { id: 'a', title: 'not a new test' },
+        ],
+      },
+    });
+    expect(s.order).toEqual(['a', 'b']);
+    expect(s.tests.a.status).toBe('pass'); // a round-1 test is never reset
+    expect(s.tests.b).toMatchObject({ round: 2, status: 'pending', startsFrom: { testId: 'a' } });
+    expect(s.screens).toEqual([
+      { url: 'https://a.test/cart', title: 'Cart', from: { testId: 'a', title: 'A' }, round: 2 },
+    ]);
+  });
 });

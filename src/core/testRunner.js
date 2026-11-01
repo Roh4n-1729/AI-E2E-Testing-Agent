@@ -3,6 +3,7 @@ import { BrowserSession } from '../browser/session.js';
 import { testFingerprint } from '../storage/recordStore.js';
 import { nullEvents } from '../events/runEvents.js';
 import { errorMessage } from '../util/misc.js';
+import { ReplayExecutor, ReplayStepError } from '../executor/replayExecutor.js';
 
 /**
  * @import { Config } from '../config/config.js'
@@ -29,6 +30,8 @@ import { errorMessage } from '../util/misc.js';
  * @property {import('../auth/login.js').StorageState} [storageState]  logged-in session every test starts with
  * @property {import('./types.js').ThemeReference} [themeReference]  check the theme against another product
  * @property {import('../judge/failureExplainer.js').FailureExplainer} [explainer]  the AI's reading of failures
+ * @property {Judge} [verifyJudge]  judges a new recording's replay on the test's own checks only (no quality or
+ *   visual gates); with config.verifyRecordings, a recording is kept only when that replay passes
  */
 
 /** Runs one test in its own isolated browser: execute -> judge -> (record) -> close. */
@@ -182,21 +185,45 @@ export class TestRunner {
         }
       }
 
-      // Only runs the independent judge passed are worth replaying.
+      // Only runs the independent judge passed are worth replaying, and only recordings that DO replay are kept.
+      /** @type {TestResult['recording']} */
+      let recording;
       if (
         recordStore &&
         verdict.status === 'pass' &&
         outcome.recordable &&
         (outcome.mode === 'agent' || outcome.mode === 'healed')
       ) {
-        await recordStore.save({
-          schemaVersion: 1,
+        const rec = {
+          schemaVersion: /** @type {const} */ (1),
           testId: test.id,
           fingerprint: testFingerprint(test),
           recordedAt: new Date().toISOString(),
           steps: outcome.steps,
-        });
-        ctx.logger.info(`recorded ${outcome.steps.length} steps for replay`);
+        };
+        const check =
+          config.verifyRecordings && this.deps.verifyJudge && !signal?.aborted
+            ? await this.#replayOnce(test, rec, ctx)
+            : null;
+        if (!check || check.ok) {
+          const upgraded =
+            check?.steps?.filter((s, i) => s.selector !== rec.steps[i]?.selector).length ?? 0;
+          if (check?.steps) rec.steps = check.steps;
+          if (upgraded)
+            ctx.logger.info(
+              `${upgraded} step(s) now find their element by test id or by role and name, with the XPath as a fallback`,
+            );
+          await recordStore.save(rec);
+          ctx.logger.info(
+            `recorded ${outcome.steps.length} steps for replay${check ? ' (replayed once with no AI: it works)' : ''}`,
+          );
+          recording = { saved: true, verified: !!check };
+        } else {
+          ctx.logger.warn(
+            `passed, but not recorded: replaying its steps with no AI did not pass (${check.reason}); the next run uses the agent again`,
+          );
+          recording = { saved: false, verified: false, reason: check.reason };
+        }
       } else if (recordStore && verdict.status === 'pass' && outcome.mode === 'agent') {
         ctx.logger.info(
           'passed, but not recorded: the agent used steps that cannot be replayed deterministically',
@@ -214,6 +241,7 @@ export class TestRunner {
         llmUsage: outcome.llmUsage,
         trace: outcome.trace,
         inputs: testInputs(outcome),
+        ...(recording ? { recording } : {}),
       };
     } catch (e) {
       // Infrastructure failure (browser did not launch, judge crashed): report as an error.
@@ -221,6 +249,52 @@ export class TestRunner {
     } finally {
       stopLiveView?.();
       if (onAbort) signal?.removeEventListener('abort', onAbort);
+      await session?.close();
+    }
+  }
+
+  /**
+   * Replay a new recording once in a fresh browser, with no AI, and judge it on the test's own checks. Catches
+   * recordings that only worked because of something the agent did that the steps do not capture (a wait, a
+   * hover, an element found by text that now has another position), before a later run or CI finds out.
+   * @param {TestCase} test @param {import('./types.js').Recording} recording
+   * @param {import('./ports.js').TestContext} ctx
+   * While replaying, steps that target an absolute XPath get a sturdier selector (test id, id, or role and name)
+   * if one exists, and the replay uses it, so the saved recording is the one that just worked.
+   * @returns {Promise<{ ok: boolean, reason?: string, steps?: import('./types.js').RecordedStep[] }>}
+   */
+  async #replayOnce(test, recording, ctx) {
+    const { config, artifacts } = this.deps;
+    const judge = /** @type {Judge} */ (this.deps.verifyJudge);
+    // the test's own checks only: no quality audits or screenshots to compare, so it stays quick
+    const cfg = {
+      ...config,
+      quality: { ...config.quality, gate: /** @type {const} */ ('off') },
+      visual: { ...config.visual, gate: /** @type {const} */ ('off') },
+    };
+    const checkArtifacts = artifacts.forTest(`${test.id}--replay-check`);
+    const quiet = { ...ctx, artifacts: checkArtifacts, events: nullEvents };
+    ctx.logger.info('checking the new recording: replaying it once with no AI');
+    /** @type {BrowserSession | undefined} */
+    let session;
+    try {
+      session = await BrowserSession.open(cfg, checkArtifacts, ctx.logger, {
+        storageState: this.deps.storageState,
+      });
+      const outcome = await new ReplayExecutor().execute(test, session, quiet, recording, {
+        sturdier: true,
+      });
+      const { verdict } = await judge.judge(test, session, outcome, quiet);
+      return verdict.status === 'pass'
+        ? { ok: true, steps: outcome.steps }
+        : { ok: false, reason: verdict.reason };
+    } catch (e) {
+      return {
+        ok: false,
+        reason:
+          e instanceof ReplayStepError ? e.message : `the replay could not run: ${errorMessage(e)}`,
+      };
+    } finally {
       await session?.close();
     }
   }

@@ -4,6 +4,7 @@ import { describeHints, readHints, stableSelector } from '../browser/hints.js';
 import { errorMessage } from '../util/misc.js';
 import { moveMouseToPercent } from './mouse.js';
 import { actionsToSteps } from './steps.js';
+import { ReplayStepError, replayPrefix } from './replayExecutor.js';
 
 /**
  * @import { BrowserSession } from '../browser/session.js'
@@ -49,12 +50,18 @@ export class AgentExecutor {
    * @returns {Promise<ExecutionOutcome>}
    */
   async execute(test, session, ctx, resume) {
+    // Exploring deeper: Playwright first replays the steps that reach the screen this test starts on.
+    if (!resume && test.prefix?.length) {
+      const reached = await reachStart(test, session, ctx);
+      if ('failure' in reached) return reached.failure;
+      resume = reached;
+    }
     /** @type {RecordedStep[]} */
     const prior = resume
       ? resume.completed
       : [{ index: 0, kind: 'navigate', description: `Open ${test.startUrl}`, url: test.startUrl }];
     /** @type {TraceEntry[]} */
-    const trace = [];
+    const trace = resume && !resume.failed ? [...(resume.trace ?? [])] : [];
     const log = (/** @type {Omit<TraceEntry, 'index' | 'ts'>} */ e) => {
       const entry = { index: trace.length, ts: new Date().toISOString(), ...e };
       trace.push(entry);
@@ -69,8 +76,10 @@ export class AgentExecutor {
         log({
           source: 'harness',
           tool: 'resume',
-          description: `Replay broke at "${resume.failed.description}"; the agent takes over here`,
-          ok: false,
+          description: resume.failed
+            ? `Replay broke at "${resume.failed.description}"; the agent takes over here`
+            : `On the screen where "${test.startsFrom?.title ?? 'an earlier test'}" ended; the agent takes over here`,
+          ok: !resume.failed,
           screenshot: shot.path,
           url: shot.url,
         });
@@ -359,6 +368,31 @@ export function describeAgentStep(e) {
   }
 }
 
+/**
+ * Replay a round-2 test's prefix. A prefix that no longer works fails the test (the app changed under the
+ * earlier test's recording): the agent is not asked to guess its way to a screen it was never told about.
+ * @param {TestCase} test @param {BrowserSession} session @param {TestContext} ctx
+ * @returns {Promise<ResumeContext | { failure: ExecutionOutcome }>}
+ */
+export async function reachStart(test, session, ctx) {
+  try {
+    return await replayPrefix(test, session, ctx);
+  } catch (e) {
+    if (!(e instanceof ReplayStepError)) throw e;
+    ctx.logger.warn(`could not reach the starting screen: ${e.message}`);
+    return {
+      failure: {
+        mode: 'agent',
+        steps: test.prefix ?? [],
+        heals: [],
+        baseline: e.baseline,
+        trace: e.trace,
+        failure: `Could not reach the screen this test starts on (where "${test.startsFrom?.title ?? 'an earlier test'}" ended): ${e.message}`,
+      },
+    };
+  }
+}
+
 /** @param {TestCase} test @param {ResumeContext} [resume] @param {PageHint[]} [hints] */
 export function buildInstruction(test, resume, hints = [], loggedIn = false) {
   const lines = [
@@ -382,6 +416,13 @@ export function buildInstruction(test, resume, hints = [], loggedIn = false) {
     'Prefer finishing the goal in the screen where it naturally belongs: do not wander into other modes.',
     'Take the shortest path: if the app offers a sample or template that gets you to the needed state, use it,',
     'unless the goal is about creating that state.',
+    'If no button does what the goal asks, the app may offer it another way: a text box or chat panel where you ask',
+    'for it in words (an AI assistant, "Ask AI", "Type a message"), a "..." or "More" menu, a right-click menu, or a',
+    'toolbar that appears once something is selected. AI-powered apps often make edits through their chat box: select',
+    'what should change, type a clear request into the box (e.g. "Rewrite the title of this slide"), send it, and',
+    'wait until the reply has finished before you check the result.',
+    'Before you report that the goal cannot be done, read the page structure (ariaTree) and try at least one of',
+    'those other ways; say in your report which ones you tried.',
   ];
   if (loggedIn)
     lines.push(
@@ -397,7 +438,7 @@ export function buildInstruction(test, resume, hints = [], loggedIn = false) {
       describeHints(hints),
     );
   }
-  if (resume) {
+  if (resume?.failed) {
     lines.push(
       '',
       'A recorded run of this test broke partway, and the browser is now in the state reached after',
@@ -405,6 +446,14 @@ export function buildInstruction(test, resume, hints = [], loggedIn = false) {
       ...resume.completed.map((s) => `  ${s.index}. ${s.description}`),
       `The step that failed was: "${resume.failed.description}" (the page may have changed).`,
       'Continue from the CURRENT page, do not restart, and finish the goal.',
+    );
+  } else if (resume) {
+    lines.push(
+      '',
+      'This test starts on a screen deeper in the app. These steps were already done for you, and the browser is',
+      'now on the screen they reach:',
+      ...resume.completed.map((s) => `  ${s.index}. ${s.description}`),
+      'Start from the CURRENT page. Do not reload it or go back to the start URL: that would lose this state.',
     );
   }
   return lines.join('\n');

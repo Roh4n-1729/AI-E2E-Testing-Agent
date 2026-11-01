@@ -22,6 +22,7 @@ const PHASES = [
   ['crawl', 'Explore'],
   ['plan', 'Plan'],
   ['run', 'Test'],
+  ['deeper', 'Explore deeper'],
   ['report', 'Report'],
 ];
 
@@ -36,8 +37,15 @@ export function PhaseRail({ state }) {
       : state.phases.crawl?.detail,
     plan: tests.length ? `${tests.length} tests${state.planReused ? ', saved' : ''}` : undefined,
     run: tests.length ? `${done}/${tests.length}` : undefined,
+    deeper: state.phases.deeper?.detail,
   };
-  const phases = PHASES.filter(([k]) => k !== 'login' || state.phases.login);
+  // log in and exploring deeper only show when the run does them
+  const phases = PHASES.filter(
+    ([k]) =>
+      (k !== 'login' && k !== 'deeper') ||
+      state.phases[k] ||
+      (k === 'deeper' && state.config?.rounds > 1),
+  );
   return (
     <ol aria-label="Progress" className="flex min-w-0 items-center gap-1 text-[12px]">
       {phases.map(([key, label], i) => {
@@ -94,14 +102,23 @@ export function TestStrip({ tests, selected, onSelect }) {
       {tests.map((t, i) => {
         const st = STRIP[t.status] ?? STRIP.pending;
         const on = selected === t.id;
+        const newRound = (t.round ?? 1) > 1 && (tests[i - 1]?.round ?? 1) !== t.round;
         return (
-          <li key={t.id} className="min-w-[132px] flex-1">
+          <li key={t.id} className="flex min-w-[132px] flex-1 items-stretch gap-1.5">
+            {newRound && (
+              <span
+                className="flex shrink-0 items-center rounded-md border border-dashed border-ai/40 px-1.5 text-[11px] font-medium text-ai [writing-mode:vertical-rl]"
+                title={`Round ${t.round}: tests that start on screens earlier tests reached`}
+              >
+                Round {t.round}
+              </span>
+            )}
             <button
               type="button"
               onClick={() => onSelect(t.id)}
               aria-current={on ? 'true' : undefined}
               aria-label={`Test ${i + 1}, ${t.title}, ${st.label}`}
-              className={`flex w-full flex-col gap-1.5 rounded-lg border px-2.5 pb-2 pt-2 text-left transition-colors ${
+              className={`flex w-full min-w-0 flex-1 flex-col gap-1.5 rounded-lg border px-2.5 pb-2 pt-2 text-left transition-colors ${
                 on ? 'border-text/70 bg-panel shadow-pop' : 'border-line bg-panel/60 hover:bg-panel'
               }`}
             >
@@ -263,6 +280,12 @@ export function LiveStage({ test, frame, index, total, now, onFollow }) {
           {test.goal && (
             <p className="truncate text-[13px] text-stage-muted" title={test.goal}>
               {test.goal}
+            </p>
+          )}
+          {test.startsFrom && (
+            <p className="mt-0.5 truncate text-[12px] text-ai/90">
+              Starts where “{test.startsFrom.title}” ended: Playwright replays those steps, then the
+              AI continues
             </p>
           )}
         </div>
@@ -565,8 +588,14 @@ export function PlanPanel({ state, planned, selected, onSelect }) {
         <ol className="-mx-2 mt-2 flex flex-col">
           {tests.map((t, i) => {
             const st = STRIP[t.status] ?? STRIP.pending;
+            const newRound = (t.round ?? 1) > 1 && (tests[i - 1]?.round ?? 1) !== t.round;
             return (
               <li key={t.id}>
+                {newRound && (
+                  <p className="mx-2 mb-1 mt-3 border-t border-dashed border-ai/40 pt-2 text-[12px] font-medium text-ai">
+                    Round {t.round}: these start on screens the tests above reached
+                  </p>
+                )}
                 <button
                   type="button"
                   onClick={() => onSelect(t.id)}
@@ -588,12 +617,40 @@ export function PlanPanel({ state, planned, selected, onSelect }) {
                     ) : null}
                   </span>
                   {t.goal && <span className="col-start-2 text-[12px] text-muted">{t.goal}</span>}
+                  {t.startsFrom && (
+                    <span className="col-start-2 text-[11px] text-ai/90">
+                      starts where “{t.startsFrom.title}” ended
+                    </span>
+                  )}
                 </button>
               </li>
             );
           })}
         </ol>
       </section>
+      {state.screens.length > 0 && (
+        <section>
+          <h3 className="mb-1.5 text-[13px] font-semibold">New screens the tests reached</h3>
+          <p className="mb-2 text-[12px] text-muted">
+            Behind a click, so the crawl never saw them. Each became a starting point for the next
+            round.
+          </p>
+          <ul className="flex flex-col gap-1 text-[12px]">
+            {state.screens.map((sc) => (
+              <li
+                key={`${sc.round}-${sc.url}-${sc.from.testId}`}
+                className="flex items-baseline justify-between gap-3"
+              >
+                <span className="min-w-0 truncate">
+                  {sc.title || pathOf(sc.url)}
+                  <span className="text-muted"> via “{sc.from.title}”</span>
+                </span>
+                <span className="shrink-0 font-mono text-[11px] text-muted">{pathOf(sc.url)}</span>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
       <PlanReview review={state.review} />
       {planned && <CrawledPages pages={state.site} />}
     </div>

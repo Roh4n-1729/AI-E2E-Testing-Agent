@@ -42,6 +42,11 @@ program
   .option('--rerecord', 'ignore saved recordings and record them again with the agent')
   .option('--replan', 'ignore the saved AI test plan and plan again')
   .option(
+    '--rounds <n>',
+    'explore deeper (experimental): 2 or 3 rounds; each later round plans tests that start on new screens the previous round reached',
+    Number,
+  )
+  .option(
     '--quality <gate>',
     'Web Vitals + accessibility: off | warn (default, advisory) | fail (a breach fails the test)',
   )
@@ -92,6 +97,7 @@ program
       cache: o.cache,
       rerecord: !!o.rerecord,
       replan: !!o.replan,
+      rounds: o.rounds,
       quality: o.quality,
       visual: o.visual,
       themeFrom: o.themeFrom,

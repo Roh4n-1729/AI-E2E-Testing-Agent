@@ -426,11 +426,18 @@ export function runInsights(report) {
   const add = (/** @type {Omit<Finding, 'id'>} */ f) =>
     findings.push({ id: `${f.category}-${findings.length + 1}`, ...f });
 
+  // A stopped run cuts tests off: that says nothing about the app, so they are not problems.
+  const cutOff = (/** @type {TestResult} */ r) =>
+    r.verdict.status === 'error' &&
+    (!!report.stopped || /^Stopped before this test started/.test(r.verdict.reason));
+  const notRun = results.filter(cutOff);
+
   // 1. Blocked flows: tests that got stuck on the same page are one problem.
   /** @type {Map<string, TestResult[]>} */
   const stuck = new Map();
   for (const r of results) {
     const t = tests[r.test.id];
+    if (cutOff(r)) continue;
     if (r.verdict.status === 'error') {
       add({
         severity: 'high',
@@ -649,6 +656,17 @@ export function runInsights(report) {
       testIds: healed.map((r) => r.test.id),
     });
 
+  // 8. Passing runs whose steps did not replay on their own: not saved, so every run pays for the agent again.
+  const unsaved = results.filter((r) => r.recording && !r.recording.saved);
+  if (unsaved.length)
+    add({
+      severity: 'review',
+      category: 'maintenance',
+      title: `${plural(unsaved.length, 'test')} passed but could not be recorded`,
+      detail: `Replaying the agent's steps once, with no AI, did not pass${unsaved[0].recording?.reason ? ` (${clip(unsaved[0].recording.reason, 140)})` : ''}. The next run uses the agent again. Often a wait or a hover the steps do not capture; stable test ids on the controls help.`,
+      testIds: unsaved.map((r) => r.test.id),
+    });
+
   // attach the AI's reading (already in the report) to the failures it explains
   const byId = new Map(results.map((r) => [r.test.id, r]));
   for (const f of findings) {
@@ -661,7 +679,12 @@ export function runInsights(report) {
   const s = report.summary;
   const problems = findings.filter((f) => f.severity === 'high' || f.severity === 'medium').length;
   const review = findings.filter((f) => f.severity === 'review').length;
-  const failing = results.filter((r) => r.verdict.status !== 'pass').map((r) => r.test.title);
+  const failing = results
+    .filter((r) => r.verdict.status !== 'pass' && !cutOff(r))
+    .map((r) => r.test.title);
+  const stoppedNote = notRun.length
+    ? `${plural(notRun.length, 'test')} did not finish because the run was stopped.`
+    : '';
   const who = report.auth ? ` for ${report.auth.username}` : '';
   let headline;
   let sentence;
@@ -686,10 +709,16 @@ export function runInsights(report) {
             .map((t) => `“${t}”`)
             .join(', ')}${broken.length > 3 ? `, and ${broken.length - 3} more` : ''}.`
         : '',
+      stoppedNote,
     ]
       .filter(Boolean)
       .join(' ');
     tone = 'bad';
+  } else if (notRun.length) {
+    const checked = s.total - notRun.length;
+    headline = `Stopped after ${checked} of ${plural(s.total, 'test')}`;
+    sentence = `${s.passed} of ${plural(checked, 'checked flow')} work${who}. ${stoppedNote}`;
+    tone = 'warn';
   } else {
     headline = s.total === 1 ? 'The flow works' : `All ${s.total} flows work`;
     sentence = review

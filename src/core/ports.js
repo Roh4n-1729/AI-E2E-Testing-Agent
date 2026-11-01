@@ -6,6 +6,7 @@
  * @import { TestArtifacts } from '../storage/artifacts.js'
  * @import { RunEvents } from '../events/runEvents.js'
  * @import { Logger } from '../util/logger.js'
+ * @import { Screen } from './discovery.js'
  * @import { Evidence, ExecutionOutcome, Recording, RunReport, SiteMap, Target, TestCase, Verdict } from './types.js'
  */
 
@@ -16,7 +17,10 @@
 
 /** @typedef {{ crawl(target: Target): Promise<SiteMap> }} Crawler */
 
-/** @typedef {{ plan(target: Target, siteMap: SiteMap): Promise<TestCase[]> }} Planner */
+/**
+ * `planFrom` (optional): round 2+, tests that start on screens earlier tests reached (exploring deeper).
+ * @typedef {{ plan(target: Target, siteMap: SiteMap): Promise<TestCase[]>, planFrom?(target: Target, siteMap: SiteMap, screens: Screen[], existing: TestCase[], round: number, retry?: { title: string, goal: string, reading: string }[]): Promise<TestCase[]> }} Planner
+ */
 
 /** @typedef {{ execute(test: TestCase, session: BrowserSession, ctx: TestContext): Promise<ExecutionOutcome> }} Executor */
 

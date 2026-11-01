@@ -21,6 +21,11 @@ export const ConfigSchema = z.object({
    */
   explainFailures: z.boolean().default(true),
   /**
+   * Before a passing agent run is saved as a recording, replay it once in a fresh browser with no AI and judge it
+   * on the test's own checks. Only a recording that replays is kept, so the next run (or CI) does not find out.
+   */
+  verifyRecordings: z.boolean().default(true),
+  /**
    * Who drives the browser for a goal. stagehand: Stagehand 3.7.3's agent() (limited to the models it knows).
    * loop: our own AI SDK tool loop on Playwright's accessibility snapshot; takes any model id (experimental).
    */
@@ -202,6 +207,7 @@ export function loadConfig(overrides = {}, env = process.env) {
     judgeModel: env.AIE2E_JUDGE_MODEL || undefined,
     preset: /** @type {ConfigInput['preset']} */ (env.AIE2E_PRESET || undefined),
     explainFailures: bool(env.AIE2E_EXPLAIN),
+    verifyRecordings: bool(env.AIE2E_VERIFY_RECORDINGS),
     agentEngine: /** @type {ConfigInput['agentEngine']} */ (env.AIE2E_AGENT_ENGINE || undefined),
     headless: bool(env.AIE2E_HEADLESS),
     outDir: env.AIE2E_OUT_DIR || undefined,
