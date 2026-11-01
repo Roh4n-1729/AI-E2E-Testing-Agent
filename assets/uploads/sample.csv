@@ -1,0 +1,4 @@
+name,email,city,amount
+Test User,test.user@example.com,Springfield,42.50
+Sample Person,sample@example.com,Riverton,17.00
+Demo Account,demo@example.com,Lakeside,103.25

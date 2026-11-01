@@ -4,6 +4,7 @@ import {
   Check,
   ChevronRight,
   Gavel,
+  Hand,
   Loader2,
   MousePointerClick,
   X,
@@ -239,7 +240,7 @@ export function StageIntro({ state }) {
  * screen. It glows in the colour of whoever is acting (AI agent, Playwright, the judge) and then of the
  * verdict; what is happening right now is written under it, never over the page.
  */
-export function LiveStage({ test, frame, index, total, now, onFollow }) {
+export function LiveStage({ test, frame, index, total, now, onFollow, onHelp }) {
   if (!test) return null;
   const url = test.screenshots[test.screenshots.length - 1]?.url;
   const last = test.steps.at(-1);
@@ -254,6 +255,7 @@ export function LiveStage({ test, frame, index, total, now, onFollow }) {
         <div className="min-w-0 flex-1">
           <p className="flex items-center gap-2 text-[12px] text-stage-muted">
             Test {index} of {total}
+            {test.retry && <span className="font-medium text-ai">· second try</span>}
             {live && (
               <span className="inline-flex items-center gap-1 font-semibold text-ai">
                 <span className="pulse size-1.5 rounded-full bg-ai" aria-hidden /> Live
@@ -343,46 +345,97 @@ export function LiveStage({ test, frame, index, total, now, onFollow }) {
       </div>
 
       <div className="px-5 pb-4" aria-live="polite">
-        <div className="flex min-h-[44px] items-center gap-2.5 rounded-xl border border-stage-line bg-stage-2/80 px-3 py-2">
-          {live && test.judging ? (
-            <>
-              <span className="inline-flex shrink-0 items-center gap-1 rounded-md bg-white/10 px-1.5 py-0.5 text-[11px] font-semibold">
-                <Gavel size={11} aria-hidden /> Judge
+        {live && test.waiting ? (
+          <HelpRequest waiting={test.waiting} now={now} onHelp={onHelp} />
+        ) : (
+          <div className="flex min-h-[44px] items-center gap-2.5 rounded-xl border border-stage-line bg-stage-2/80 px-3 py-2">
+            {live && test.judging ? (
+              <>
+                <span className="inline-flex shrink-0 items-center gap-1 rounded-md bg-white/10 px-1.5 py-0.5 text-[11px] font-semibold">
+                  <Gavel size={11} aria-hidden /> Judge
+                </span>
+                <span className="min-w-0 truncate text-[14px]">
+                  Checking the evidence
+                  {test.judging.checks ? ` against ${test.judging.checks} checks` : ''}: page, URL,
+                  console, requests, screenshots
+                </span>
+              </>
+            ) : verdict ? (
+              <span className="min-w-0 truncate text-[14px] text-stage-muted">
+                <span className="font-medium text-stage-text">{verdict.label}</span>
+                {test.result?.reason ? `: ${test.result.reason}` : ''}
               </span>
-              <span className="min-w-0 truncate text-[14px]">
-                Checking the evidence
-                {test.judging.checks ? ` against ${test.judging.checks} checks` : ''}: page, URL,
-                console, requests, screenshots
+            ) : last ? (
+              <>
+                <span
+                  className={`inline-flex shrink-0 items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] font-semibold ${a.chip}`}
+                >
+                  <a.Icon size={11} aria-hidden /> {a.label}
+                </span>
+                <span
+                  key={test.steps.length}
+                  className={`pop-in min-w-0 truncate text-[14px] ${last.ok === false ? 'text-[#ff9aa1]' : ''}`}
+                >
+                  <span className="text-stage-muted">Step {test.steps.length} </span>
+                  {words(last.description)}
+                </span>
+              </>
+            ) : (
+              <span className="text-[14px] text-stage-muted">
+                {live ? 'Opening the start page…' : 'Waiting for its turn.'}
               </span>
-            </>
-          ) : verdict ? (
-            <span className="min-w-0 truncate text-[14px] text-stage-muted">
-              <span className="font-medium text-stage-text">{verdict.label}</span>
-              {test.result?.reason ? `: ${test.result.reason}` : ''}
-            </span>
-          ) : last ? (
-            <>
-              <span
-                className={`inline-flex shrink-0 items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] font-semibold ${a.chip}`}
-              >
-                <a.Icon size={11} aria-hidden /> {a.label}
-              </span>
-              <span
-                key={test.steps.length}
-                className={`pop-in min-w-0 truncate text-[14px] ${last.ok === false ? 'text-[#ff9aa1]' : ''}`}
-              >
-                <span className="text-stage-muted">Step {test.steps.length} </span>
-                {words(last.description)}
-              </span>
-            </>
-          ) : (
-            <span className="text-[14px] text-stage-muted">
-              {live ? 'Opening the start page…' : 'Waiting for its turn.'}
-            </span>
-          )}
-        </div>
+            )}
+          </div>
+        )}
       </div>
     </Room>
+  );
+}
+
+/**
+ * Human in the loop: the agent is paused on a step only a person can do. The person does it in the browser window
+ * on their screen, then says so here. A test a person helped is labelled so and never recorded.
+ */
+function HelpRequest({ waiting, now, onHelp }) {
+  const left = waiting.at
+    ? Math.max(0, waiting.waitMs - (now - new Date(waiting.at).getTime()))
+    : waiting.waitMs;
+  return (
+    <div
+      role="alert"
+      className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-xl border border-[#f5c26b]/60 bg-[#f5c26b]/10 px-3 py-2.5"
+    >
+      <span className="min-w-0 flex-1 text-[14px] text-stage-text">
+        <span className="mb-1 flex">
+          <span className="inline-flex items-center gap-1 rounded-md bg-[#f5c26b] px-1.5 py-0.5 text-[11px] font-semibold text-[#2a1d05]">
+            <Hand size={11} aria-hidden /> The agent needs you
+          </span>
+        </span>
+        {waiting.what}
+        <span className="block text-[12px] text-stage-muted">
+          Do it in the browser window on your screen, then press Done. Waiting {mmss(left)} more; a
+          test you help is labelled so and not recorded.
+        </span>
+      </span>
+      {onHelp && (
+        <span className="flex shrink-0 gap-2">
+          <button
+            type="button"
+            onClick={() => onHelp('done')}
+            className="rounded-lg bg-[#f5c26b] px-3 py-1.5 text-[13px] font-semibold text-[#2a1d05] hover:brightness-105"
+          >
+            Done, continue
+          </button>
+          <button
+            type="button"
+            onClick={() => onHelp('skipped')}
+            className="rounded-lg border border-stage-line px-3 py-1.5 text-[13px] text-stage-text hover:bg-stage-2"
+          >
+            I can't
+          </button>
+        </span>
+      )}
+    </div>
   );
 }
 

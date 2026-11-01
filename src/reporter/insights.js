@@ -7,6 +7,7 @@
  *
  * @import { CheckResult, Expectation, RunReport, TestResult, TraceEntry } from '../core/types.js'
  */
+import { neededPerson, wasHelped } from '../core/humanHelp.js';
 import { clip, explainError } from '../util/explain.js';
 
 /**
@@ -59,7 +60,8 @@ import { clip, explainError } from '../util/explain.js';
  * @property {string} headline
  * @property {string} sentence
  * @property {'ok' | 'bad' | 'warn'} tone
- * @property {{ flows: { passed: number, total: number }, problems: number, review: number, visual: { tests: number, minPct: number, maxPct: number }, cost: { agentTokens: number, overheadTokens: number, replayed: number, total: number } }} kpis
+ * @property {{ flows: { passed: number, total: number }, problems: number, review: number, visual: { tests: number, minPct: number, maxPct: number }, cost: { agentTokens: number, overheadTokens: number, cachedTokens: number, replayed: number, total: number } }} kpis
+ *   cachedTokens: of all those tokens, the input read back from the prompt cache (billed at a tenth or less)
  * @property {Finding[]} findings
  * @property {Record<string, TestInsight>} tests
  */
@@ -358,7 +360,10 @@ export function testInsight(r) {
   const inconclusive = failing && !failedChecks.length && /^Inconclusive/.test(verdict.reason);
 
   let outcome;
-  if (verdict.status === 'error')
+  const unhelped = r.help?.find((h) => h.answer !== 'done');
+  if (failing && verdict.status !== 'error' && neededPerson(r.help) && unhelped)
+    outcome = `Needs a person: ${lower(clip(unhelped.what, 90))}`;
+  else if (verdict.status === 'error')
     outcome = `Could not run: ${clip(verdict.reason.replace(/^Execution error:\s*/, ''), 90)}`;
   else if (verdict.status === 'pass') {
     const proof = verdict.checks.find(
@@ -372,6 +377,7 @@ export function testInsight(r) {
     outcome = proof
       ? checkLabel(proof.expectation)
       : `Passed ${plural(verdict.checks.filter((c) => !c.advisory).length, 'check')}`;
+    if (wasHelped(r.help)) outcome = `${outcome} (a person helped)`;
   } else if (stuck) {
     const what = message
       ? `“${clip(message, 70)}”`
@@ -415,6 +421,22 @@ export function testInsight(r) {
 const shotOf = (/** @type {TestInsight} */ t) =>
   t.pages.filter((p) => p.status !== 'unreached' && p.screenshot).at(-1)?.screenshot;
 
+const STOPPED_BEFORE = /^Stopped before this test started/;
+
+/**
+ * Which results a stop cut off: errors in a stopped run. Reports written before `report.stopped` existed are
+ * recognised by a test that was stopped before it started, which only happens when the run was stopped.
+ * @param {RunReport} report @returns {(r: TestResult) => boolean}
+ */
+export function cutOffBy(report) {
+  const stopped =
+    !!report.stopped ||
+    report.results.some(
+      (r) => r.verdict.status === 'error' && STOPPED_BEFORE.test(r.verdict.reason),
+    );
+  return (r) => r.verdict.status === 'error' && stopped;
+}
+
 /** @param {RunReport} report @returns {RunInsights} */
 export function runInsights(report) {
   const results = report.results;
@@ -427,17 +449,19 @@ export function runInsights(report) {
     findings.push({ id: `${f.category}-${findings.length + 1}`, ...f });
 
   // A stopped run cuts tests off: that says nothing about the app, so they are not problems.
-  const cutOff = (/** @type {TestResult} */ r) =>
-    r.verdict.status === 'error' &&
-    (!!report.stopped || /^Stopped before this test started/.test(r.verdict.reason));
+  const cutOff = cutOffBy(report);
   const notRun = results.filter(cutOff);
+  // Stopped at a step only a person can do: not an app problem, listed on its own.
+  const awaitsPerson = (/** @type {TestResult} */ r) =>
+    !cutOff(r) && r.verdict.status === 'fail' && neededPerson(r.help);
+  const needPerson = results.filter(awaitsPerson);
 
   // 1. Blocked flows: tests that got stuck on the same page are one problem.
   /** @type {Map<string, TestResult[]>} */
   const stuck = new Map();
   for (const r of results) {
     const t = tests[r.test.id];
-    if (cutOff(r)) continue;
+    if (cutOff(r) || awaitsPerson(r)) continue;
     if (r.verdict.status === 'error') {
       add({
         severity: 'high',
@@ -483,7 +507,8 @@ export function runInsights(report) {
   // 2. Wrong results: the flow finished, but what it should show is not there.
   for (const r of results) {
     const t = tests[r.test.id];
-    if (t.status !== 'fail' || t.pages.some((p) => p.status === 'stuck')) continue;
+    if (t.status !== 'fail' || t.pages.some((p) => p.status === 'stuck') || awaitsPerson(r))
+      continue;
     const outcomes = t.reasons.filter((x) => !GUARDS.has(x.kind));
     if (!outcomes.length) {
       if (!t.reasons.length)
@@ -573,6 +598,7 @@ export function runInsights(report) {
       r.agentClaim?.success &&
       r.verdict.status !== 'pass' &&
       !reachedButErrors(r) &&
+      !awaitsPerson(r) &&
       // when the AI's reading says the test was wrong, the agent may well have been right
       r.explanation?.category !== 'test-problem',
   );
@@ -656,6 +682,50 @@ export function runInsights(report) {
       testIds: healed.map((r) => r.test.id),
     });
 
+  // 8b. Tests that passed only on a second try, after the AI's reading of the first failure: a person should
+  // know the test needed help, even though the evidence passed it.
+  const retried = results.filter((r) => r.retry?.passed);
+  for (const r of retried)
+    add({
+      severity: 'review',
+      category: 'agent',
+      title: `“${r.test.title}” passed on a second try`,
+      detail: `The first try failed (${clip(r.retry?.other.reason ?? '', 120)}). The AI's reading blamed the test, not the app: ${clip(r.retry?.hint ?? '', 200)} The second try used that and passed the same checks. Consider rewording the test's goal.`,
+      testIds: [r.test.id],
+    });
+
+  // 8c. Human in the loop: tests that need a person nobody provided, and tests a person helped. Both are things to
+  // look at, never app problems, and a helped pass is never presented as a clean one.
+  if (needPerson.length)
+    add({
+      severity: 'review',
+      category: 'agent',
+      title: `${plural(needPerson.length, 'test')} need${needPerson.length === 1 ? 's' : ''} a person`,
+      detail: `${needPerson
+        .map(
+          (r) =>
+            `“${r.test.title}”: ${clip(r.help?.find((h) => h.answer !== 'done')?.what ?? '', 120)}`,
+        )
+        .join(
+          '; ',
+        )}. A step only a human can do; nobody could help in this run. Run it with the browser shown to help when the agent asks.`,
+      testIds: needPerson.map((r) => r.test.id),
+    });
+  const helped = results.filter((r) => r.verdict.status === 'pass' && wasHelped(r.help));
+  for (const r of helped)
+    add({
+      severity: 'review',
+      category: 'agent',
+      title: `“${r.test.title}” passed with a person's help`,
+      detail: `A person did: ${r.help
+        ?.filter((h) => h.answer === 'done')
+        .map((h) => clip(h.what, 120))
+        .join(
+          '; ',
+        )}. The checks passed on what the page showed afterwards. Not recorded: a replay cannot repeat what a person did.`,
+      testIds: [r.test.id],
+    });
+
   // 8. Passing runs whose steps did not replay on their own: not saved, so every run pays for the agent again.
   const unsaved = results.filter((r) => r.recording && !r.recording.saved);
   if (unsaved.length)
@@ -680,10 +750,13 @@ export function runInsights(report) {
   const problems = findings.filter((f) => f.severity === 'high' || f.severity === 'medium').length;
   const review = findings.filter((f) => f.severity === 'review').length;
   const failing = results
-    .filter((r) => r.verdict.status !== 'pass' && !cutOff(r))
+    .filter((r) => r.verdict.status !== 'pass' && !cutOff(r) && !awaitsPerson(r))
     .map((r) => r.test.title);
   const stoppedNote = notRun.length
     ? `${plural(notRun.length, 'test')} did not finish because the run was stopped.`
+    : '';
+  const personNote = needPerson.length
+    ? `${plural(needPerson.length, 'test')} need${needPerson.length === 1 ? 's' : ''} a person for a step only a human can do.`
     : '';
   const who = report.auth ? ` for ${report.auth.username}` : '';
   let headline;
@@ -710,6 +783,7 @@ export function runInsights(report) {
             .join(', ')}${broken.length > 3 ? `, and ${broken.length - 3} more` : ''}.`
         : '',
       stoppedNote,
+      personNote,
     ]
       .filter(Boolean)
       .join(' ');
@@ -717,7 +791,11 @@ export function runInsights(report) {
   } else if (notRun.length) {
     const checked = s.total - notRun.length;
     headline = `Stopped after ${checked} of ${plural(s.total, 'test')}`;
-    sentence = `${s.passed} of ${plural(checked, 'checked flow')} work${who}. ${stoppedNote}`;
+    sentence = `${s.passed} of ${plural(checked, 'checked flow')} work${who}. ${[stoppedNote, personNote].filter(Boolean).join(' ')}`;
+    tone = 'warn';
+  } else if (needPerson.length) {
+    headline = `${plural(needPerson.length, 'test')} need${needPerson.length === 1 ? 's' : ''} a person`;
+    sentence = `${s.passed} of ${plural(s.total, 'flow')} work${who}. ${personNote} Run with the browser shown to help when the agent asks.`;
     tone = 'warn';
   } else {
     headline = s.total === 1 ? 'The flow works' : `All ${s.total} flows work`;
@@ -755,6 +833,7 @@ export function runInsights(report) {
       cost: {
         agentTokens: s.inputTokens + s.outputTokens,
         overheadTokens: (s.overhead?.inputTokens ?? 0) + (s.overhead?.outputTokens ?? 0),
+        cachedTokens: (s.cachedInputTokens ?? 0) + (s.overhead?.cachedInputTokens ?? 0),
         replayed: results.filter((r) => r.mode === 'replay' || r.mode === 'deterministic').length,
         total: s.total,
       },

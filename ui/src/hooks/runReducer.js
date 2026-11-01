@@ -68,7 +68,20 @@ export function reduce(state, { type, data }) {
       const t = state.tests[data.testId] ?? blank(data.testId, data.title, data.goal);
       return {
         ...state,
-        tests: { ...state.tests, [data.testId]: { ...t, status: 'running', startedAt: data.at } },
+        tests: {
+          ...state.tests,
+          // a second try (the AI's reading blamed the test) starts a fresh step list
+          [data.testId]: data.retry
+            ? {
+                ...t,
+                status: 'running',
+                startedAt: data.at,
+                steps: [],
+                screenshots: [],
+                retry: true,
+              }
+            : { ...t, status: 'running', startedAt: data.at },
+        },
         order: state.order.includes(data.testId) ? state.order : [...state.order, data.testId],
       };
     }
@@ -80,6 +93,20 @@ export function reduce(state, { type, data }) {
       return {
         ...state,
         tests: { ...state.tests, [data.testId]: { ...t, [key]: [...t[key], data] } },
+      };
+    }
+    case 'test.waiting':
+    case 'test.helped': {
+      // human in the loop: the agent is paused until the person watching answers
+      const t = state.tests[data.testId];
+      if (!t) return state;
+      const waiting =
+        type === 'test.waiting' ? { what: data.what, waitMs: data.waitMs, at: data.at } : null;
+      const asked =
+        type === 'test.helped' ? [...(t.asked ?? []), { answer: data.answer }] : (t.asked ?? []);
+      return {
+        ...state,
+        tests: { ...state.tests, [data.testId]: { ...t, waiting, asked } },
       };
     }
     case 'test.judging': {

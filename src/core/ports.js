@@ -12,7 +12,9 @@
 
 /**
  * Everything an executor/judge needs besides the browser.
- * @typedef {{ runId: string, testId: string, artifacts: TestArtifacts, logger: Logger, events: RunEvents }} TestContext
+ * `hint`: a second try's lesson from the first (the AI's reading of why the test, not the app, failed).
+ * `askHuman`: pause for a person (core/humanHelp.js); the harness records every request and its answer.
+ * @typedef {{ runId: string, testId: string, artifacts: TestArtifacts, logger: Logger, events: RunEvents, hint?: string, askHuman?: (what: string) => Promise<import('./humanHelp.js').HelpRequest> }} TestContext
  */
 
 /** @typedef {{ crawl(target: Target): Promise<SiteMap> }} Crawler */

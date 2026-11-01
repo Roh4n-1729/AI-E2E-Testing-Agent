@@ -328,6 +328,81 @@ The golden-master trap: a planner that sees a screen could turn what it shows (a
 that it is correct, freezing today's bugs into the tests. It cannot here: everything on the starting screen is
 rejected by the review, and the planner never sees the result of the action it plans.
 
+## 4n. Run history and comparison (D38)
+
+Every finished run gets a digest next to its report (`<out>/runs/<id>/digest.json`, a few KB: totals, each test's
+result, mode, time and tokens, the problems found), built from the report the first time it is needed. The run
+list, comparison and history read digests, never the full reports (often over a megabyte each).
+
+- `reporter/compare.js` (pure): `digestOf(report)`, `previousOf(run, all)` (the latest earlier run of the same app
+  and suite, else of the same app with another suite or none, flagged in the UI; stopped runs only when nothing
+  else exists) and `compareRuns(now, before)`: fixed, newly failing, still failing, new and removed tests (matched
+  by id, then by title, since a re-planned test can get a new id), problems found and gone, and the change in
+  time, tokens and tests that now replay with no AI.
+- Tests a stop cut off are "not finished", never "newly failing", and are left out when that run is the earlier
+  one. Reports written before `report.stopped` existed are recognised by a test stopped before it started.
+- Runs of different apps are not compared: they have different tests, so there is nothing to match.
+- `GET /api/runs/:id/compare[?with=<runId>]` and `GET /api/runs/:id/history`; the run summary shows "Since the
+  last run" with a picker for any other run of the app, and a strip of the app's recent runs.
+- Reports carry the suite's name (`report.suite`), so a suite run from the CLI and from the UI compare.
+- History lives where the runs live. On Render that disk is wiped by every deploy, so keeping history there means
+  a persistent disk with `AIE2E_OUT_DIR` pointed at it (it stops zero-downtime deploys and multiple instances).
+
+## 4o. When the AI's reading blames the test (D39, D40)
+
+- **A second try, right away**: a failed test whose reading says `test-problem` is run once more by the agent,
+  with the reading's cause and suggestion in its instruction (`TestContext.hint`, `AIE2E_RETRY_TEST_PROBLEMS`).
+  Same checks. A pass on the second try is reported as a "review" finding ("passed on a second try"), never as
+  a clean pass; when both fail, the first try and its reading are shown.
+- **A better goal** (`judge/goalFixer.js`, `POST /api/runs/:id/tests/:testId/goal-fix`): the judge's model
+  proposes a rewritten goal from the reading, the last screen's text boxes and buttons, and the checks, which it
+  is told it cannot change. The person edits and saves it to the suite; the test's old steps and recording go,
+  so the next run records the new way. Only the goal ever changes: a fixer that could loosen checks would turn
+  regressions into passes.
+- **Screenshots for round-2 planning**: the planner gets the final screenshot of the test that reached each new
+  screen, so a control with only an icon is not invisible to it.
+
+## 4q. Prompt caching (D44)
+
+- `llm/promptCache.js`, `AIE2E_PROMPT_CACHE` (`5m` default, `1h`, `off`); Anthropic models only, others ignore it.
+- **Planner, judge, reading of failures** (`AiSdkLlm`): the system prompt goes as a system message with a
+  `cache_control` breakpoint, so tools (the output schema) + system are cached. Prompts under the model's minimum
+  (512 tokens on the 5.5 models, 1,024 on Sonnet 4.6, 4,096 on Haiku 4.5) are simply not cached, at no cost.
+- **Our agent loop**: one top-level `cache_control` (automatic caching). The breakpoint moves to the end of every
+  request, and since the loop only appends (it must, for thinking signatures), each step reads the earlier ones
+  from the cache.
+- **Stagehand's agent** caches its own system prompt; its history is rewritten between steps, so no more is possible.
+- **Counting**: Anthropic's `input_tokens` is only the part after the last breakpoint. Every usage figure here is
+  all input (not cached + read + written), with `cachedInputTokens` and `cacheWriteTokens` beside it; the run
+  summary's AI cost says what share came from the cache.
+
+## 4p. Uploads and human in the loop (D41, D42, D43)
+
+- **File uploads** (`browser/uploads.js`): every test page listens for Playwright's `filechooser` event, so a file
+  picker never reaches the system dialog, whoever opened it. The harness picks the first file that fits the
+  input's `accept` list, from `AIE2E_UPLOAD_DIR` first, then `assets/uploads` (an image as JPEG and PNG, a PDF,
+  CSV, text, JSON), records it in `evidence.uploads` and the live log, and shows it to the agent through
+  `harnessStatus`. A picker no file fits is recorded with the reason. A replayed click answers the same way.
+- **Asking a person** (`core/humanHelp.js`): both agent engines have an `askForHelp` tool for steps only a human
+  can do (a CAPTCHA, a one-time code, a verification email, a real payment, a file with no sample). The test
+  pauses (`test.waiting`) until the person answers in the live view ("Done, continue" / "I can't",
+  `POST /api/runs/:id/tests/:testId/help`) or in the terminal (Enter / "skip"), or the wait runs out
+  (`AIE2E_HELP_WAIT_MS`, 5 minutes). Every request and its answer is in `result.help`.
+- **Who can help**: only someone who can act in the test's browser, so only when it is shown. Headless, in CI
+  and on the deployed instance the answer is immediate ("nobody can help"), the agent finishes with
+  `needs-person`, and the report lists the test under "needs a person": not an app problem, no AI reading, no
+  second try. A pass a person helped with is labelled ("a person helped"), reviewed, and never recorded.
+- **One window** (`browser/host.js`): with the browser shown, the run uses one Chromium for every test, one at a
+  time (`concurrency` forced to 1). Before each test the host opens a fresh tab and closes the old ones, clears
+  cookies and permissions, clears the storage of every origin the run visited (`Storage.clearDataForOrigin`),
+  and restores the login session. Each test's page listeners are removed when it ends, so the next test hears
+  only its own events. Headless runs keep a fresh browser per test. The page keeps the configured size
+  (`setViewportSize`) when the window is resized, so layouts, screenshots and the agent's positions do not move.
+- **Dragging by position** (`dragAt`, both engines): Stagehand's `act` can only drag one element onto another, and
+  crop handles, slider thumbs and resize corners usually have no name in the accessibility tree and nothing to drop
+  on. `dragAt` presses, moves in steps and releases between two viewport positions (percent) read off the latest
+  screenshot; it is recorded as a `mouse` step with method `drag` and replayed at the same place.
+
 ## 5. Data model
 
 ![data model](diagrams/04-data-model.png)

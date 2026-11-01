@@ -34,7 +34,18 @@ export const api = {
   startRun: (options) => request('/api/runs', json('POST', options)),
   runs: () => request('/api/runs'),
   run: (id) => request(`/api/runs/${id}`),
+  compare: (id, other) =>
+    request(`/api/runs/${id}/compare${other ? `?with=${encodeURIComponent(other)}` : ''}`),
+  history: (id) => request(`/api/runs/${id}/history`),
+  goalFix: (id, testId) =>
+    request(`/api/runs/${id}/tests/${encodeURIComponent(testId)}/goal-fix`, { method: 'POST' }),
   stop: (id) => request(`/api/runs/${id}/stop`, { method: 'POST' }),
+  /** the person watching answers the agent's request for help: 'done' or 'skipped' */
+  help: (id, testId, answer, note) =>
+    request(
+      `/api/runs/${id}/tests/${encodeURIComponent(testId)}/help`,
+      json('POST', { answer, ...(note ? { note } : {}) }),
+    ),
   reviewVisual: (id, body) => request(`/api/runs/${id}/visual`, json('POST', body)),
   suites: () => request('/api/suites'),
   suite: (name) => request(`/api/suites/${name}`),

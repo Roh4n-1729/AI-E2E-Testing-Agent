@@ -6,7 +6,7 @@
  */
 
 import { settle } from '../browser/settle.js';
-import { moveMouseToPercent } from './mouse.js';
+import { dragPercent, moveMouseToPercent } from './mouse.js';
 import { stepCheckpoint } from '../visual/baselines.js';
 import { stableSelector } from '../browser/hints.js';
 
@@ -221,6 +221,14 @@ export async function runStep(page, step) {
     case 'wait':
       return void (await page.waitForTimeout(Math.min(Number(args[0] ?? 1000), 10_000)));
     case 'mouse':
+      if (step.method === 'drag')
+        return void (await dragPercent(
+          page,
+          Number(args[0] ?? 50),
+          Number(args[1] ?? 50),
+          Number(args[2] ?? 50),
+          Number(args[3] ?? 50),
+        ));
       return void (await moveMouseToPercent(page, Number(args[0] ?? 50), Number(args[1] ?? 50)));
     case 'act': {
       const loc = await resolveTarget(page, step);

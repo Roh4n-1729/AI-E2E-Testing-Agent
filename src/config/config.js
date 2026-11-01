@@ -26,11 +26,31 @@ export const ConfigSchema = z.object({
    */
   verifyRecordings: z.boolean().default(true),
   /**
+   * When a test fails and the AI's reading says the test (not the app) was wrong, the agent tries once more with
+   * that reading as a hint. Judged on the same checks; a pass on the second try is reported as such.
+   */
+  retryTestProblems: z.boolean().default(true),
+  /**
    * Who drives the browser for a goal. stagehand: Stagehand 3.7.3's agent() (limited to the models it knows).
    * loop: our own AI SDK tool loop on Playwright's accessibility snapshot; takes any model id (experimental).
    */
   agentEngine: z.enum(['stagehand', 'loop']).default('stagehand'),
   headless: z.boolean().default(true),
+  /**
+   * Files the harness gives a file picker before its own samples (assets/uploads: PNG, JPEG, PDF, CSV, text,
+   * JSON), for apps that need another kind of file.
+   */
+  uploadDir: z.string().optional(),
+  /**
+   * How long the agent waits for a person when it asks for help (only when the browser is shown and someone can
+   * act in it). After that the test is reported as needing a person.
+   */
+  helpWaitMs: z.number().int().positive().default(300_000),
+  /**
+   * Anthropic prompt caching: the planner's and judge's system prompts, and our agent loop's conversation, are
+   * re-sent unchanged, so they are read back from a cache at a tenth of the price. 5m (default) or 1h entries; off.
+   */
+  promptCache: z.enum(['off', '5m', '1h']).default('5m'),
   outDir: z.string().default('.aie2e'),
   maxSteps: z.number().int().positive().default(20),
   /**
@@ -208,8 +228,12 @@ export function loadConfig(overrides = {}, env = process.env) {
     preset: /** @type {ConfigInput['preset']} */ (env.AIE2E_PRESET || undefined),
     explainFailures: bool(env.AIE2E_EXPLAIN),
     verifyRecordings: bool(env.AIE2E_VERIFY_RECORDINGS),
+    retryTestProblems: bool(env.AIE2E_RETRY_TEST_PROBLEMS),
     agentEngine: /** @type {ConfigInput['agentEngine']} */ (env.AIE2E_AGENT_ENGINE || undefined),
     headless: bool(env.AIE2E_HEADLESS),
+    uploadDir: env.AIE2E_UPLOAD_DIR || undefined,
+    helpWaitMs: int(env.AIE2E_HELP_WAIT_MS),
+    promptCache: /** @type {ConfigInput['promptCache']} */ (env.AIE2E_PROMPT_CACHE || undefined),
     outDir: env.AIE2E_OUT_DIR || undefined,
     maxSteps: int(env.AIE2E_MAX_STEPS),
     agentThinkingEffort: /** @type {ConfigInput['agentThinkingEffort']} */ (

@@ -143,10 +143,16 @@ function runSequence(form, health) {
   ];
 }
 
+/** Tests that run at once: with the browser shown, one window, so one at a time (the server enforces it too). */
+const parallel = (form) => (form.headed ? 1 : Number(form.concurrency) || 1);
+
 /** The settings, in words, for the closed settings row. */
 function settingsSummary(form) {
+  const n = parallel(form);
   const parts = [
-    `${form.concurrency} ${form.concurrency === 1 ? 'test' : 'tests'} at a time`,
+    form.headed
+      ? '1 test at a time in a browser window'
+      : `${n} ${n === 1 ? 'test' : 'tests'} at a time`,
     form.cache ? 'replays on' : 'replays off',
     form.preset === 'env' ? 'models from .env' : `${form.preset} models`,
   ];
@@ -170,7 +176,8 @@ function loadForm() {
 const inputCls =
   'w-full rounded-lg border border-line bg-panel px-3 py-2 text-[14px] outline-none placeholder:text-faint hover:border-line-strong focus:border-user';
 
-function Field({ id, label, hint, children }) {
+/** note: shown under the control, e.g. why it is fixed right now (keeps the controls in a row aligned). */
+function Field({ id, label, hint, note, children }) {
   return (
     <div>
       <label htmlFor={id} className="text-[13px] font-medium">
@@ -178,6 +185,7 @@ function Field({ id, label, hint, children }) {
       </label>
       {hint && <p className="text-[12px] text-muted">{hint}</p>}
       <div className="mt-1.5">{children}</div>
+      {note && <p className="mt-1 text-[12px] text-muted">{note}</p>}
     </div>
   );
 }
@@ -223,7 +231,7 @@ export function NewRun({ health }) {
         description: form.mode === 'explore' ? form.description.trim() || undefined : undefined,
         goal: form.mode === 'flow' ? form.goal.trim() : undefined,
         expectText: form.mode === 'flow' && expectText.length ? expectText : undefined,
-        concurrency: Number(form.concurrency),
+        concurrency: parallel(form),
         maxTests: Number(form.maxTests),
         plan: form.mode === 'explore',
         crawl: form.mode === 'explore',
@@ -454,11 +462,20 @@ export function NewRun({ health }) {
           {advanced && (
             <div className="space-y-5 border-t border-line px-4 py-4">
               <div className="grid gap-4 sm:grid-cols-3">
-                <Field id="conc" label="Tests in parallel">
+                <Field
+                  id="conc"
+                  label="Tests in parallel"
+                  note={
+                    form.headed
+                      ? 'Fixed at 1: tests share the browser window, where the agent may ask for your help.'
+                      : undefined
+                  }
+                >
                   <Select
                     id="conc"
                     label="Tests in parallel"
-                    value={form.concurrency}
+                    disabled={form.headed}
+                    value={parallel(form)}
                     onValueChange={(v) => set({ concurrency: Number(v) })}
                     options={[1, 2, 3, 4]
                       .filter((n) => !health?.shared || n <= health.shared.concurrency)
@@ -650,7 +667,11 @@ export function NewRun({ health }) {
                   checked={form.headed}
                   onCheckedChange={(v) => set({ headed: v })}
                   label="Open a real browser window too"
-                  hint="The live view works without it."
+                  hint={
+                    form.headed
+                      ? 'One window, one test at a time. When a step needs a person (a code, a CAPTCHA), the agent pauses and asks you here.'
+                      : 'The live view works without it. With it, the agent can ask you for help.'
+                  }
                 />
               </div>
             </div>
@@ -668,7 +689,9 @@ export function NewRun({ health }) {
             <Play size={15} aria-hidden /> Start testing
           </Button>
           <span className="text-[12px] text-muted">
-            One run at a time. Each test gets its own browser.
+            {form.headed
+              ? 'One run at a time, in one browser window you can watch and help in.'
+              : 'One run at a time. Each test gets its own browser.'}
           </span>
         </div>
       </div>

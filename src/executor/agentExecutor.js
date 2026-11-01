@@ -1,8 +1,9 @@
 import { tool } from 'ai';
 import { z } from 'zod';
 import { describeHints, readHints, stableSelector } from '../browser/hints.js';
+import { ASK_FOR_HELP, helpReply } from '../core/humanHelp.js';
 import { errorMessage } from '../util/misc.js';
-import { moveMouseToPercent } from './mouse.js';
+import { dragPercent, moveMouseToPercent } from './mouse.js';
 import { actionsToSteps } from './steps.js';
 import { ReplayStepError, replayPrefix } from './replayExecutor.js';
 
@@ -116,11 +117,19 @@ export class AgentExecutor {
         model: { modelName: this.cfg.model, thinkingEffort: this.cfg.agentThinkingEffort },
         tools: {
           hoverAt: hoverAtTool(session),
+          dragAt: dragAtTool(session),
           harnessStatus: harnessStatusTool(session),
+          askForHelp: askForHelpTool(ctx),
           ...(useHints ? testIdTools(session) : {}),
         },
       });
-      const instruction = buildInstruction(test, resume, useHints ? hints : [], this.loggedIn);
+      const instruction = buildInstruction(
+        test,
+        resume,
+        useHints ? hints : [],
+        this.loggedIn,
+        ctx.hint,
+      );
       const result = await agent.execute({
         instruction,
         maxSteps: test.maxSteps ?? this.cfg.maxSteps,
@@ -179,8 +188,15 @@ export class AgentExecutor {
         heals: [],
         baseline,
         trace,
+        // Stagehand caches its system prompt; input_tokens counts only what was not read from the cache
         llmUsage: result.usage
-          ? { inputTokens: result.usage.input_tokens, outputTokens: result.usage.output_tokens }
+          ? {
+              inputTokens: result.usage.input_tokens + (result.usage.cached_input_tokens ?? 0),
+              outputTokens: result.usage.output_tokens,
+              ...(result.usage.cached_input_tokens
+                ? { cachedInputTokens: result.usage.cached_input_tokens }
+                : {}),
+            }
           : undefined,
         agentInput: { model: this.cfg.model, engine: 'stagehand', instruction },
       };
@@ -199,9 +215,9 @@ export class AgentExecutor {
 /** What the agent reports when it finishes (Stagehand's `output` schema). */
 export const FinalReportSchema = z.object({
   status: z
-    .enum(['done', 'blocked', 'app-error'])
+    .enum(['done', 'blocked', 'app-error', 'needs-person'])
     .describe(
-      'done: the goal is achieved. blocked: you could not do it (control missing, unclear goal). app-error: the app itself failed (error page, crash, failed request)',
+      'done: the goal is achieved. blocked: you could not do it (control missing, unclear goal). app-error: the app itself failed (error page, crash, failed request). needs-person: a step only a human can do (askForHelp said nobody could help)',
     ),
   summary: z.string().describe('One or two plain sentences: what you did and what happened'),
   observed: z
@@ -253,6 +269,25 @@ export function harnessStatusTool(session) {
   });
 }
 
+/**
+ * Lets the agent ask a person for a step only a human can do (human in the loop, core/humanHelp.js). The test
+ * pauses until someone answers; with nobody able to act in this browser the answer comes at once and the agent
+ * finishes with "needs-person". The harness, not the agent, records the request and its answer.
+ * @param {TestContext} ctx
+ */
+export function askForHelpTool(ctx) {
+  return tool({
+    description: ASK_FOR_HELP,
+    inputSchema: z.object({
+      what: z.string().describe('Exactly what the person should do, in one sentence'),
+    }),
+    execute: async ({ what }) => {
+      if (!ctx.askHuman) return helpReply({ what, answer: 'unavailable', ts: '', waitedMs: 0 });
+      return helpReply(await ctx.askHuman(what));
+    },
+  });
+}
+
 /** @param {any} result @returns {{ selector?: string, method?: string } | undefined} */
 function playwrightArgs(result) {
   const out = result?.output ?? result;
@@ -281,6 +316,33 @@ export function hoverAtTool(session) {
     execute: async ({ xPercent, yPercent }) => {
       await moveMouseToPercent(session.page, xPercent, yPercent);
       return { ok: true, movedTo: `${xPercent}%, ${yPercent}%` };
+    },
+  });
+}
+
+/**
+ * Drags by position: act can only drag one element onto another, and many draggable things (crop handles, slider
+ * thumbs, resize corners) have no name in the accessibility tree and no element to drop on. The agent reads the
+ * positions off its latest screenshot. Recorded as a `mouse` step with method `drag`, replayed at the same place.
+ * @param {BrowserSession} session
+ */
+export function dragAtTool(session) {
+  return tool({
+    description:
+      'Drag with the mouse from one point of the viewport to another: press, move, release. For crop handles, ' +
+      'sliders, resize corners, drawing, or moving an item to a spot where there is no element to drop on. ' +
+      'Positions are 0-100 percent of the viewport (0,0 = top-left, 100,100 = bottom-right), read off your latest ' +
+      'screenshot. Take a screenshot afterwards to check the result.',
+    inputSchema: z.object({
+      fromXPercent: z.number().min(0).max(100),
+      fromYPercent: z.number().min(0).max(100),
+      toXPercent: z.number().min(0).max(100),
+      toYPercent: z.number().min(0).max(100),
+      what: z.string().describe('What you are dragging and where, e.g. "the crop corner inward"'),
+    }),
+    execute: async (a) => {
+      await dragPercent(session.page, a.fromXPercent, a.fromYPercent, a.toXPercent, a.toYPercent);
+      return { ok: true };
     },
   });
 }
@@ -339,6 +401,8 @@ export function describeAgentStep(e) {
       );
     case 'hoverAt':
       return `Hover at ${a.xPercent}%, ${a.yPercent}%${a.why ? ` (${a.why})` : ''}`;
+    case 'dragAt':
+      return `Drag ${a.what ? `${a.what} ` : ''}from ${a.fromXPercent}%, ${a.fromYPercent}% to ${a.toXPercent}%, ${a.toYPercent}%`;
     case 'useTestId':
       return `${a.action} ${a.selector}${a.value ? ` "${a.value}"` : ''}`;
     case 'appTestIds':
@@ -361,6 +425,8 @@ export function describeAgentStep(e) {
       return `Read: ${a.instruction ?? ''}`.slice(0, 160);
     case 'done':
       return 'Finished';
+    case 'askForHelp':
+      return `Asked a person: ${String(a.what ?? '').slice(0, 140)}`;
     default: {
       const arg = a.action ?? a.url ?? a.text ?? '';
       return arg ? `${e.actionName}: ${String(arg).slice(0, 140)}` : e.actionName;
@@ -393,8 +459,11 @@ export async function reachStart(test, session, ctx) {
   }
 }
 
-/** @param {TestCase} test @param {ResumeContext} [resume] @param {PageHint[]} [hints] */
-export function buildInstruction(test, resume, hints = [], loggedIn = false) {
+/**
+ * @param {TestCase} test @param {ResumeContext} [resume] @param {PageHint[]} [hints] @param {boolean} [loggedIn]
+ * @param {string} [hint]  a second try's lesson from the first
+ */
+export function buildInstruction(test, resume, hints = [], loggedIn = false, hint) {
   const lines = [
     `You are testing a web application starting at ${test.startUrl}.`,
     `Goal: ${test.goal}`,
@@ -409,6 +478,8 @@ export function buildInstruction(test, resume, hints = [], loggedIn = false) {
     'Some controls are hidden until the pointer moves or hovers (toolbars in full-screen or presentation',
     'mode, hover menus). If a control you expect is not visible, use the hoverAt tool (usually near an',
     'edge or corner), look again, and only then conclude it does not exist.',
+    'act cannot drag something to a spot (a crop handle inward, a slider, a resize corner): use dragAt with',
+    'positions from your latest screenshot, then look again.',
     'When the page has several controls with the same label (three "Explore Now" buttons), always say which one in',
     'your action: its section heading or the text next to it, e.g. "click the Explore Now button in the Enhance Your',
     'Visuals section", never just "click the Explore Now button". After a click, check you reached what the goal',
@@ -423,6 +494,10 @@ export function buildInstruction(test, resume, hints = [], loggedIn = false) {
     'wait until the reply has finished before you check the result.',
     'Before you report that the goal cannot be done, read the page structure (ariaTree) and try at least one of',
     'those other ways; say in your report which ones you tried.',
+    'File uploads: just click the upload control or drop zone. The harness answers the file picker with a sample',
+    'file that fits (an image, PDF, CSV, text or JSON); never type a file path. harnessStatus lists what it chose.',
+    'If a step needs a real person (a CAPTCHA, a one-time or two-factor code, a verification email, a real',
+    'payment, a file the harness could not supply), call askForHelp with what to do, then follow its answer.',
   ];
   if (loggedIn)
     lines.push(
@@ -436,6 +511,14 @@ export function buildInstruction(test, resume, hints = [], loggedIn = false) {
       'This app exposes stable test ids. Prefer useTestId with a selector from appTestIds over act:',
       'it is exact and replayable. Call appTestIds again after the page changes. Current page:',
       describeHints(hints),
+    );
+  }
+  if (hint) {
+    lines.push(
+      '',
+      'This is a second try. The first try did not reach the goal, and a review of its evidence says why and what',
+      `to do differently: ${hint}`,
+      'Use that, but trust what you see on the page over it.',
     );
   }
   if (resume?.failed) {

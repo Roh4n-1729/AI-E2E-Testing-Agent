@@ -53,6 +53,12 @@ on Playwright's accessibility tree, which takes any model and clicks the exact e
   on Checkout step one. The page shows 'Error: Last Name is required'"), ranked by severity, with the screenshot that
   shows it. Each test is a journey: the pages the user went through, where it got stuck, the steps by page, and why
   it failed. Engineers get the full evidence one click away (Developer view).
+- **Compare runs.** Each run says what changed since the last run of the same app: tests fixed or newly failing,
+  problems found or gone, time and tokens, and how many tests now replay with no AI.
+- **Uploads and human in the loop.** File pickers get a fitting sample file (or yours, from `AIE2E_UPLOAD_DIR`).
+  With the browser shown, tests run one at a time in one window, and the agent can pause and ask you for a step
+  only a person can do (a code, a CAPTCHA); a helped pass is labelled and never recorded. Without a person, such
+  tests are reported as needing one, not as app failures.
 - **Watch it live.** A local web UI streams the browser (CDP screencast) with a visible cursor while the run moves
   through log in, explore, plan, test and report.
 

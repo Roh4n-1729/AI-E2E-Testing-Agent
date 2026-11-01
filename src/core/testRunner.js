@@ -2,6 +2,7 @@ import path from 'node:path';
 import { BrowserSession } from '../browser/session.js';
 import { testFingerprint } from '../storage/recordStore.js';
 import { nullEvents } from '../events/runEvents.js';
+import { neededPerson, wasHelped } from './humanHelp.js';
 import { errorMessage } from '../util/misc.js';
 import { ReplayExecutor, ReplayStepError } from '../executor/replayExecutor.js';
 
@@ -32,6 +33,10 @@ import { ReplayExecutor, ReplayStepError } from '../executor/replayExecutor.js';
  * @property {import('../judge/failureExplainer.js').FailureExplainer} [explainer]  the AI's reading of failures
  * @property {Judge} [verifyJudge]  judges a new recording's replay on the test's own checks only (no quality or
  *   visual gates); with config.verifyRecordings, a recording is kept only when that replay passes
+ * @property {import('./humanHelp.js').HumanHelp} [help]  a person who can act in the test's browser (human in the
+ *   loop); without it, every request for help is answered "nobody can help"
+ * @property {import('../browser/host.js').BrowserHost} [browserHost]  one browser window shared by the tests (the
+ *   browser is shown); tests then run one at a time and are isolated by cleaning, not by relaunching
  */
 
 /** Runs one test in its own isolated browser: execute -> judge -> (record) -> close. */
@@ -47,11 +52,56 @@ export class TestRunner {
     const events = this.deps.events ?? nullEvents;
     const started = Date.now();
     events.emit('test.started', { testId: test.id, title: test.title, goal: test.goal });
-    const result = await this.#runWithFallback(test, started, fallbackExecutor, logger);
+    let result = await this.#runWithFallback(test, started, fallbackExecutor, logger);
+    // A test that stopped because it needed a person already says why: no AI reading, no second try.
+    const waitingForPerson = result.verdict.status !== 'pass' && neededPerson(result.help);
+    if (waitingForPerson)
+      logger.info(
+        `${test.id}: needs a person (${result.help?.find((h) => h.answer !== 'done')?.what})`,
+      );
     // After the verdict, never before: the explanation reads the evidence, it does not decide anything.
-    if (result.verdict.status !== 'pass' && this.deps.explainer && !this.deps.signal?.aborted) {
+    if (
+      result.verdict.status !== 'pass' &&
+      !waitingForPerson &&
+      this.deps.explainer &&
+      !this.deps.signal?.aborted
+    ) {
       const explanation = await this.deps.explainer.explain(result);
       if (explanation) result.explanation = explanation;
+    }
+    // The reading blames the test, not the app: one more try with that lesson, judged on the same checks.
+    const e = result.explanation;
+    if (
+      result.verdict.status === 'fail' &&
+      e?.category === 'test-problem' &&
+      this.deps.config.retryTestProblems &&
+      fallbackExecutor &&
+      test.goal.trim() &&
+      !this.deps.signal?.aborted
+    ) {
+      const hint = [e.cause, e.suggestion].filter(Boolean).join(' ');
+      logger.info(
+        `${test.id}: the AI's reading blames the test, not the app; trying once more with it as a hint`,
+      );
+      events.emit('test.started', {
+        testId: test.id,
+        title: test.title,
+        goal: test.goal,
+        retry: true,
+      });
+      const second = await this.#attempt(test, fallbackExecutor, hint);
+      const passed = second.verdict.status === 'pass';
+      // the report shows the second try when it passed (and says so), else the first with its reading
+      const shown = passed ? { ...second, durationMs: Date.now() - started } : result;
+      const other = passed ? result : second;
+      result = {
+        ...shown,
+        retry: {
+          hint,
+          passed,
+          other: { status: other.verdict.status, reason: other.verdict.reason.slice(0, 300) },
+        },
+      };
     }
     events.emit('test.finished', {
       testId: test.id,
@@ -64,6 +114,7 @@ export class TestRunner {
       heals: result.heals,
       llmUsage: result.llmUsage,
       explanation: result.explanation,
+      ...(result.help ? { help: result.help } : {}),
     });
     return result;
   }
@@ -107,14 +158,17 @@ export class TestRunner {
 
   /**
    * One isolated browser session: execute, judge, and record the run if the judge passed it.
-   * @param {TestCase} test @param {Executor} executor @returns {Promise<TestResult>}
+   * @param {TestCase} test @param {Executor} executor @param {string} [hint]  a second try's lesson
+   * @returns {Promise<TestResult>}
    */
-  async #attempt(test, executor) {
+  async #attempt(test, executor, hint) {
     const { config, judge, artifacts, logger, recordStore, signal } = this.deps;
     const events = this.deps.events ?? nullEvents;
     const started = Date.now();
     if (signal?.aborted) return errorResult(test, 'Stopped before this test started', 0);
     const testArtifacts = artifacts.forTest(test.id);
+    /** @type {import('./humanHelp.js').HelpRequest[]} requests for a person in this attempt, as the harness saw them */
+    const help = [];
     /** @type {import('./ports.js').TestContext} */
     const ctx = {
       runId: artifacts.runId,
@@ -122,6 +176,27 @@ export class TestRunner {
       artifacts: testArtifacts,
       logger: logger.child(test.id),
       events,
+      ...(hint ? { hint } : {}),
+      askHuman: async (what) => {
+        ctx.logger.info(`asks a person: ${what}`);
+        const r = this.deps.help
+          ? await this.deps.help.ask(test.id, what, signal)
+          : {
+              what,
+              answer: /** @type {const} */ ('unavailable'),
+              ts: new Date().toISOString(),
+              waitedMs: 0,
+            };
+        help.push(r);
+        ctx.logger.info(
+          r.answer === 'done'
+            ? 'a person did it; this run will not be recorded'
+            : r.answer === 'unavailable'
+              ? 'nobody can help in this run (the browser is not shown)'
+              : `no help: ${r.answer}`,
+        );
+        return r;
+      },
     };
 
     /** @type {BrowserSession | undefined} */
@@ -135,14 +210,26 @@ export class TestRunner {
         themeStates: this.deps.themeStates,
         storageState: this.deps.storageState,
         themeReference: this.deps.themeReference,
+        host: this.deps.browserHost,
       });
       const s = session;
       s.onScreenshot = (ref) => events.emit('test.screenshot', { testId: test.id, ...ref });
+      s.onUpload = (u) =>
+        events.emit('test.step', {
+          testId: test.id,
+          source: 'harness',
+          description: u.file
+            ? `The harness chose ${u.file} for the file picker${u.error ? ` (${u.error})` : ''}`
+            : `File picker left unanswered: ${u.error}`,
+          ok: !u.error,
+        });
       stopLiveView = s.startLiveView(
         (jpeg) => events.emit('frame', { testId: test.id, jpeg: jpeg.toString('base64') }),
         () => events.liveViewers > 0,
       );
-      onAbort = () => void s.close();
+      // Stop closes the browser under the agent; a shared window closes for good
+      const host = this.deps.browserHost;
+      onAbort = () => void (host ? host.close() : s.close());
       signal?.addEventListener('abort', onAbort, { once: true });
       const outcome = await executor.execute(test, session, ctx);
       // the live view shows the hand-off: the steps are done, the judge now reads the evidence
@@ -192,6 +279,7 @@ export class TestRunner {
         recordStore &&
         verdict.status === 'pass' &&
         outcome.recordable &&
+        !wasHelped(help) &&
         (outcome.mode === 'agent' || outcome.mode === 'healed')
       ) {
         const rec = {
@@ -224,6 +312,10 @@ export class TestRunner {
           );
           recording = { saved: false, verified: false, reason: check.reason };
         }
+      } else if (recordStore && verdict.status === 'pass' && wasHelped(help)) {
+        ctx.logger.info(
+          "passed with a person's help: not recorded, a replay cannot repeat what they did",
+        );
       } else if (recordStore && verdict.status === 'pass' && outcome.mode === 'agent') {
         ctx.logger.info(
           'passed, but not recorded: the agent used steps that cannot be replayed deterministically',
@@ -242,6 +334,7 @@ export class TestRunner {
         trace: outcome.trace,
         inputs: testInputs(outcome),
         ...(recording ? { recording } : {}),
+        ...(help.length ? { help } : {}),
       };
     } catch (e) {
       // Infrastructure failure (browser did not launch, judge crashed): report as an error.
@@ -280,6 +373,7 @@ export class TestRunner {
     try {
       session = await BrowserSession.open(cfg, checkArtifacts, ctx.logger, {
         storageState: this.deps.storageState,
+        host: this.deps.browserHost,
       });
       const outcome = await new ReplayExecutor().execute(test, session, quiet, recording, {
         sturdier: true,

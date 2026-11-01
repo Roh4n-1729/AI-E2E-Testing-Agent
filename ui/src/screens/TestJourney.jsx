@@ -5,6 +5,7 @@ import { AI_CATEGORY, RESULT, testHref } from '../components/RunSummary.jsx';
 import { TestDetail } from '../components/TestDetail.jsx';
 import { ActorFilter, ActorInput } from '../components/WhoDidWhat.jsx';
 import { Badge, Button } from '../components/ui.jsx';
+import { GoalFix } from '../components/GoalFix.jsx';
 import { MODE, fmtDuration, fmtTokens, pathOf } from '../lib/format.js';
 
 /**
@@ -311,7 +312,7 @@ function AiReading({ e }) {
   );
 }
 
-function Why({ t, result }) {
+function Why({ t, result, runId }) {
   const status = result.verdict.status;
   const hard = t.checks.filter((c) => !c.advisory);
   const advisory = t.checks.filter((c) => c.advisory);
@@ -345,6 +346,15 @@ function Why({ t, result }) {
       </h2>
       <p className="text-[15px] leading-relaxed">{sentence}</p>
       {result.explanation && <AiReading e={result.explanation} />}
+      {result.retry?.passed && (
+        <p className="rounded-lg bg-user/[0.07] px-3.5 py-2.5 text-[13px]">
+          <span className="font-semibold">Passed on a second try.</span> The first try failed (
+          {result.retry.other.reason}). The AI&apos;s reading blamed the test, so the agent tried
+          again with this hint: {result.retry.hint}
+        </p>
+      )}
+      {result.help?.length > 0 && <HelpLog help={result.help} />}
+      <GoalFix runId={runId} result={result} />
       <ul className="flex flex-col gap-2 text-[13px]">
         {hard.map((c, i) => (
           <li key={i} className="flex items-start gap-2">
@@ -751,7 +761,7 @@ export function TestJourney({
             aria-label="Verdict and evidence"
             className="pin-xl flex min-w-0 flex-col gap-3.5 xl:pr-1"
           >
-            <Why t={t} result={result} />
+            <Why t={t} result={result} runId={runId} />
             <LooksDifferent
               results={visual}
               runId={runId}
@@ -794,5 +804,38 @@ export function TestJourney({
         )}
       </div>
     </EvidenceGallery>
+  );
+}
+
+const HELP_ANSWER = {
+  done: 'a person did it',
+  skipped: 'the person could not',
+  timeout: 'nobody answered in time',
+  unavailable: 'nobody could help: the browser was not shown',
+  stopped: 'the run was stopped',
+};
+
+/** Human in the loop: every time the agent asked a person, as the harness recorded it. */
+function HelpLog({ help }) {
+  const helped = help.some((h) => h.answer === 'done');
+  return (
+    <div className="rounded-lg bg-warn-bg px-3.5 py-2.5 text-[13px]">
+      <p className="font-semibold text-warn">
+        {helped ? 'A person helped with this test' : 'This test needs a person'}
+      </p>
+      <ul className="mt-1 flex flex-col gap-1">
+        {help.map((h, i) => (
+          <li key={i}>
+            The agent asked: “{h.what}”, {HELP_ANSWER[h.answer] ?? h.answer}
+            {h.note ? ` (“${h.note}”)` : ''}.
+          </li>
+        ))}
+      </ul>
+      <p className="mt-1 text-muted">
+        {helped
+          ? 'The checks passed on what the page showed afterwards. Not recorded: a replay cannot repeat what a person did.'
+          : 'A step only a human can do. Run the test with the browser shown to help when the agent asks.'}
+      </p>
+    </div>
   );
 }

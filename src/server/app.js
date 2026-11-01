@@ -16,6 +16,9 @@ import { testFingerprint } from '../storage/recordStore.js';
 import { AuthSchema } from '../auth/login.js';
 import { slugify } from '../util/misc.js';
 import { AccessGate, accessConfig, hostAllowed, targetAllowed } from './access.js';
+import { canFixGoal, proposeGoal } from '../judge/goalFixer.js';
+import { AiSdkLlm } from '../llm/aiSdkLlm.js';
+import { apiKeyEnvFor } from '../config/config.js';
 
 /** Request body for POST /api/runs. Bounds keep a stray click from launching dozens of browsers. */
 const StartBody = z.object({
@@ -198,6 +201,45 @@ export async function createServer({
 
   app.get('/api/runs', async () => runs.list());
 
+  // this run against the previous run of the same app (or ?with=<runId>), and the app's runs over time
+  app.get('/api/runs/:id/compare', async (req, reply) => {
+    const { id } = /** @type {{ id: string }} */ (req.params);
+    const { with: other } = /** @type {{ with?: string }} */ (req.query ?? {});
+    const out = await runs.compare(id, other || undefined);
+    return out ?? reply.code(404).send({ error: 'Run not found or not finished' });
+  });
+  // "Apply the suggested fix": a better GOAL for a test the AI's reading blamed on how it was written. The checks
+  // never change. Nothing is saved here: the person reviews it and saves it to the suite.
+  app.post('/api/runs/:id/tests/:testId/goal-fix', async (req, reply) => {
+    const { id, testId } = /** @type {{ id: string, testId: string }} */ (req.params);
+    const report = runs.get(id)?.report ?? (await runs.readReport(id));
+    const result = report?.results.find((r) => r.test.id === testId);
+    if (!report || !result) return reply.code(404).send({ error: 'Test not found' });
+    if (!canFixGoal(result))
+      return reply.code(400).send({
+        error: 'Only a test the AI’s reading blamed on how it was written can get a new goal',
+      });
+    const model = report.models?.judge ?? loadConfig().judgeModel ?? loadConfig().model;
+    const keyVar = apiKeyEnvFor(model);
+    if (keyVar && !process.env[keyVar])
+      return reply.code(400).send({ error: `${keyVar} is not set (needed by ${model})` });
+    try {
+      const fix = await proposeGoal(AiSdkLlm.fromModelId(model), result);
+      const options = await runs.readOptions(id);
+      return { ...fix, old: result.test.goal, suite: options?.suiteName ?? report.suite };
+    } catch (e) {
+      return reply
+        .code(502)
+        .send({ error: `The model did not answer: ${e instanceof Error ? e.message : String(e)}` });
+    }
+  });
+
+  app.get('/api/runs/:id/history', async (req, reply) => {
+    const { id } = /** @type {{ id: string }} */ (req.params);
+    const out = await runs.history(id);
+    return out ?? reply.code(404).send({ error: 'Run not found or not finished' });
+  });
+
   app.get('/api/runs/:id', async (req, reply) => {
     const { id } = /** @type {{ id: string }} */ (req.params);
     const live = runs.get(id);
@@ -321,6 +363,21 @@ export async function createServer({
     return runs.stop(id)
       ? { stopped: true }
       : reply.code(404).send({ error: 'No such running run' });
+  });
+
+  // Human in the loop: the person watching answers the agent's request for help ("Done" or "I can't").
+  const HelpBody = z.object({
+    answer: z.enum(['done', 'skipped']),
+    note: z.string().max(300).optional(),
+  });
+  app.post('/api/runs/:id/tests/:testId/help', async (req, reply) => {
+    const { id, testId } = /** @type {{ id: string, testId: string }} */ (req.params);
+    const parsed = HelpBody.safeParse(req.body);
+    if (!parsed.success)
+      return reply.code(400).send({ error: 'answer must be "done" or "skipped"' });
+    return runs.help(id, testId, parsed.data.answer, parsed.data.note)
+      ? { ok: true }
+      : reply.code(404).send({ error: 'That test is not waiting for help' });
   });
 
   // Server-Sent Events: replay everything so far, then stream live. GET, so the browser's native

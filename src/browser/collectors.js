@@ -96,6 +96,8 @@ export class QualityCollector {
   #seen = [];
   /** @type {Map<string, Map<string, VitalMetric>>} document url -> metric name -> latest */
   #vitals = new Map();
+  /** pages already listened to: a shared browser keeps its page across tests */
+  #attached = new WeakSet();
 
   /**
    * @param {{ downloadDir?: (name: string) => { abs: string, rel: string } }} [opts]
@@ -124,8 +126,29 @@ export class QualityCollector {
     await context.addInitScript(seenTextInitScript);
   }
 
-  /** Per-page hooks. @param {Page} page */
+  /**
+   * Start over for the next test in a shared browser (one window, tests one at a time): everything collected so
+   * far belonged to the previous test.
+   * @param {{ downloadDir?: (name: string) => { abs: string, rel: string } }} [opts]
+   */
+  reset(opts = {}) {
+    this.#requests = [];
+    this.#open = new Map();
+    this.#seq = 0;
+    this.#total = 0;
+    this.#failed = 0;
+    this.#bytes = 0;
+    this.#byType = {};
+    this.#downloads = [];
+    this.#seen = [];
+    this.#vitals = new Map();
+    this.downloadPath = opts.downloadDir;
+  }
+
+  /** Per-page hooks, once per page. @param {Page} page */
   attach(page) {
+    if (this.#attached.has(page)) return;
+    this.#attached.add(page);
     page.on('request', (r) => this.#onRequest(r));
     page.on('response', (r) => {
       const rec = this.#open.get(r.request());

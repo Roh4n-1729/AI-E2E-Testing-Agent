@@ -54,11 +54,12 @@ const PipelineState = Annotation.Root({
  * @property {Reporter} reporter
  * @property {Logger} logger
  * @property {import('../events/runEvents.js').RunEvents} [events]
- * @property {() => { inputTokens: number, outputTokens: number }} [overheadUsage]  planner + judge tokens so far
+ * @property {() => import('../llm/promptCache.js').TokenUsage} [overheadUsage]  planner + judge tokens so far
  * @property {RunReport['auth']} [auth]  the login the run did first, if any
  * @property {{ rounds: number, discover: (results: TestResult[], siteMap: SiteMap) => Promise<Screen[]> }} [deeper]
  *   explore deeper: after each round, plan tests that start on the new screens its passing tests reached
  * @property {AbortSignal} [signal]  a stopped run plans no further round
+ * @property {string} [suite]  the suite's name, written into the report
  */
 
 /** @param {TestResult[]} results @returns {RunSummary} */
@@ -72,6 +73,7 @@ export function summarize(results) {
     claimMismatches: results.filter((r) => r.claimMismatch).length,
     inputTokens: results.reduce((n, r) => n + (r.llmUsage?.inputTokens ?? 0), 0),
     outputTokens: results.reduce((n, r) => n + (r.llmUsage?.outputTokens ?? 0), 0),
+    cachedInputTokens: results.reduce((n, r) => n + (r.llmUsage?.cachedInputTokens ?? 0), 0),
     visualChanges: results.filter((r) =>
       r.evidence.visual?.results?.some((v) => v.status === 'changed' || v.status === 'size'),
     ).length,
@@ -227,6 +229,7 @@ export function buildPipeline(deps) {
         },
         ...(deps.auth ? { auth: deps.auth } : {}),
         ...(deps.signal?.aborted ? { stopped: true } : {}),
+        ...(deps.suite ? { suite: deps.suite } : {}),
       };
       if (results.some((r) => r.evidence.themeStates?.length)) {
         report.consistency = analyseConsistency(results);

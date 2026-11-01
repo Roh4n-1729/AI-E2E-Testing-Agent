@@ -14,6 +14,8 @@ const TYPES = [
   'test.step',
   'test.screenshot',
   'test.judging',
+  'test.waiting',
+  'test.helped',
   'test.finished',
   'log',
   'run.finished',

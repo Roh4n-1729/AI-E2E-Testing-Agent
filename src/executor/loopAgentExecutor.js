@@ -2,11 +2,14 @@ import { generateText, hasToolCall, stepCountIs, tool } from 'ai';
 import { z } from 'zod';
 import { readHints } from '../browser/hints.js';
 import { resolveModel } from '../llm/aiSdkLlm.js';
+import { cacheControl, isAnthropic, usageOf } from '../llm/promptCache.js';
 import { errorMessage } from '../util/misc.js';
-import { moveMouseToPercent } from './mouse.js';
+import { dragPercent, moveMouseToPercent } from './mouse.js';
 import {
   FinalReportSchema,
+  askForHelpTool,
   buildInstruction,
+  dragAtTool,
   reachStart,
   harnessStatusTool,
   hoverAtTool,
@@ -356,7 +359,43 @@ export class LoopAgentExecutor {
               };
             }),
         }),
+        dragAt: tool({
+          description: dragAtTool(session).description,
+          inputSchema: /** @type {any} */ (dragAtTool(session).inputSchema),
+          execute: async (/** @type {any} */ a) =>
+            act(
+              'dragAt',
+              `Drag ${a.what} from ${a.fromXPercent}%, ${a.fromYPercent}% to ${a.toXPercent}%, ${a.toYPercent}%`,
+              async () => {
+                await dragPercent(
+                  session.page,
+                  a.fromXPercent,
+                  a.fromYPercent,
+                  a.toXPercent,
+                  a.toYPercent,
+                );
+                return {
+                  index: 0,
+                  kind: 'mouse',
+                  method: 'drag',
+                  description: `Drag ${a.what}`,
+                  arguments: [a.fromXPercent, a.fromYPercent, a.toXPercent, a.toYPercent].map(
+                    String,
+                  ),
+                };
+              },
+            ),
+        }),
         harnessStatus: harnessStatusTool(session),
+        askForHelp: tool({
+          ...askForHelpTool(ctx),
+          execute: async (a, o) => {
+            // a person may change the page in ways no step captures: this run cannot become a recording
+            recordable = false;
+            look('askForHelp', `Asked a person: ${a.what}`);
+            return /** @type {any} */ (askForHelpTool(ctx)).execute(a, o);
+          },
+        }),
         ...(useHints ? recordedTestIdTools() : {}),
         finish: tool({
           description:
@@ -370,7 +409,7 @@ export class LoopAgentExecutor {
       };
 
       const instruction = [
-        buildInstruction(test, resume, useHints ? hints : [], this.loggedIn),
+        buildInstruction(test, resume, useHints ? hints : [], this.loggedIn, ctx.hint),
         '',
         'How to work: call snapshot to read the page, act on elements by their ref (click, type, select, hover),',
         'and snapshot again only when you need refs from a changed page (an action already returns the URL and',
@@ -378,8 +417,12 @@ export class LoopAgentExecutor {
         'is not enough. Finish with the finish tool and an honest report; your report never decides the result.',
       ].join('\n');
       const model = this.model ?? resolveModel(this.cfg.model);
+      // Every step re-sends the conversation so far, and it is only ever appended to: automatic prompt caching
+      // puts the breakpoint at the end of each request, so the next step reads all of it back from the cache.
+      const cache = isAnthropic(model) ? cacheControl(this.cfg.promptCache) : undefined;
       const result = await generateText({
         model,
+        ...(cache ? { providerOptions: { anthropic: { cacheControl: cache } } } : {}),
         system: instruction,
         messages: [{ role: 'user', content: 'Start: read the page, then work toward the goal.' }],
         tools,
@@ -417,10 +460,10 @@ export class LoopAgentExecutor {
         heals: [],
         baseline,
         trace,
-        llmUsage: {
-          inputTokens: result.totalUsage?.inputTokens ?? 0,
-          outputTokens: result.totalUsage?.outputTokens ?? 0,
-        },
+        llmUsage: usageOf(
+          result.totalUsage,
+          result.steps.map((s) => s.providerMetadata),
+        ),
         agentInput: { model: this.cfg.model, engine: 'loop', instruction },
       };
     } catch (e) {

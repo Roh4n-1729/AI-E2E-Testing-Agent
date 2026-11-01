@@ -52,7 +52,7 @@ describe.skipIf(!hasChromium || !built)('web UI (real browser; needs `npm run ui
     // finished: the plain-English verdict, the tests table and the report link
     const html = page.getByRole('link', { name: /^Report/ });
     await html.waitFor({ timeout: 30_000 });
-    await page.getByText('The flow works').waitFor();
+    await page.getByText('The flow works', { exact: true }).waitFor();
     const href = await html.getAttribute('href');
     expect(href).toMatch(/^\/files\/runs\/.+\/report\.html$/);
     expect((await page.request.get(ui + href)).status()).toBe(200);
@@ -119,7 +119,7 @@ describe.skipIf(!hasChromium || !built)('web UI (real browser; needs `npm run ui
       .getByRole('table')
       .getByRole('link', { name: 'Shop page shows its heading' })
       .waitFor();
-    await page.getByText('The flow works').waitFor();
+    await page.getByText('The flow works', { exact: true }).waitFor();
     expect(errors).toEqual([]);
     await page.close();
   });

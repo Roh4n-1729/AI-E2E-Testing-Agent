@@ -22,6 +22,13 @@ describe('the agent instruction (both engines)', () => {
     expect(text).toContain('Before you report that the goal cannot be done');
   });
 
+  it('passes a second try the lesson from the first', () => {
+    const text = buildInstruction(test, undefined, [], false, 'Use the AI chat box on the right.');
+    expect(text).toContain('This is a second try');
+    expect(text).toContain('Use the AI chat box on the right.');
+    expect(buildInstruction(test)).not.toContain('second try');
+  });
+
   it('says where a test that starts deeper begins, and that a healed one continues', () => {
     const steps = [
       { index: 0, kind: /** @type {const} */ ('navigate'), description: 'Open the app' },

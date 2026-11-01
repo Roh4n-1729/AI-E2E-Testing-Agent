@@ -4,6 +4,7 @@ import { fileUrl } from '../api.js';
 import { fmtDuration, fmtTokens } from '../lib/format.js';
 import { Consistency } from './Consistency.jsx';
 import { Tooltip } from './ui.jsx';
+import { SinceLastRun } from './SinceLastRun.jsx';
 
 /**
  * The run, for anyone: one verdict sentence, four numbers, the problems found in plain words, and
@@ -151,6 +152,10 @@ function Kpis({ insights, durationMs }) {
             : cost.replayed
               ? `${cost.replayed} of ${cost.total} replayed`
               : 'AI-driven'
+        }${
+          cost.cachedTokens && tokens
+            ? ` · ${Math.round((100 * cost.cachedTokens) / tokens)}% from the prompt cache`
+            : ''
         } · ${fmtDuration(durationMs)}`}
       />
     </section>
@@ -351,6 +356,7 @@ export function RunSummary({ runId, report, insights }) {
     <div className="flex flex-col gap-6">
       <VerdictCard insights={insights} report={report} runId={runId} />
       <Kpis insights={insights} durationMs={duration} />
+      <SinceLastRun runId={runId} />
       <Findings insights={insights} report={report} runId={runId} />
       <TestsTable insights={insights} report={report} runId={runId} />
       {report.consistency?.findings?.length > 0 && <Consistency consistency={report.consistency} />}

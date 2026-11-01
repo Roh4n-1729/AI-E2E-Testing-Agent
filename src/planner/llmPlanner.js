@@ -1,3 +1,5 @@
+import { readFile } from 'node:fs/promises';
+import path from 'node:path';
 import { z } from 'zod';
 import { TestCaseSchema } from '../core/types.js';
 import { sha256, slugify } from '../util/misc.js';
@@ -247,7 +249,8 @@ export function reviewExpectations(exps, siteMap, startUrl) {
 export class LlmPlanner {
   /**
    * @param {LlmClient} llm
-   * @param {{ maxTests: number, onReview?: (review: { found: string[], remaining: string[] }) => void }} opts
+   * @param {{ maxTests: number, imageDir?: string, onReview?: (review: { found: string[], remaining: string[] }) => void }} opts
+   *   imageDir: the run folder, where discovered screens' screenshots are (round 2)
    *   onReview: what the plan review found, and what the revision round still got wrong (for the live UI)
    * @param {Logger} logger
    */
@@ -321,6 +324,16 @@ export class LlmPlanner {
    */
   async planFrom(target, siteMap, screens, existing, round, retry = []) {
     if (!screens.length) return [];
+    // what each screen looks like: icon-only controls (a pencil, a sparkle) have no text the summary could show
+    const shots = await Promise.all(
+      screens.map((sc) =>
+        sc.screenshot && this.opts.imageDir
+          ? readFile(path.join(this.opts.imageDir, sc.screenshot)).catch(() => null)
+          : null,
+      ),
+    );
+    const images = /** @type {Uint8Array[]} */ (shots.filter(Boolean));
+    const shown = shots.flatMap((b, i) => (b ? [i + 1] : []));
     const prompt = [
       `Start URL: ${target.url}`,
       target.description ? `App description: ${target.description}` : '',
@@ -344,6 +357,9 @@ export class LlmPlanner {
         .map((l) => l.replace(/^Page (\d+):/, 'Screen $1:'))
         .join('\n'),
       ...screens.map((sc, i) => `  (screen ${i + 1} is where "${sc.from.title}" ended)`),
+      shown.length
+        ? `Screenshots are attached for screen${shown.length === 1 ? '' : 's'} ${shown.join(', ')}, in that order. Use them for controls that show only an icon, and name such a control by what it looks like and where it is ("the pencil icon above the slide"), never by guessing a label.`
+        : '',
       '',
       'Crawl summary of the pages linked from the start:',
       summarizeSiteMap(siteMap),
@@ -353,7 +369,12 @@ export class LlmPlanner {
 
     const build = (/** @type {z.infer<typeof DeeperPlanSchema>['tests']} */ planned) =>
       this.#buildDeeper(planned, target, siteMap, screens, existing, round);
-    let plan = await this.llm.generateObject({ schema: DeeperPlanSchema, system: DEEPER, prompt });
+    let plan = await this.llm.generateObject({
+      schema: DeeperPlanSchema,
+      system: DEEPER,
+      prompt,
+      images,
+    });
     let review = build(plan.tests);
     if (review.issues.length) {
       const found = review.issues;
@@ -369,6 +390,7 @@ export class LlmPlanner {
             ...found.map((i) => `- ${i}`),
             'Return the complete plan again with every problem fixed. Keep the good tests as they are.',
           ].join('\n'),
+          images,
         });
         review = build(plan.tests);
       } catch (e) {

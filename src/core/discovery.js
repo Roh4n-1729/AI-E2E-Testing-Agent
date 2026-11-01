@@ -18,6 +18,8 @@ import { testFingerprint } from '../storage/recordStore.js';
  * @property {{ testId: string, title: string }} from  the test that ended there
  * @property {RecordedStep[]} steps  replayable steps that reach it
  * @property {SitePage} page  the screen in the crawler's terms, for the planner
+ * @property {string} [screenshot]  the test's final screenshot, relative to its run folder: shown to the planner,
+ *   so controls with only an icon are not invisible to it
  * @property {boolean} [direct]  opening `url` in a fresh browser shows this same screen: tests start there, with no
  *   steps to replay
  */
@@ -142,9 +144,11 @@ export async function discoverScreens({ results, known, stepsFor, origin, max })
     } else if (screens.length >= max) continue;
     found.push(seen);
     const screen = ev.screen;
+    const shot = ev.screenshots.filter((s) => s.source !== 'agent').at(-1) ?? ev.screenshots.at(-1);
     screens.push({
       url: ev.finalUrl,
       title: ev.title,
+      ...(shot ? { screenshot: shot.path } : {}),
       from: { testId: r.test.id, title: r.test.title },
       steps,
       page: {

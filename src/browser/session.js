@@ -12,6 +12,7 @@ import { ThemeStates, fingerprintOf } from '../theme/states.js';
 import { applyTheme, discoverThemes, restoreTheme, themeState } from '../theme/discover.js';
 import { applyStorageState } from '../auth/login.js';
 import { readHints } from './hints.js';
+import { answerFileChooser } from './uploads.js';
 import { isSafeLink, normalizeUrl } from '../crawler/bfsCrawler.js';
 
 /** Visual-comparison captures hide the harness's own cursor overlay: its position is not the app's. */
@@ -27,7 +28,7 @@ const LIVE_STYLE =
  * @import { Browser, BrowserContext, Page } from 'playwright'
  * @import { Config } from '../config/config.js'
  * @import { TestArtifacts } from '../storage/artifacts.js'
- * @import { Baseline, ConsoleEntry, Evidence, Expectation, NetworkFailure, ScreenSummary, ScreenshotRef, ThemeAudit, ThemeState, VisualCapture } from '../core/types.js'
+ * @import { Baseline, ConsoleEntry, Evidence, Expectation, NetworkFailure, ScreenSummary, ScreenshotRef, ThemeAudit, ThemeState, UploadRecord, VisualCapture } from '../core/types.js'
  * @import { Logger } from '../util/logger.js'
  */
 
@@ -46,6 +47,18 @@ export class BrowserSession {
   #screenshots = [];
   /** @type {((ref: ScreenshotRef) => void) | undefined} Called for every screenshot saved (harness or agent). */
   onScreenshot;
+  /** @type {UploadRecord[]} file pickers the page opened, answered by the harness */
+  #uploads = [];
+  /** @type {((u: UploadRecord) => void) | undefined} Called when the harness answered a file picker. */
+  onUpload;
+  /** @type {string | undefined} files given to file pickers before the bundled samples (AIE2E_UPLOAD_DIR) */
+  uploadDir;
+  /** @type {import('./host.js').BrowserHost | undefined} a browser shared by the run's tests (one window) */
+  host;
+  /** @type {Array<[Page, string, (...a: any[]) => void]>} this test's page listeners, removed when it ends */
+  #listeners = [];
+  /** @param {Page} p */
+  #onPage = (p) => this.#attach(p);
   /** @type {ThemeState[]} distinct screens of this test that were theme-audited, in order */
   #themeStates = [];
   #themeInBetween = 0;
@@ -77,51 +90,33 @@ export class BrowserSession {
     this.qualityCfg = qualityCfg;
     this.themeStates = themeStates ?? new ThemeStates({ perTest: qualityCfg.themeStates });
     for (const p of context.pages()) this.#attach(p);
-    context.on('page', (p) => this.#attach(p));
+    context.on('page', this.#onPage);
   }
 
   /**
    * @param {Config} cfg
    * @param {TestArtifacts} artifacts
    * @param {Logger} logger
-   * @param {{ themeStates?: ThemeStates, storageState?: import('../auth/login.js').StorageState, themeReference?: import('../core/types.js').ThemeReference }} [opts]
+   * @param {{ themeStates?: ThemeStates, storageState?: import('../auth/login.js').StorageState, themeReference?: import('../core/types.js').ThemeReference, host?: import('./host.js').BrowserHost }} [opts]
+   *   host: a browser shared by the run's tests (the browser is shown: one window, one test at a time)
    */
   static async open(cfg, artifacts, logger, opts = {}) {
     await artifacts.init();
-    const executablePath = resolveChromePath(cfg);
-    logger.debug(`launching Chromium (${executablePath ?? 'system chrome'})`);
-    const stagehand = new Stagehand({
-      env: 'LOCAL',
-      model: cfg.model,
-      verbose: cfg.logLevel === 'debug' ? 2 : 0,
-      disablePino: true,
-      // Agent callbacks (onEvidence) are an experimental Stagehand feature that requires both flags.
-      // Safe for env: 'LOCAL', which never uses the Browserbase API anyway.
-      experimental: true,
-      disableAPI: true,
-      localBrowserLaunchOptions: {
-        headless: cfg.headless,
-        executablePath,
-        args: agentChromeArgs(cfg),
-        viewport: cfg.viewport,
-      },
-    });
-    await stagehand.init();
-    const browser = await chromium.connectOverCDP(stagehand.connectURL());
-    const context = browser.contexts()[0];
-    if (!context) {
-      await stagehand.close().catch(() => undefined);
-      throw new Error('Playwright attached over CDP but found no browser context');
+    const downloadDir = (/** @type {string} */ n) => artifacts.downloadPath(n);
+    /** @type {{ stagehand: Stagehand, browser: Browser, context: BrowserContext, quality: QualityCollector }} */
+    let b;
+    if (opts.host) {
+      // one window for the whole run: the same browser, cleaned for this test (cookies, storage, extra tabs)
+      b = await opts.host.acquire({ storageState: opts.storageState, downloadDir });
+    } else {
+      const launched = await launchBrowser(cfg, logger);
+      // logged-in runs: every test starts with the session the login produced (cookies + localStorage)
+      if (opts.storageState) await applyStorageState(launched.context, opts.storageState);
+      const quality = new QualityCollector({ downloadDir });
+      await quality.installOn(launched.context);
+      b = { ...launched, quality };
     }
-    context.setDefaultNavigationTimeout(cfg.navTimeoutMs);
-    // logged-in runs: every test starts with the session the login produced (cookies + localStorage)
-    if (opts.storageState) await applyStorageState(context, opts.storageState);
-    const quality = new QualityCollector({ downloadDir: (n) => artifacts.downloadPath(n) });
-    await quality.installOn(context);
-    if (cfg.showCursor) {
-      await context.addInitScript(CURSOR_SCRIPT);
-      for (const p of context.pages()) await p.evaluate(CURSOR_SCRIPT).catch(() => undefined);
-    }
+    const { stagehand, browser, context, quality } = b;
     const session = new BrowserSession(
       stagehand,
       browser,
@@ -132,6 +127,8 @@ export class BrowserSession {
       opts.themeStates,
     );
     session.visualGate = cfg.visual.gate;
+    session.uploadDir = cfg.uploadDir;
+    session.host = opts.host;
     session.themeReference = opts.themeReference;
     session.hideLiveRegions = cfg.visual.hideLiveRegions;
     return session;
@@ -455,6 +452,7 @@ export class BrowserSession {
       errorScreen: errorScreen ?? null,
       consoleErrors: errors.length,
       recentConsoleErrors: errors.slice(-3).map((c) => explainError(c.text)),
+      ...(this.#uploads.length ? { fileUploads: this.#uploads.slice(-3) } : {}),
       failedRequests: this.#networkLog.length,
       recentFailedRequests: this.#networkLog
         .slice(-3)
@@ -499,6 +497,7 @@ export class BrowserSession {
       requests: this.quality.requests,
       requestStats: this.quality.stats(),
       downloads: this.quality.downloads,
+      ...(this.#uploads.length ? { uploads: [...this.#uploads] } : {}),
       seenText: this.quality.seenText,
       vitals: this.quality.vitals(),
       theme,
@@ -579,15 +578,35 @@ export class BrowserSession {
   }
 
   async close() {
+    if (this.host) {
+      // a shared browser stays open for the next test: only this test's listeners go
+      this.context.off('page', this.#onPage);
+      for (const [page, event, fn] of this.#listeners) page.off(/** @type {any} */ (event), fn);
+      this.#listeners = [];
+      return;
+    }
     await this.browser.close().catch(() => undefined);
     await this.stagehand.close().catch(() => undefined);
+  }
+
+  /** @param {Page} page @param {string} event @param {(...a: any[]) => void} fn */
+  #on(page, event, fn) {
+    page.on(/** @type {any} */ (event), fn);
+    this.#listeners.push([page, event, fn]);
   }
 
   /** @param {Page} page */
   #attach(page) {
     this.quality.attach(page);
+    // A file picker never reaches the system dialog: the harness answers it with a fitting sample file.
+    this.#on(page, 'filechooser', (chooser) => {
+      void answerFileChooser(chooser, { dir: this.uploadDir }).then((u) => {
+        this.#uploads.push(u);
+        this.onUpload?.(u);
+      });
+    });
     const ts = () => new Date().toISOString();
-    page.on('console', (m) => {
+    this.#on(page, 'console', (m) => {
       if (m.type() === 'error' || m.type() === 'warning') {
         this.#consoleLog.push({
           type: m.type(),
@@ -597,10 +616,10 @@ export class BrowserSession {
         });
       }
     });
-    page.on('pageerror', (e) =>
+    this.#on(page, 'pageerror', (e) =>
       this.#consoleLog.push({ type: 'pageerror', text: e.message, url: page.url(), ts: ts() }),
     );
-    page.on('requestfailed', (r) =>
+    this.#on(page, 'requestfailed', (r) =>
       this.#networkLog.push({
         url: r.url(),
         method: r.method(),
@@ -608,7 +627,7 @@ export class BrowserSession {
         ts: ts(),
       }),
     );
-    page.on('response', (r) => {
+    this.#on(page, 'response', (r) => {
       if (r.status() >= 400) {
         this.#networkLog.push({
           url: r.url(),
@@ -619,4 +638,52 @@ export class BrowserSession {
       }
     });
   }
+}
+
+/**
+ * Launch Chromium the way every test needs it: Stagehand starts it (the AI's driver), Playwright attaches over
+ * CDP (the harness's driver), and the cursor overlay is installed.
+ * @param {Config} cfg @param {Logger} logger
+ * @returns {Promise<{ stagehand: Stagehand, browser: Browser, context: BrowserContext }>}
+ */
+export async function launchBrowser(cfg, logger) {
+  const executablePath = resolveChromePath(cfg);
+  logger.debug(`launching Chromium (${executablePath ?? 'system chrome'})`);
+  const stagehand = new Stagehand({
+    env: 'LOCAL',
+    model: cfg.model,
+    verbose: cfg.logLevel === 'debug' ? 2 : 0,
+    disablePino: true,
+    // Agent callbacks (onEvidence) are an experimental Stagehand feature that requires both flags.
+    // Safe for env: 'LOCAL', which never uses the Browserbase API anyway.
+    experimental: true,
+    disableAPI: true,
+    localBrowserLaunchOptions: {
+      headless: cfg.headless,
+      executablePath,
+      args: agentChromeArgs(cfg),
+      viewport: cfg.viewport,
+    },
+  });
+  await stagehand.init();
+  const browser = await chromium.connectOverCDP(stagehand.connectURL());
+  const context = browser.contexts()[0];
+  if (!context) {
+    await stagehand.close().catch(() => undefined);
+    throw new Error('Playwright attached over CDP but found no browser context');
+  }
+  context.setDefaultNavigationTimeout(cfg.navTimeoutMs);
+  if (!cfg.headless) {
+    // A shown window can be resized by the person watching. The page keeps the test's own size anyway, so
+    // layouts, screenshots and the agent's positions do not change under it (the window scrolls or pads instead).
+    const fix = (/** @type {Page} */ p) =>
+      void p.setViewportSize(cfg.viewport).catch(() => undefined);
+    for (const p of context.pages()) fix(p);
+    context.on('page', fix);
+  }
+  if (cfg.showCursor) {
+    await context.addInitScript(CURSOR_SCRIPT);
+    for (const p of context.pages()) await p.evaluate(CURSOR_SCRIPT).catch(() => undefined);
+  }
+  return { stagehand, browser, context };
 }

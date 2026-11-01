@@ -347,6 +347,9 @@ function Live({ runId, onDone, fromSuite, app, who, target, startedAt }) {
             onFollow={
               picked && running && selected.id !== running.id ? () => setPicked(null) : undefined
             }
+            onHelp={(answer) =>
+              api.help(runId, selected.id, answer).catch((e) => toast.error(e.message))
+            }
           />
         ) : (
           <StageIntro state={state} />

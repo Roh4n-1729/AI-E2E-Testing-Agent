@@ -143,14 +143,14 @@ export function Tooltip({ content, children, side = 'top' }) {
   );
 }
 
-/** Custom dropdown select. options: [{ value, label, hint? }] */
-export function Select({ value, onValueChange, options, label, id }) {
+/** Custom dropdown select. options: [{ value, label, hint? }]; disabled: shown but fixed (say why next to it). */
+export function Select({ value, onValueChange, options, label, id, disabled = false }) {
   return (
-    <S.Root value={String(value)} onValueChange={onValueChange}>
+    <S.Root value={String(value)} onValueChange={onValueChange} disabled={disabled}>
       <S.Trigger
         id={id}
         aria-label={label}
-        className="flex h-9 w-full items-center justify-between gap-2 rounded-lg border border-line bg-panel px-3 text-left text-[13px] hover:border-line-strong data-[state=open]:border-user"
+        className="flex h-9 w-full items-center justify-between gap-2 rounded-lg border border-line bg-panel px-3 text-left text-[13px] hover:border-line-strong data-[state=open]:border-user data-[disabled]:cursor-not-allowed data-[disabled]:bg-subtle data-[disabled]:text-muted data-[disabled]:hover:border-line"
       >
         <S.Value />
         <S.Icon>

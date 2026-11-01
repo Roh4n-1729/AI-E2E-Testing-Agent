@@ -60,6 +60,17 @@ export function actionsToSteps(actions, startIndex, stable = new Map()) {
         description: `Hover at ${pct(a.xPercent)}%, ${pct(a.yPercent)}%${a.why ? ` (${String(a.why).slice(0, 80)})` : ''}`,
         arguments: [pct(a.xPercent), pct(a.yPercent)],
       });
+    } else if (
+      a.type === 'dragAt' &&
+      [a.fromXPercent, a.fromYPercent, a.toXPercent, a.toYPercent].every(Number.isFinite)
+    ) {
+      steps.push({
+        index,
+        kind: 'mouse',
+        method: 'drag',
+        description: `Drag ${a.what ? `${String(a.what).slice(0, 80)} ` : ''}from ${pct(a.fromXPercent)}%, ${pct(a.fromYPercent)}% to ${pct(a.toXPercent)}%, ${pct(a.toYPercent)}%`,
+        arguments: [a.fromXPercent, a.fromYPercent, a.toXPercent, a.toYPercent].map(pct),
+      });
     } else if (a.type === 'useTestId' && typeof a.selector === 'string') {
       if (a.ok === false) continue; // the tool refused or failed: nothing happened
       steps.push({

@@ -126,4 +126,16 @@ describe('live-run reducer (the UI is a pure function of the event stream)', () 
       { url: 'https://a.test/cart', title: 'Cart', from: { testId: 'a', title: 'A' }, round: 2 },
     ]);
   });
+
+  it('shows a request for help while the agent waits for a person, and clears it on the answer', () => {
+    const s = play(start, [
+      ['plan.ready', { tests: [{ id: 'a', title: 'A', goal: 'g', expectations: [] }] }],
+      ['test.started', { testId: 'a', title: 'A', goal: 'g' }],
+      ['test.waiting', { testId: 'a', what: 'Enter the code', waitMs: 300000, at: 't' }],
+    ]);
+    expect(s.tests.a.waiting).toEqual({ what: 'Enter the code', waitMs: 300000, at: 't' });
+    const after = play(s, [['test.helped', { testId: 'a', answer: 'done' }]]);
+    expect(after.tests.a.waiting).toBeNull();
+    expect(after.tests.a.asked).toEqual([{ answer: 'done' }]);
+  });
 });

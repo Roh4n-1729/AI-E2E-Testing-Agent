@@ -8,6 +8,9 @@ import { execFile } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { startRun } from '../app/startRun.js';
+import { HumanHelp } from '../core/humanHelp.js';
+import { RunEvents } from '../events/runEvents.js';
+import { askInTerminal } from './askInTerminal.js';
 import { agentModelWarning, apiKeyEnvFor, loadConfig } from '../config/config.js';
 
 const program = new Command()
@@ -76,45 +79,52 @@ program
   .option('-o, --out <dir>', 'output directory')
   .option('-v, --verbose', 'debug logging')
   .action(async (/** @type {string} */ url, /** @type {Record<string, any>} */ o) => {
-    const { report } = await startRun({
-      url,
-      preset: o.preset,
-      agentEngine: o.agentEngine,
-      description: o.description,
-      goal: o.goal,
-      expectUrl: o.expectUrl,
-      expectText: o.expectText,
-      model: o.model,
-      headed: !!o.headed,
-      maxSteps: o.maxSteps,
-      maxTests: o.maxTests,
-      maxPages: o.maxPages,
-      concurrency: o.concurrency,
-      outDir: o.out,
-      verbose: !!o.verbose,
-      plan: o.plan,
-      crawl: o.crawl,
-      cache: o.cache,
-      rerecord: !!o.rerecord,
-      replan: !!o.replan,
-      rounds: o.rounds,
-      quality: o.quality,
-      visual: o.visual,
-      themeFrom: o.themeFrom,
-      auth: o.loginUrl
-        ? {
-            loginUrl: o.loginUrl,
-            successText: o.loginSuccessText,
-            successUrl: o.loginSuccessUrl,
-            usernameEnv: 'AIE2E_USERNAME',
-            passwordEnv: 'AIE2E_PASSWORD',
-          }
-        : undefined,
-      updateBaselines: !!o.updateBaselines,
-      suite: o.suite,
-      heal: o.heal,
-      explain: o.explain,
-    });
+    // With the browser shown and a terminal, the person running this can help when the agent asks.
+    const events = new RunEvents();
+    const help = new HumanHelp({ available: !!o.headed && !!process.stdin.isTTY, events });
+    const stopAsking = help.available ? askInTerminal(events, help) : () => undefined;
+    const { report } = await startRun(
+      {
+        url,
+        preset: o.preset,
+        agentEngine: o.agentEngine,
+        description: o.description,
+        goal: o.goal,
+        expectUrl: o.expectUrl,
+        expectText: o.expectText,
+        model: o.model,
+        headed: !!o.headed,
+        maxSteps: o.maxSteps,
+        maxTests: o.maxTests,
+        maxPages: o.maxPages,
+        concurrency: o.concurrency,
+        outDir: o.out,
+        verbose: !!o.verbose,
+        plan: o.plan,
+        crawl: o.crawl,
+        cache: o.cache,
+        rerecord: !!o.rerecord,
+        replan: !!o.replan,
+        rounds: o.rounds,
+        quality: o.quality,
+        visual: o.visual,
+        themeFrom: o.themeFrom,
+        auth: o.loginUrl
+          ? {
+              loginUrl: o.loginUrl,
+              successText: o.loginSuccessText,
+              successUrl: o.loginSuccessUrl,
+              usernameEnv: 'AIE2E_USERNAME',
+              passwordEnv: 'AIE2E_PASSWORD',
+            }
+          : undefined,
+        updateBaselines: !!o.updateBaselines,
+        suite: o.suite,
+        heal: o.heal,
+        explain: o.explain,
+      },
+      { events, help },
+    ).finally(stopAsking);
     const s = report.summary;
     process.exitCode = s.errored ? 2 : s.failed ? 1 : 0;
   });

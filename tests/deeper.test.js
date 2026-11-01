@@ -1,3 +1,6 @@
+import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { loadConfig } from '../src/config/config.js';
 import {
@@ -346,6 +349,33 @@ describe('planning round 2', () => {
     expect(t?.startUrl).toBe(`${ORIGIN}/cart`);
     expect(t?.prefix).toBeUndefined();
     expect(t?.startsFrom?.testId).toBe('cart');
+  });
+
+  it('shows the planner a screenshot of each screen it has one for', async () => {
+    const dir = mkdtempSync(path.join(os.tmpdir(), 'aie2e-shot-'));
+    mkdirSync(path.join(dir, 'cart'));
+    writeFileSync(path.join(dir, 'cart', 'final.png'), Buffer.from([0x89, 0x50, 0x4e, 0x47]));
+    const spy = { calls: /** @type {any[]} */ ([]) };
+    const planner = new LlmPlanner(
+      mockLlm({ tests: [] }, spy),
+      { maxTests: 4, imageDir: dir },
+      silentLogger,
+    );
+    await planner.planFrom(
+      { url: `${ORIGIN}/` },
+      siteMap,
+      [
+        { ...screen, screenshot: 'cart/final.png' },
+        { ...screen, url: `${ORIGIN}/x` },
+      ],
+      [],
+      2,
+    );
+    const call = JSON.stringify(spy.calls[0]);
+    expect(call).toContain('Screenshots are attached for screen 1, in that order');
+    expect(
+      spy.calls[0].prompt.at(-1).content.filter((/** @type {any} */ p) => p.type === 'file'),
+    ).toHaveLength(1);
   });
 
   it('plans nothing without new screens', async () => {

@@ -84,7 +84,10 @@ export const RecordedStepSchema = z.object({
   /** Tried in order when `selector` no longer matches (e.g. the XPath, when `selector` is a test id). */
   fallbackSelectors: z.array(z.string()).optional(),
   method: z.string().optional(),
-  /** act/mouse: method arguments. mouse: [xPercent, yPercent] of the viewport. */
+  /**
+   * act/mouse: method arguments. mouse: [xPercent, yPercent] of the viewport (a hover), or with method "drag"
+   * [fromX, fromY, toX, toY] percent.
+   */
   arguments: z.array(z.string()).optional(),
 });
 
@@ -155,6 +158,10 @@ export const RecordingSchema = z.object({
 /** @typedef {{ method: string, url: string, resourceType: string, status?: number, durationMs?: number, bytes?: number, failure?: string, api: boolean, seq: number, ts: string }} RequestRecord */
 /** @typedef {{ total: number, failed: number, api: number, transferredBytes: number, byType: Record<string, number>, slowestApi?: { url: string, durationMs: number } }} RequestStats */
 /** @typedef {{ filename: string, url: string, savedPath?: string, bytes?: number, error?: string, ts: string }} DownloadRecord */
+/**
+ * A file picker the page opened and the file the harness gave it (a sample, or one from AIE2E_UPLOAD_DIR).
+ * @typedef {{ accept: string, file?: string, error?: string, ts: string }} UploadRecord
+ */
 /** @typedef {{ text: string, url: string, ts: string }} SeenText */
 /** @typedef {{ name: 'LCP' | 'CLS' | 'INP' | 'FCP' | 'TTFB', value: number, rating: 'good' | 'needs-improvement' | 'poor' }} VitalMetric */
 /** @typedef {{ url: string, metrics: VitalMetric[] }} VitalsRecord  One entry per document the browser loaded. */
@@ -224,6 +231,7 @@ export const RecordingSchema = z.object({
  * @property {RequestRecord[]} [requests]  fetch/XHR/document requests the harness observed (static assets are only counted)
  * @property {RequestStats} [requestStats]
  * @property {DownloadRecord[]} [downloads]  files the browser downloaded during the test
+ * @property {UploadRecord[]} [uploads]  file pickers the page opened, and the file the harness chose
  * @property {SeenText[]} [seenText]  transient messages (toasts, alerts, live regions) seen at any time
  * @property {VitalsRecord[]} [vitals]
  * @property {A11yResult} [a11y]
@@ -293,7 +301,7 @@ export const RecordingSchema = z.object({
 /**
  * What the agent SAID happened. `status`, `observed` and `valuesUsed` come from its structured final report
  * (absent in older reports).
- * @typedef {{ success: boolean, message: string, status?: 'done' | 'blocked' | 'app-error', observed?: string[], valuesUsed?: string[] }} AgentClaim
+ * @typedef {{ success: boolean, message: string, status?: 'done' | 'blocked' | 'app-error' | 'needs-person', observed?: string[], valuesUsed?: string[] }} AgentClaim
  */
 /**
  * @typedef {object} HealEvent
@@ -313,7 +321,7 @@ export const RecordingSchema = z.object({
  * @property {HealEvent[]} heals
  * @property {string} [error]  infrastructure problem (browser crashed...): verdict "error"
  * @property {string} [failure]  the app did not allow a step (replay without healing): verdict "fail"
- * @property {{ inputTokens: number, outputTokens: number }} [llmUsage]
+ * @property {import('../llm/promptCache.js').TokenUsage} [llmUsage]
  * @property {Baseline} [baseline]  Start-page snapshot used by the judge to spot vacuous expectations.
  * @property {boolean} [recordable]  True when `steps` fully capture what the agent did, so they can be replayed.
  * @property {TraceEntry[]} [trace]  Run log for the report.
@@ -346,12 +354,20 @@ export const RecordingSchema = z.object({
  * @property {boolean} claimMismatch  True when the agent's claim disagrees with the evidence-based verdict.
  * @property {HealEvent[]} heals
  * @property {number} durationMs
- * @property {{ inputTokens: number, outputTokens: number }} [llmUsage]  Browser-agent tokens for this test.
+ * @property {import('../llm/promptCache.js').TokenUsage} [llmUsage]  Browser-agent tokens for this test (input
+ *   includes what was read from the prompt cache).
  * @property {TraceEntry[]} [trace]  What happened, step by step, with screenshots.
  * @property {Explanation} [explanation]  the AI's reading of a failure; advisory, written after the verdict
  * @property {TestInputs} [inputs]  what the AI agent, Playwright and the judge were each given
+ * @property {{ hint: string, passed: boolean, other: { status: 'pass' | 'fail' | 'error', reason: string } }} [retry]
+ *   the test was run a second time with the AI's reading of the first failure as a hint. passed: the second try
+ *   passed (this result IS the second try, `other` is the first); else this result is the first try and `other` the
+ *   second
  * @property {{ saved: boolean, verified: boolean, reason?: string }} [recording]  a passing agent run: was it saved
  *   for replay, after replaying once on its own (verified)? reason = why a recording was not kept
+ * @property {import('./humanHelp.js').HelpRequest[]} [help]  every time the agent asked a person for a step only a
+ *   human can do, and the answer: a test a person helped is labelled so and never recorded; one nobody could help
+ *   with is reported as needing a person, not as an app failure
  */
 /**
  * Why a failed test most likely failed, read by the judge's model from the evidence after the verdict.
@@ -374,7 +390,8 @@ export const RecordingSchema = z.object({
  * @property {number} claimMismatches
  * @property {number} inputTokens  browser-agent tokens
  * @property {number} outputTokens
- * @property {{ inputTokens: number, outputTokens: number }} [overhead]  planner + judge (visual checks) tokens
+ * @property {number} [cachedInputTokens]  of the browser-agent input, read from the prompt cache
+ * @property {import('../llm/promptCache.js').TokenUsage} [overhead]  planner + judge (visual checks) tokens
  * @property {number} [visualChanges]  tests with at least one screenshot that differs from its baseline
  * @property {number} [visualNew]  screenshots that became a baseline in this run
  */
@@ -390,6 +407,7 @@ export const RecordingSchema = z.object({
  * @property {{ loginUrl: string, username: string, landedOn: string }} [auth]  the run logged in first (never the password)
  * @property {{ agent: string, planner: string, judge: string, preset?: string }} [models]  which model did which job
  * @property {boolean} [stopped]  the run was stopped: tests that were cut off are not problems with the app
+ * @property {string} [suite]  the suite's name (`swag-labs`), when the run used one: runs are compared per suite
  */
 /**
  * @typedef {object} ConsistencyStyle

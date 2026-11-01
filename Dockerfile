@@ -20,6 +20,7 @@ RUN npm ci --omit=dev \
  && rm -rf /var/lib/apt/lists/*
 COPY --from=build /app/ui/dist ./ui/dist
 COPY src ./src
+COPY assets ./assets
 COPY examples ./examples
 COPY deploy ./deploy
 # runs and recordings are written here; the app runs as the unprivileged "node" user

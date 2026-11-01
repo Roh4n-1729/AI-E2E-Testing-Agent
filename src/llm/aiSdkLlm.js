@@ -2,8 +2,12 @@ import { createAnthropic } from '@ai-sdk/anthropic';
 import { createGoogleGenerativeAI } from '@ai-sdk/google';
 import { createOpenAI } from '@ai-sdk/openai';
 import { generateObject } from 'ai';
+import { cacheControl, isAnthropic, usageOf } from './promptCache.js';
 
-/** @import { LlmClient } from '../core/ports.js' */
+/**
+ * @import { LlmClient } from '../core/ports.js'
+ * @import { PromptCache, TokenUsage } from './promptCache.js'
+ */
 
 /**
  * Resolve a "provider/model" string to an AI SDK language model. API keys come from the
@@ -32,16 +36,21 @@ export function resolveModel(modelId) {
 export class AiSdkLlm {
   /**
    * @param {import('ai').LanguageModel} model
-   * @param {(u: { inputTokens: number, outputTokens: number }) => void} [onUsage]  token accounting
+   * @param {(u: TokenUsage) => void} [onUsage]  token accounting
+   * @param {{ cache?: PromptCache }} [opts]  prompt caching of the system prompt (Anthropic only)
    */
-  constructor(model, onUsage) {
+  constructor(model, onUsage, opts = {}) {
     this.model = model;
     this.onUsage = onUsage;
+    this.cache = isAnthropic(model) ? cacheControl(opts.cache) : undefined;
   }
 
-  /** @param {string} modelId @param {(u: { inputTokens: number, outputTokens: number }) => void} [onUsage] */
-  static fromModelId(modelId, onUsage) {
-    return new AiSdkLlm(resolveModel(modelId), onUsage);
+  /**
+   * @param {string} modelId @param {(u: TokenUsage) => void} [onUsage]
+   * @param {{ cache?: PromptCache }} [opts]
+   */
+  static fromModelId(modelId, onUsage, opts) {
+    return new AiSdkLlm(resolveModel(modelId), onUsage, opts);
   }
 
   /**
@@ -50,11 +59,21 @@ export class AiSdkLlm {
    * @returns {Promise<T>}
    */
   async generateObject({ schema, system, prompt, images = [] }) {
-    const { object, usage } = await generateObject({
+    const { object, usage, providerMetadata } = await generateObject({
       model: this.model,
       schema,
-      system,
+      // the system prompt is the same on every call of this kind: cached as a prefix (with the schema's tool)
+      ...(this.cache ? {} : { system }),
       messages: [
+        ...(this.cache
+          ? [
+              /** @type {const} */ ({
+                role: 'system',
+                content: system,
+                providerOptions: { anthropic: { cacheControl: this.cache } },
+              }),
+            ]
+          : []),
         {
           role: 'user',
           content: [
@@ -66,10 +85,7 @@ export class AiSdkLlm {
       // thinking models (the claude 5.5 family) reject a temperature; the SDK would warn on every call
       ...(fixedTemperature(this.model) ? {} : { temperature: 0 }),
     });
-    this.onUsage?.({
-      inputTokens: usage?.inputTokens ?? 0,
-      outputTokens: usage?.outputTokens ?? 0,
-    });
+    this.onUsage?.(usageOf(usage, [providerMetadata]));
     return /** @type {T} */ (object);
   }
 }

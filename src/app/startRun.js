@@ -9,7 +9,9 @@ import {
   reachDirectly,
   recordedSteps,
 } from '../core/discovery.js';
+import { HumanHelp } from '../core/humanHelp.js';
 import { TestRunner } from '../core/testRunner.js';
+import { BrowserHost } from '../browser/host.js';
 import { RunEvents } from '../events/runEvents.js';
 import { AgentExecutor } from '../executor/agentExecutor.js';
 import { LoopAgentExecutor } from '../executor/loopAgentExecutor.js';
@@ -17,6 +19,7 @@ import { CachingExecutor } from '../executor/cachingExecutor.js';
 import { ReplayExecutor } from '../executor/replayExecutor.js';
 import { EvidenceJudge } from '../judge/evidenceJudge.js';
 import { AiSdkLlm } from '../llm/aiSdkLlm.js';
+import { addUsage } from '../llm/promptCache.js';
 import { CachedPlanner } from '../planner/cachedPlanner.js';
 import { DEEPER_VERSION, LlmPlanner, PLANNER_VERSION } from '../planner/llmPlanner.js';
 import { StaticPlanner } from '../planner/staticPlanner.js';
@@ -87,10 +90,12 @@ export function llmRequirement(o) {
 /**
  * Run the whole pipeline once. Shared by the CLI and the UI server.
  * @param {RunOptions} o
- * @param {{ events?: RunEvents, signal?: AbortSignal }} [hooks]
+ * @param {{ events?: RunEvents, signal?: AbortSignal, help?: HumanHelp }} [hooks]
+ *   help: a person who can answer the agent's requests for help (the UI's buttons, or the terminal); only used
+ *   when the browser is shown
  * @returns {Promise<{ runId: string, report: import('../core/types.js').RunReport }>}
  */
-export async function startRun(o, { events = new RunEvents(), signal } = {}) {
+export async function startRun(o, { events = new RunEvents(), signal, help } = {}) {
   const config = loadConfig({
     model: o.model,
     preset: o.preset,
@@ -115,6 +120,16 @@ export async function startRun(o, { events = new RunEvents(), signal } = {}) {
   const logger = createLogger(config.logLevel, '', (e) =>
     events.emit('log', { level: e.level, scope: e.scope, message: e.message }),
   );
+  // The browser is shown: one window, one test at a time, and a person who can help when the agent asks.
+  if (!config.headless && config.concurrency > 1) {
+    logger.info('The browser is shown: tests run one at a time, in one window');
+    config.concurrency = 1;
+  }
+  const browserHost = config.headless ? undefined : new BrowserHost(config, logger);
+  const humanHelp = help ?? new HumanHelp({ available: false, events });
+  humanHelp.events = events;
+  humanHelp.waitMs = config.helpWaitMs;
+  if (config.headless) humanHelp.available = false; // nobody can act in a browser nobody sees
   const agentWarning = agentModelWarning(config.model, config.agentEngine);
   if (agentWarning) logger.warn(agentWarning);
   /** "anthropic/claude-haiku-4-5" -> "claude-haiku-4-5" @param {string} m */
@@ -128,13 +143,12 @@ export async function startRun(o, { events = new RunEvents(), signal } = {}) {
 
   // Lazy: the provider/key is only resolved on the first LLM call, so smoke runs need no key.
   // Planner and judge may use stronger models than the browser agent (see config.plannerModel).
+  /** @type {import('../llm/promptCache.js').TokenUsage} */
   const overhead = { inputTokens: 0, outputTokens: 0 };
-  const meter = (/** @type {{ inputTokens: number, outputTokens: number }} */ u) => {
-    overhead.inputTokens += u.inputTokens;
-    overhead.outputTokens += u.outputTokens;
-  };
-  const llm = lazyLlm(config.plannerModel ?? config.model, meter);
-  const judgeLlm = lazyLlm(config.judgeModel ?? config.model, meter);
+  const meter = (/** @type {import('../llm/promptCache.js').TokenUsage} */ u) =>
+    void addUsage(overhead, u);
+  const llm = lazyLlm(config.plannerModel ?? config.model, meter, config.promptCache);
+  const judgeLlm = lazyLlm(config.judgeModel ?? config.model, meter, config.promptCache);
   // The AI's reading of failures: only with a key for the judge's model, and only if not switched off.
   const judgeModel = config.judgeModel ?? config.model;
   const judgeKey = apiKeyEnvFor(judgeModel);
@@ -181,6 +195,7 @@ export async function startRun(o, { events = new RunEvents(), signal } = {}) {
             llm,
             {
               maxTests: config.maxTests,
+              imageDir: artifacts.runDir,
               onReview: (review) => events.emit('plan.review', review),
             },
             logger,
@@ -265,6 +280,10 @@ export async function startRun(o, { events = new RunEvents(), signal } = {}) {
     events,
     deeper,
     signal,
+    // the same name whether the suite came from the UI (its name) or the command line (its file)
+    suite:
+      o.suiteName ??
+      (o.suite ? path.basename(o.suite).replace(/\.suite\.json$|\.json$/, '') : undefined),
     overheadUsage: () => ({ ...overhead }),
     auth: login
       ? {
@@ -306,6 +325,8 @@ export async function startRun(o, { events = new RunEvents(), signal } = {}) {
       themeStates: new ThemeStates({ perTest: config.quality.themeStates }),
       storageState: login?.state,
       themeReference,
+      help: humanHelp,
+      browserHost,
     }),
   });
 
@@ -345,20 +366,23 @@ export async function startRun(o, { events = new RunEvents(), signal } = {}) {
   } catch (e) {
     events.emit('run.error', { message: e instanceof Error ? e.message : String(e) });
     throw e;
+  } finally {
+    await browserHost?.close();
   }
 }
 
 /**
  * Defer provider/key resolution until the first LLM call, so smoke-only runs need no key.
  * @param {string} modelId
- * @param {(u: { inputTokens: number, outputTokens: number }) => void} [onUsage]
+ * @param {(u: import('../llm/promptCache.js').TokenUsage) => void} [onUsage]
+ * @param {import('../llm/promptCache.js').PromptCache} [cache]
  * @returns {import('../core/ports.js').LlmClient}
  */
-function lazyLlm(modelId, onUsage) {
+function lazyLlm(modelId, onUsage, cache) {
   /** @type {AiSdkLlm | undefined} */
   let real;
   return {
     generateObject: (args) =>
-      (real ??= AiSdkLlm.fromModelId(modelId, onUsage)).generateObject(args),
+      (real ??= AiSdkLlm.fromModelId(modelId, onUsage, { cache })).generateObject(args),
   };
 }
